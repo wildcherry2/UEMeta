@@ -8,122 +8,935 @@
 #include <simdjson.h>
 
 namespace UEMeta {
+    /**
+     * @brief JSON representation of one C++ template parameter declaration.
+     */
     struct JsonTemplateParameter {
+        /**
+         * @brief Template parameter category, such as `typename`, `class`, `nonType`, or `classTemplate`.
+         *
+         * @code{.cpp}
+         * template <typename T, class U, int N, template <class> class Alloc>
+         *           // kind for T == "typename"; kind for N == "nonType"
+         * @endcode
+         */
         std::string kind;
+
+        /**
+         * @brief Identifier introduced by the template parameter.
+         *
+         * @code{.cpp}
+         * template <typename T>
+         *                    // name == "T"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Declared type of a non-type template parameter, including the parameter name.
+         *
+         * @code{.cpp}
+         * template <int Count>
+         *           // type == "int Count"
+         * @endcode
+         */
         std::string type;
+
+        /**
+         * @brief True when the parameter is a template parameter pack.
+         *
+         * @code{.cpp}
+         * template <typename... Args>
+         *                    // isParameterPack == true
+         * @endcode
+         */
         bool is_parameter_pack{};
+
+        /**
+         * @brief Inner template parameters for a template-template parameter.
+         *
+         * @code{.cpp}
+         * template <template <typename Element> class Container>
+         *                    // parameters contains Element
+         * @endcode
+         */
         std::vector<JsonTemplateParameter> parameters;
     };
 
+    /**
+     * @brief ABI vtable slot metadata for a virtual method.
+     */
     struct JsonVTableIndex {
+        /**
+         * @brief Method slot index in the relevant virtual table.
+         *
+         * @code{.cpp}
+         * struct Interface { virtual void Tick(); };
+         *                    // index identifies Tick's virtual slot
+         * @endcode
+         */
         std::uint64_t index{};
+
+        /**
+         * @brief ABI vtable pointer offset used for this slot, or zero when the ABI has no separate offset.
+         *
+         * @code{.cpp}
+         * struct Left { virtual void A(); };
+         * struct Right { virtual void B(); };
+         * struct Derived : Left, Right { void B() override; };
+         *                              // offset identifies Right's vfptr position
+         * @endcode
+         */
         std::int64_t offset{};
     };
 
+    /**
+     * @brief JSON representation of one function parameter declaration.
+     */
     struct JsonParameter {
+        /**
+         * @brief Parameter identifier.
+         *
+         * @code{.cpp}
+         * void Free(int count);
+         *               // name == "count"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Parameter type without the parameter identifier.
+         *
+         * @code{.cpp}
+         * void Free(ns::Alpha* value);
+         *           // type == "ns::Alpha *"
+         * @endcode
+         */
         std::string type;
+
+        /**
+         * @brief Pretty-printed parameter declaration, including type and name.
+         *
+         * @code{.cpp}
+         * void Free(ns::Alpha* value);
+         *           // declaration == "ns::Alpha *value"
+         * @endcode
+         */
         std::string declaration;
     };
 
+    /**
+     * @brief JSON representation of a free function, method, constructor, destructor, or conversion function.
+     */
     struct JsonFunction {
+        /**
+         * @brief Function declaration category emitted as `functionKind`.
+         *
+         * @code{.cpp}
+         * void Free();
+         * struct Alpha { Alpha(); void Method(); ~Alpha(); explicit operator bool() const; };
+         * // functionKind values include "function", "constructor", "method", "destructor", and "conversion"
+         * @endcode
+         */
         std::string kind;
+
+        /**
+         * @brief Unqualified function or method name.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { void Method(); }; }
+         *                              // name == "Method"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Fully qualified function name with a leading global scope qualifier.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { void Method(); }; }
+         *                              // qualifiedName == "::ns::Alpha::Method"
+         * @endcode
+         */
         std::string qualified_name;
+
+        /**
+         * @brief Source file that contains the function declaration location.
+         *
+         * @code{.cpp}
+         * // In Source.cpp:
+         * void Free();
+         * // file is the normalized path to Source.cpp
+         * @endcode
+         */
         std::string file;
+
+        /**
+         * @brief Lexical namespace and record scope containing the function.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { void Method(); }; }
+         *                              // scope == {"ns", "Alpha"}
+         * @endcode
+         */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Return type for ordinary functions and methods; empty for constructors and destructors.
+         *
+         * @code{.cpp}
+         * int Count();
+         * // returnType == "int"
+         * @endcode
+         */
         std::string return_type;
+
+        /**
+         * @brief C++ access specifier for a class member function.
+         *
+         * @code{.cpp}
+         * struct Alpha { private: void Hidden(); };
+         *                         // access == "private"
+         * @endcode
+         */
         std::string access;
+
+        /**
+         * @brief Storage class written on a free function declaration.
+         *
+         * @code{.cpp}
+         * static void Internal();
+         * // storageClass == "static"
+         * @endcode
+         */
         std::string storage_class;
+
+        /**
+         * @brief Reference qualifier on a non-static member function.
+         *
+         * @code{.cpp}
+         * struct Alpha { void Touch() &; };
+         *                             // refQualifier == "&"
+         * @endcode
+         */
         std::string ref_qualifier;
+
+        /**
+         * @brief Exception specification attached to the function type.
+         *
+         * @code{.cpp}
+         * void Save() noexcept;
+         *             // exceptionSpec == "noexcept"
+         * @endcode
+         */
         std::string exception_spec;
+
+        /**
+         * @brief True when a non-static member function is declared `const`.
+         *
+         * @code{.cpp}
+         * struct Alpha { int Size() const; };
+         *                           // isConst == true
+         * @endcode
+         */
         bool is_const{};
+
+        /**
+         * @brief True when a non-static member function is declared `volatile`.
+         *
+         * @code{.cpp}
+         * struct Alpha { int Size() volatile; };
+         *                           // isVolatile == true
+         * @endcode
+         */
         bool is_volatile{};
+
+        /**
+         * @brief True when a member function is declared `static`.
+         *
+         * @code{.cpp}
+         * struct Alpha { static void Helper(); };
+         *                // isStatic == true
+         * @endcode
+         */
         bool is_static{};
+
+        /**
+         * @brief True when a member function is virtual, including overrides.
+         *
+         * @code{.cpp}
+         * struct Base { virtual void Tick(); };
+         *               // isVirtual == true
+         * @endcode
+         */
         bool is_virtual{};
+
+        /**
+         * @brief True when a virtual member function is pure.
+         *
+         * @code{.cpp}
+         * struct Base { virtual void Tick() = 0; };
+         *                                    // isPure == true
+         * @endcode
+         */
         bool is_pure{};
+
+        /**
+         * @brief True when the function is declared `constexpr`.
+         *
+         * @code{.cpp}
+         * constexpr int Value();
+         * // isConstexpr == true
+         * @endcode
+         */
         bool is_constexpr{};
+
+        /**
+         * @brief True when the function is declared `consteval`.
+         *
+         * @code{.cpp}
+         * consteval int Id();
+         * // isConsteval == true
+         * @endcode
+         */
         bool is_consteval{};
+
+        /**
+         * @brief True when the function is declared or treated as inline.
+         *
+         * @code{.cpp}
+         * inline void Draw();
+         * // isInline == true
+         * @endcode
+         */
         bool is_inline{};
+
+        /**
+         * @brief True when the function declaration is explicitly deleted.
+         *
+         * @code{.cpp}
+         * struct Alpha { Alpha(const Alpha&) = delete; };
+         *                                     // isDeleted == true
+         * @endcode
+         */
         bool is_deleted{};
+
+        /**
+         * @brief True when the function declaration is explicitly defaulted.
+         *
+         * @code{.cpp}
+         * struct Alpha { Alpha() = default; };
+         *                         // isDefaulted == true
+         * @endcode
+         */
         bool is_defaulted{};
+
+        /**
+         * @brief True when a constructor or conversion function is declared `explicit`.
+         *
+         * @code{.cpp}
+         * struct Alpha { explicit Alpha(int); explicit operator bool() const; };
+         *                // isExplicit == true
+         * @endcode
+         */
         bool is_explicit{};
+
+        /**
+         * @brief ABI virtual table slot information for a virtual member function, when available.
+         *
+         * @code{.cpp}
+         * struct Base { virtual void Tick(); };
+         *               // vtableIndex describes Tick's virtual slot
+         * @endcode
+         */
         std::optional<JsonVTableIndex> vtable_index;
+
+        /**
+         * @brief Template parameters declared on a function template.
+         *
+         * @code{.cpp}
+         * template <typename T>
+         * T Identity(T value);
+         * // templateParameters contains T
+         * @endcode
+         */
         std::vector<JsonTemplateParameter> template_parameters;
+
+        /**
+         * @brief Ordered function parameter list.
+         *
+         * @code{.cpp}
+         * void Free(ns::Alpha* value, int count);
+         *           // parameters contains value and count
+         * @endcode
+         */
         std::vector<JsonParameter> parameters;
     };
 
+    /**
+     * @brief JSON representation of a global variable or static data member.
+     */
     struct JsonVariable {
+        /**
+         * @brief Unqualified variable identifier.
+         *
+         * @code{.cpp}
+         * inline int globalVar;
+         *            // name == "globalVar"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Fully qualified variable name with a leading global scope qualifier.
+         *
+         * @code{.cpp}
+         * namespace ns { inline int value; }
+         *                     // qualifiedName == "::ns::value"
+         * @endcode
+         */
         std::string qualified_name;
+
+        /**
+         * @brief Source file that contains the variable declaration location.
+         *
+         * @code{.cpp}
+         * // In Globals.cpp:
+         * inline int globalVar;
+         * // file is the normalized path to Globals.cpp
+         * @endcode
+         */
         std::string file;
+
+        /**
+         * @brief Lexical namespace and record scope containing the variable.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { static int value; }; }
+         *                              // scope == {"ns", "Alpha"}
+         * @endcode
+         */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Variable type without the variable identifier.
+         *
+         * @code{.cpp}
+         * inline const int globalVar = 1;
+         *        // type == "const int"
+         * @endcode
+         */
         std::string type;
+
+        /**
+         * @brief Pretty-printed variable declaration, including type and name.
+         *
+         * @code{.cpp}
+         * inline const int globalVar = 1;
+         *        // declaration == "const int globalVar"
+         * @endcode
+         */
         std::string declaration;
+
+        /**
+         * @brief C++ access specifier for a static data member.
+         *
+         * @code{.cpp}
+         * class Alpha { private: static int hidden; };
+         *                        // access == "private"
+         * @endcode
+         */
         std::string access;
+
+        /**
+         * @brief Storage class written on the variable declaration.
+         *
+         * @code{.cpp}
+         * static int fileLocal;
+         * // storageClass == "static"
+         * @endcode
+         */
         std::string storage_class;
+
+        /**
+         * @brief True when the variable is declared `constexpr`.
+         *
+         * @code{.cpp}
+         * constexpr int MaxCount = 4;
+         * // isConstexpr == true
+         * @endcode
+         */
         bool is_constexpr{};
+
+        /**
+         * @brief True when the variable is declared `inline`.
+         *
+         * @code{.cpp}
+         * inline int globalVar;
+         * // isInline == true
+         * @endcode
+         */
         bool is_inline{};
+
+        /**
+         * @brief True when the variable is a static data member of a record.
+         *
+         * @code{.cpp}
+         * struct Alpha { static double staticValue; };
+         *                // isStaticDataMember == true
+         * @endcode
+         */
         bool is_static_data_member{};
+
+        /**
+         * @brief True when the variable has thread-local storage duration.
+         *
+         * @code{.cpp}
+         * thread_local int tlsValue;
+         * // isThreadLocal == true
+         * @endcode
+         */
         bool is_thread_local{};
     };
 
+    /**
+     * @brief JSON representation of an enum constant.
+     */
     struct JsonEnumerator {
+        /**
+         * @brief Enumerator identifier.
+         *
+         * @code{.cpp}
+         * enum class Mode { One = 1 };
+         *                   // name == "One"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Evaluated integral enumerator value as a decimal string.
+         *
+         * @code{.cpp}
+         * enum class Mode { One = 1 };
+         *                         // value == "1"
+         * @endcode
+         */
         std::string value;
+
+        /**
+         * @brief Source file that contains the enumerator declaration location.
+         *
+         * @code{.cpp}
+         * // In Types.cpp:
+         * enum class Mode { One = 1 };
+         * // file is the normalized path to Types.cpp
+         * @endcode
+         */
         std::string file;
+
+        /**
+         * @brief Lexical namespace and record scope containing the enumerator.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { enum class Mode { One = 1 }; }; }
+         *                                             // scope == {"ns", "Alpha"}
+         * @endcode
+         */
         std::vector<std::string> scope;
     };
 
+    /**
+     * @brief JSON representation of a non-static data member field.
+     */
     struct JsonField {
+        /**
+         * @brief Field identifier, empty for anonymous fields.
+         *
+         * @code{.cpp}
+         * struct Alpha { int field; };
+         *                    // name == "field"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Source file that contains the field declaration location.
+         *
+         * @code{.cpp}
+         * // In Types.cpp:
+         * struct Alpha { int field; };
+         * // file is the normalized path to Types.cpp
+         * @endcode
+         */
         std::string file;
+
+        /**
+         * @brief Lexical namespace and record scope containing the field.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { int field; }; }
+         *                              // scope == {"ns", "Alpha"}
+         * @endcode
+         */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Field type without the field identifier.
+         *
+         * @code{.cpp}
+         * struct Alpha { const int field; };
+         *                // type == "const int"
+         * @endcode
+         */
         std::string type;
+
+        /**
+         * @brief Pretty-printed field declaration, including type and name.
+         *
+         * @code{.cpp}
+         * struct Alpha { const int field; };
+         *                // declaration == "const int field"
+         * @endcode
+         */
         std::string declaration;
+
+        /**
+         * @brief C++ access specifier for the field.
+         *
+         * @code{.cpp}
+         * class Alpha { public: int field; };
+         *                       // access == "public"
+         * @endcode
+         */
         std::string access;
+
+        /**
+         * @brief True when the field is declared `mutable`.
+         *
+         * @code{.cpp}
+         * struct Alpha { mutable int cache; };
+         *                // isMutable == true
+         * @endcode
+         */
         bool is_mutable{};
+
+        /**
+         * @brief True when the field is a bit-field.
+         *
+         * @code{.cpp}
+         * struct Flags { unsigned mask : 3; };
+         *                              // isBitfield == true
+         * @endcode
+         */
         bool is_bitfield{};
+
+        /**
+         * @brief Constant width of a bit-field in bits, when available.
+         *
+         * @code{.cpp}
+         * struct Flags { unsigned mask : 3; };
+         *                               // bitWidth == 3
+         * @endcode
+         */
         std::optional<std::uint64_t> bit_width;
+
+        /**
+         * @brief ABI field offset from the containing record start, in bits, when layout is available.
+         *
+         * @code{.cpp}
+         * struct Alpha { double pad; int field; };
+         *                            // offsetBits describes field's layout offset
+         * @endcode
+         */
         std::optional<std::uint64_t> offset_bits;
     };
 
+    /**
+     * @brief JSON representation of one direct C++ base specifier.
+     */
     struct JsonBase {
+        /**
+         * @brief Written base type.
+         *
+         * @code{.cpp}
+         * struct Derived : public Base {};
+         *                         // type == "Base"
+         * @endcode
+         */
         std::string type;
+
+        /**
+         * @brief Fully qualified base record name with a leading global scope qualifier.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Base {}; struct Derived : Base {}; }
+         *                                           // qualifiedName == "::ns::Base"
+         * @endcode
+         */
         std::string qualified_name;
+
+        /**
+         * @brief Access specifier on the base clause.
+         *
+         * @code{.cpp}
+         * struct Derived : protected Base {};
+         *                  // access == "protected"
+         * @endcode
+         */
         std::string access;
+
+        /**
+         * @brief True when the base specifier uses virtual inheritance.
+         *
+         * @code{.cpp}
+         * struct Derived : virtual Base {};
+         *                  // isVirtual == true
+         * @endcode
+         */
         bool is_virtual{};
+
+        /**
+         * @brief ABI base subobject offset in bytes, when record layout is available.
+         *
+         * @code{.cpp}
+         * struct Left {};
+         * struct Right {};
+         * struct Derived : Left, Right {};
+         *                        // offset describes Right's base subobject location
+         * @endcode
+         */
         std::optional<std::int64_t> offset;
     };
 
+    /**
+     * @brief Top-level JSON declaration object and nested declaration payload.
+     */
     struct JsonDeclaration {
+        /**
+         * @brief Declaration category, such as `class`, `struct`, `union`, `enum`, `alias`, `function`, or `variable`.
+         *
+         * @code{.cpp}
+         * class Alpha {};
+         * enum class Mode {};
+         * using Alias = Alpha;
+         * void Free();
+         * inline int globalVar;
+         * // kind identifies the declaration grammar above
+         * @endcode
+         */
         std::string kind;
+
+        /**
+         * @brief Unqualified declaration name; omitted from JSON for function and variable payload declarations.
+         *
+         * @code{.cpp}
+         * namespace ns { class Alpha {}; }
+         *                      // name == "Alpha"
+         * @endcode
+         */
         std::string name;
+
+        /**
+         * @brief Fully qualified declaration name with a leading global scope qualifier.
+         *
+         * @code{.cpp}
+         * namespace ns { class Alpha {}; }
+         *                      // qualifiedName == "::ns::Alpha"
+         * @endcode
+         */
         std::string qualified_name;
+
+        /**
+         * @brief Source file that contains the declaration location.
+         *
+         * @code{.cpp}
+         * // In uemeta_scope_fixture.cpp:
+         * namespace ns { class Alpha {}; }
+         * // file is the normalized path to uemeta_scope_fixture.cpp
+         * @endcode
+         */
         std::string file;
+
+        /**
+         * @brief Lexical namespace and record scope containing the declaration.
+         *
+         * @code{.cpp}
+         * namespace ns { struct Alpha { struct Nested {}; }; }
+         *                              // Nested scope == {"ns", "Alpha"}
+         * @endcode
+         */
         std::vector<std::string> scope;
+
+        /**
+         * @brief True when the declaration has no C++ identifier.
+         *
+         * @code{.cpp}
+         * struct Alpha { union { int i; float f; }; };
+         *                // anonymous union has isAnonymous == true
+         * @endcode
+         */
         bool is_anonymous{};
 
+        /**
+         * @brief Template parameters declared by a class, alias, function, or variable template.
+         *
+         * @code{.cpp}
+         * template <typename T>
+         * struct Box {};
+         * // templateParameters contains T
+         * @endcode
+         */
         std::vector<JsonTemplateParameter> template_parameters;
 
+        /**
+         * @brief Enum underlying integer type.
+         *
+         * @code{.cpp}
+         * enum class Mode : unsigned int { A };
+         *                   // underlyingType == "unsigned int"
+         * @endcode
+         */
         std::string underlying_type;
+
+        /**
+         * @brief True when the enum uses scoped enum syntax.
+         *
+         * @code{.cpp}
+         * enum class Mode { A };
+         * // isScoped == true
+         * @endcode
+         */
         bool is_scoped{};
+
+        /**
+         * @brief Scoped enum keyword, either `class` or `struct`.
+         *
+         * @code{.cpp}
+         * enum struct Flags { A };
+         *      // scopedKind == "struct"
+         * @endcode
+         */
         std::string scoped_kind;
+
+        /**
+         * @brief Enumerators declared inside an enum body.
+         *
+         * @code{.cpp}
+         * enum class Mode { One = 1, Two = 2 };
+         *                   // enumerators contains One and Two
+         * @endcode
+         */
         std::vector<JsonEnumerator> enumerators;
 
+        /**
+         * @brief True when a record declaration includes a definition body.
+         *
+         * @code{.cpp}
+         * struct Forward;
+         * struct Complete { int value; };
+         * // Complete has isCompleteDefinition == true
+         * @endcode
+         */
         bool is_complete_definition{};
+
+        /**
+         * @brief ABI size of a complete record definition in bytes, when layout is available.
+         *
+         * @code{.cpp}
+         * struct Alpha { double d; int i; };
+         * // sizeBytes describes Alpha's object size
+         * @endcode
+         */
         std::optional<std::uint64_t> size_bytes;
+
+        /**
+         * @brief ABI alignment of a complete record definition in bytes, when layout is available.
+         *
+         * @code{.cpp}
+         * struct Alpha { double d; int i; };
+         * // alignBytes describes Alpha's required alignment
+         * @endcode
+         */
         std::optional<std::uint64_t> align_bytes;
+
+        /**
+         * @brief Direct base specifiers on a class or struct declaration.
+         *
+         * @code{.cpp}
+         * struct Derived : public Base {};
+         *                  // bases contains Base
+         * @endcode
+         */
         std::vector<JsonBase> bases;
+
+        /**
+         * @brief Non-static data members declared in a record body.
+         *
+         * @code{.cpp}
+         * struct Alpha { int field; };
+         *                // fields contains field
+         * @endcode
+         */
         std::vector<JsonField> fields;
+
+        /**
+         * @brief Static data members declared in a record body.
+         *
+         * @code{.cpp}
+         * struct Alpha { inline static double staticValue = 0.0; };
+         *                // staticVariables contains staticValue
+         * @endcode
+         */
         std::vector<JsonVariable> static_variables;
+
+        /**
+         * @brief Member functions declared in a record body.
+         *
+         * @code{.cpp}
+         * struct Alpha { virtual void Method(); };
+         *                // methods contains Method
+         * @endcode
+         */
         std::vector<JsonFunction> methods;
+
+        /**
+         * @brief Nested records, enums, and aliases declared in a record body.
+         *
+         * @code{.cpp}
+         * struct Alpha { using Alias = int; struct Nested {}; enum class Mode { One }; };
+         *                // nested contains Alias, Nested, and Mode
+         * @endcode
+         */
         std::vector<JsonDeclaration> nested;
 
+        /**
+         * @brief Payload for a top-level function declaration when `kind == "function"`.
+         *
+         * @code{.cpp}
+         * void Free(int count);
+         * // function contains Free's function metadata
+         * @endcode
+         */
         std::optional<JsonFunction> function;
+
+        /**
+         * @brief Payload for a top-level variable declaration when `kind == "variable"`.
+         *
+         * @code{.cpp}
+         * inline int globalVar;
+         * // variable contains globalVar's variable metadata
+         * @endcode
+         */
         std::optional<JsonVariable> variable;
 
+        /**
+         * @brief Underlying type named by a C++ type alias declaration.
+         *
+         * @code{.cpp}
+         * using TopAlias = ns::Alpha;
+         *                  // aliasedType == "ns::Alpha"
+         * @endcode
+         */
         std::string aliased_type;
     };
 
