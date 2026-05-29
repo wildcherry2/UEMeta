@@ -216,6 +216,7 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
         tool->clang_tool.appendArgumentsAdjuster([](const CommandLineArguments& args,...) {
             return StripUnneededUnrealBuildArgs(args);
         });
+        tool->clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-w"));
 
         return tool;
     } catch (std::exception& ex) {
