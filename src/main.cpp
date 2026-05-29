@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
             }
             case 1: {
                 std::cout << "Failed to run tool!" << std::endl;
+                return -1;
             }
             default: {
                 std::cout << "Ran tool on subset of files due to missing compile commands!" << std::endl;
