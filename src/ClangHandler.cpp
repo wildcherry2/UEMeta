@@ -1033,7 +1033,7 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
     (void)compiler;
     (void)file;
 
-    class Consumer : public clang::ASTConsumer { //todo make free class and add it to a file->consumer map if multiple are made, same for visitor
+    class Consumer : public clang::ASTConsumer {
     public:
         explicit Consumer(ClangHandler* owner) : owner(owner) {}
 
@@ -1047,5 +1047,5 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         ClangHandler* owner;
     };
 
-    return std::make_unique<Consumer>(this); //todo log which file the consumer is for
+    return std::make_unique<Consumer>(this);
 }
