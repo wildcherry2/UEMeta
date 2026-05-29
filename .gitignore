@@ -3,3 +3,4 @@ out/
 cmake-build-*/
 CMakeUserPresets.json
 .idea/
+uemeta_scope_fixture_out/

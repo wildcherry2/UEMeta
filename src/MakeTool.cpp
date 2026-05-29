@@ -19,23 +19,36 @@ std::string FixupCommand(const std::string& cc_path) {
             std::cerr << std::format("(simdjson) Failed to load compile commands at \"{}\" with error: {}", cc_path, static_cast<int>(json.error())) << std::endl;
             return "";
         }
-        auto document = p.iterate(json);
+        auto document = p.iterate(json.value());
         if (document.error()) {
             std::cerr << std::format("(simdjson) Failed to iterate compile commands at \"{}\" with error: {}", cc_path, static_cast<int>(document.error())) << std::endl;
         }
         for (auto command_obj : document.get_array()) {
-            auto file_obj = command_obj.find_field("file");
-            if (!file_obj) continue;
-            auto file = file_obj.get_string();
-            if (*file != cpp_path) continue;
+            auto object = command_obj.get_object();
+            if (object.error()) {
+                continue;
+            }
 
-            auto command_field = command_obj.find_field("command");
-            if (!command_field) {
+            auto file_obj = object.find_field("file");
+            if (file_obj.error())
+                continue;
+            auto file = file_obj.get_string();
+            if (file.error())
+                continue;
+            if (*file != cpp_path)
+                continue;
+
+            auto command_field = object.find_field("command");
+            if (command_field.error()) {
                 std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path) << std::endl;
                 return "";
             }
 
             auto command = command_field.get_string();
+            if (command.error()) {
+                std::cerr << std::format("(simdjson) Found command for file \"{}\", but its 'command' field is not a string!", cpp_path) << std::endl;
+                return "";
+            }
             auto cmd_start = command->find_first_of('\"');
             if (cmd_start == std::string_view::npos || cmd_start == command->size() - 1) {
                 std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's not long enough!", cpp_path) << std::endl;
@@ -49,15 +62,27 @@ std::string FixupCommand(const std::string& cc_path) {
             auto keep = command->substr(cmd_end + 1);
             std::string new_command = UEMeta::Config::GetConfig().ClangPath().string() + std::string(keep);
 
-            auto directory_field = command_obj.find_field("directory");
-            if (!directory_field) {
+            auto directory_field = object.find_field("directory");
+            if (directory_field.error()) {
                 std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path) << std::endl;
                 return "";
             }
 
-            auto output_field = command_obj.find_field("output");
-            if (!output_field) {
+            auto output_field = object.find_field("output");
+            if (output_field.error()) {
                 std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's missing an 'output' field!", cpp_path) << std::endl;
+                return "";
+            }
+
+            auto directory = directory_field.get_string();
+            if (directory.error()) {
+                std::cerr << std::format("(simdjson) Found command for file \"{}\", but its 'directory' field is not a string!", cpp_path) << std::endl;
+                return "";
+            }
+
+            auto output = output_field.get_string();
+            if (output.error()) {
+                std::cerr << std::format("(simdjson) Found command for file \"{}\", but its 'output' field is not a string!", cpp_path) << std::endl;
                 return "";
             }
 
@@ -68,9 +93,9 @@ std::string FixupCommand(const std::string& cc_path) {
             sb.append_comma();
             sb.append_key_value("command", new_command);
             sb.append_comma();
-            sb.append_key_value("directory", *directory_field->get_string());
+            sb.append_key_value("directory", *directory);
             sb.append_comma();
-            sb.append_key_value("output", *output_field->get_string());
+            sb.append_key_value("output", *output);
             sb.end_object();
             sb.end_array();
             if (!sb.validate_unicode()) {

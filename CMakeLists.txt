@@ -124,6 +124,7 @@ target_compile_options(uemeta PRIVATE
     ${UEMETA_LLVM_DEFINITIONS}
     $<$<CXX_COMPILER_ID:MSVC>:/std:c++latest>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+    $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
     $<$<CXX_COMPILER_ID:Clang>:-std=c++2c>
     $<$<CXX_COMPILER_ID:GNU>:-std=c++2c>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>

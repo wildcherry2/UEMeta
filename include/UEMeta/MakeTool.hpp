@@ -1,4 +1,5 @@
 #pragma once
+#include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/Tooling.h>
 #include <memory>
 
