@@ -49,6 +49,12 @@ set(UEMETA_CLI11_GIT_TAG
     "37bb6edc5317e99af72ef48405e65d9ca5218861"
     CACHE STRING "CLI11 Git commit fetched by CMake"
 )
+set(UEMETA_MSVC_DISABLED_WARNINGS
+    /wd4100 # unreferenced formal parameter
+    /wd4244 # conversion, possible loss of data
+    /wd4189 # local variable initialized but not referenced
+    /wd4702 # unreachable code
+)
 
 FetchContent_Declare(llvm_prebuilt
     URL "${UEMETA_LLVM_PREBUILT_URL}"
@@ -141,7 +147,10 @@ add_executable(uemeta src/main.cpp src/ClangHandler.cpp
 
 add_library(simdjson STATIC "${simdjson_singleheader_SOURCE_DIR}/simdjson.cpp")
 target_include_directories(simdjson PUBLIC "${simdjson_singleheader_SOURCE_DIR}")
-target_compile_options(simdjson PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
+target_compile_options(simdjson PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+    $<$<CXX_COMPILER_ID:MSVC>:${UEMETA_MSVC_DISABLED_WARNINGS}>
+)
 target_compile_features(simdjson PUBLIC cxx_std_17)
 
 set_target_properties(uemeta PROPERTIES
@@ -162,6 +171,7 @@ target_compile_options(uemeta PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/std:c++latest>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
     $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
+    $<$<CXX_COMPILER_ID:MSVC>:${UEMETA_MSVC_DISABLED_WARNINGS}>
     $<$<CXX_COMPILER_ID:Clang>:-std=c++2c>
     $<$<CXX_COMPILER_ID:GNU>:-std=c++2c>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
