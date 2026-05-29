@@ -157,6 +157,7 @@ set_target_properties(uemeta PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+    RUNTIME_OUTPUT_NAME UEMeta
 )
 
 target_include_directories(uemeta PRIVATE "${PROJECT_SOURCE_DIR}/include")
@@ -202,4 +203,26 @@ target_link_libraries(uemeta PRIVATE
     clangASTMatchers
     simdjson
     CLI11::CLI11
+)
+
+set(UEMETA_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/UEMeta")
+set(UEMETA_BUNDLE_CLANG_DIR "${UEMETA_BUNDLE_DIR}/Clang")
+set(UEMETA_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
+
+if(NOT IS_DIRECTORY "${UEMETA_LLVM_BIN_DIR}")
+    message(FATAL_ERROR "Expected LLVM/Clang binary directory at ${UEMETA_LLVM_BIN_DIR}")
+endif()
+
+add_custom_command(TARGET uemeta POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+        "${UEMETA_BUNDLE_DIR}"
+        "${UEMETA_BUNDLE_CLANG_DIR}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:uemeta>"
+        "${UEMETA_BUNDLE_DIR}/$<TARGET_FILE_NAME:uemeta>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${UEMETA_LLVM_BIN_DIR}"
+        "${UEMETA_BUNDLE_CLANG_DIR}"
+    COMMENT "Bundling UEMeta executable and LLVM/Clang binaries"
+    VERBATIM
 )
