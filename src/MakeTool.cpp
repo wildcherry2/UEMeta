@@ -10,81 +10,44 @@
 
 using namespace clang::tooling;
 
-namespace {
-    bool SameFile(const std::string_view candidate, const std::filesystem::path& target) {
-        std::error_code ec;
-        if (std::filesystem::equivalent(std::filesystem::path{candidate}, target, ec)) {
-            return true;
+static bool SameFile(const std::string_view candidate, const std::filesystem::path& target) {
+    std::error_code ec;
+    if (std::filesystem::equivalent(std::filesystem::path{candidate}, target, ec)) {
+        return true;
+    }
+
+    const auto normalize = [](std::filesystem::path path) {
+        std::error_code normalize_ec;
+        auto normalized = std::filesystem::weakly_canonical(path, normalize_ec);
+        if (normalize_ec) {
+            normalize_ec.clear();
+            normalized = std::filesystem::absolute(path, normalize_ec);
         }
-
-        const auto normalize = [](std::filesystem::path path) {
-            std::error_code normalize_ec;
-            auto normalized = std::filesystem::weakly_canonical(path, normalize_ec);
-            if (normalize_ec) {
-                normalize_ec.clear();
-                normalized = std::filesystem::absolute(path, normalize_ec);
-            }
-            if (normalize_ec) {
-                normalized = std::move(path);
-            }
-            normalized = normalized.lexically_normal();
-            normalized.make_preferred();
-            return normalized;
-        };
-
-        return normalize(std::filesystem::path{candidate}) == normalize(target);
-    }
-
-    bool IsMsvcOptionWithOptionalJoinedValue(const llvm::StringRef arg, const llvm::StringRef option) {
-        return arg.equals_insensitive(option) ||
-               (arg.size() > option.size() && arg.starts_with_insensitive(option));
-    }
-
-    bool IsMsvcOptionTakingSeparateValue(const llvm::StringRef arg) {
-        return arg.equals_insensitive("/Fo") ||
-               arg.equals_insensitive("/Fd") ||
-               arg.equals_insensitive("/Fe") ||
-               arg.equals_insensitive("/Fp") ||
-               arg.equals_insensitive("/Yc") ||
-               arg.equals_insensitive("/Yu") ||
-               arg.equals_insensitive("/experimental:log") ||
-               arg.equals_insensitive("/sourceDependencies");
-    }
-
-    bool IsIgnoredMsvcToolingArg(const llvm::StringRef arg) {
-        return IsMsvcOptionWithOptionalJoinedValue(arg, "/Fo") ||
-               IsMsvcOptionWithOptionalJoinedValue(arg, "/Fd") ||
-               IsMsvcOptionWithOptionalJoinedValue(arg, "/Fe") ||
-               IsMsvcOptionWithOptionalJoinedValue(arg, "/Fp") ||
-               IsMsvcOptionWithOptionalJoinedValue(arg, "/Yc") ||
-               IsMsvcOptionWithOptionalJoinedValue(arg, "/Yu") ||
-               arg.equals_insensitive("/experimental:log") ||
-               arg.equals_insensitive("/sourceDependencies");
-    }
-
-    CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
-        CommandLineArguments out{};
-        bool skip_next = false;
-
-        for (llvm::StringRef arg : args) {
-            if (skip_next) {
-                skip_next = false;
-                continue;
-            }
-
-            if (IsIgnoredMsvcToolingArg(arg)) {
-                skip_next = IsMsvcOptionTakingSeparateValue(arg);
-                continue;
-            }
-
-            out.emplace_back(arg);
+        if (normalize_ec) {
+            normalized = std::move(path);
         }
+        normalized = normalized.lexically_normal();
+        normalized.make_preferred();
+        return normalized;
+    };
 
-        return out;
-    }
+    return normalize(std::filesystem::path{candidate}) == normalize(target);
 }
 
-std::string FixupCommand(const std::string& cc_path) {
+static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
+    CommandLineArguments out{};
+    std::vector<std::string_view> ignored_options{{"/Yu", "/Fp", "/Fo", "/Fd", "/Fe", "/experimental:log"}};
+
+    for (const std::string& arg : args) {
+        if (std::ranges::any_of(ignored_options, [&arg](auto& opt){ return arg == opt; }) || arg.ends_with(".sarif"))
+            continue;
+        out.push_back(arg);
+    }
+
+    return out;
+}
+
+static std::string FixupCommand(const std::string& cc_path) {
     try {
         simdjson::ondemand::parser p{};
         auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
@@ -214,7 +177,9 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
         auto tool = std::make_unique<ToolData>(ClangTool{*db, sources}, std::move(db));
 
         tool->clang_tool.appendArgumentsAdjuster([](const CommandLineArguments& args,...) {
-            return StripUnneededUnrealBuildArgs(args);
+            auto out = StripUnneededUnrealBuildArgs(args);
+            out.insert_range(out.end(), Config::GetConfig().AdditionalClangArgs());
+            return out;
         });
         tool->clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-w"));
 

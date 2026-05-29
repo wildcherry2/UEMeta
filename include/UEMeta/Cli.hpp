@@ -30,14 +30,15 @@ namespace UEMeta {
         [[nodiscard]] const FileSplitStrategy& SplitStrategy() const;
         [[nodiscard]] const std::vector<std::filesystem::path>& PdPaths() const;
         [[nodiscard]] const std::filesystem::path& ClangPath() const;
+        [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
 
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             std::vector<std::string> pd_paths{};
             for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
             return os << std::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
-                                     "\nclang_path={}\nno_cl={}\npd_paths={}",
+                                     "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}",
                 obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(), static_cast<int>(obj.split_strategy),
-                obj.ClangPath().string(), obj.no_cl,pd_paths);
+                obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args);
         }
 
         static Config& GetConfig();
@@ -48,9 +49,10 @@ namespace UEMeta {
         static int Initialize(int argc, char** argv);
 
         std::filesystem::path cpp_path{}, cc_path{}, out_path{};
-        std::filesystem::path clang_path = UEM_DEFAULT_CLANG_CL_PATH;
+        std::filesystem::path clang_path{};
         bool no_cl = false;
         FileSplitStrategy split_strategy{FileSplitStrategy::Default};
         std::vector<std::filesystem::path> pd_paths{};
+        std::vector<std::string> additional_clang_args{};
     };
 }

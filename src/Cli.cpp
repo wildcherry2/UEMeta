@@ -53,6 +53,10 @@ const std::filesystem::path & UEMeta::Config::ClangPath() const {
     return clang_path;
 }
 
+const std::vector<std::string> & UEMeta::Config::AdditionalClangArgs() const {
+    return additional_clang_args;
+}
+
 UEMeta::Config& UEMeta::Config::GetConfig() {
     static Config config{};
     return config;
@@ -154,6 +158,9 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         "if --parse-as-linux is specified.")
         ->check(CLI::ExistingFile)->excludes(opt_parse_as_linux);
 
+    app.add_option("--additional-clang-args", cfg.additional_clang_args,
+        "Additional arguments to pass to the clang executable.");
+
     try {
         app.parse(argc, argv);
     } catch (const CLI::CallForHelp& ex) {
@@ -173,8 +180,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return app.exit({"NoContentInParentDirectories", async_error, CLI::ExitCodes::FileError});
     }
 
-    if (cfg.no_cl && cfg.clang_path.empty()) {
-        cfg.clang_path = UEM_DEFAULT_CLANG_PATH;
+    if (cfg.clang_path.empty()) {
+        cfg.clang_path = cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH;
     }
 
     if (!ValidateFile(cfg.clang_path.string()).empty()) {
