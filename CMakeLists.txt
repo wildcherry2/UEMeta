@@ -9,6 +9,19 @@ project(UEMeta LANGUAGES CXX)
 include(FetchContent)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(FETCHCONTENT_QUIET OFF CACHE BOOL "Show FetchContent population progress" FORCE)
+
+# Keep heavyweight dependency source trees outside individual build preset directories.
+# FetchContent still uses each preset's binary dir for subbuild/build artifacts, but the
+# downloaded/extracted sources are shared by Ninja Debug, Ninja Release, and VS builds.
+set(UEMETA_DEPENDENCY_SOURCE_ROOT
+    "${PROJECT_SOURCE_DIR}/out/deps/src"
+    CACHE PATH "Shared source directory for fetched dependencies"
+)
+set(UEMETA_DEPENDENCY_DOWNLOAD_ROOT
+    "${PROJECT_SOURCE_DIR}/out/deps/downloads"
+    CACHE PATH "Shared download directory for fetched dependency archives"
+)
 
 set(UEMETA_LLVM_VERSION "22.1.6" CACHE STRING "LLVM release fetched by CMake")
 set(UEMETA_LLVM_PACKAGE "clang+llvm-${UEMETA_LLVM_VERSION}-x86_64-pc-windows-msvc"
@@ -40,23 +53,47 @@ set(UEMETA_CLI11_GIT_TAG
 FetchContent_Declare(llvm_prebuilt
     URL "${UEMETA_LLVM_PREBUILT_URL}"
     URL_HASH "${UEMETA_LLVM_PREBUILT_URL_HASH}"
+    DOWNLOAD_DIR "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}/llvm_prebuilt"
+    DOWNLOAD_NO_PROGRESS FALSE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/${UEMETA_LLVM_PACKAGE}"
     SOURCE_SUBDIR cmake-do-not-add
 )
 
 FetchContent_Declare(simdjson_singleheader
     URL "${UEMETA_SIMDJSON_SINGLEHEADER_URL}"
     URL_HASH "${UEMETA_SIMDJSON_SINGLEHEADER_URL_HASH}"
+    DOWNLOAD_DIR "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}/simdjson_singleheader-${UEMETA_SIMDJSON_VERSION}"
+    DOWNLOAD_NO_PROGRESS FALSE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/simdjson_singleheader-${UEMETA_SIMDJSON_VERSION}"
     SOURCE_SUBDIR cmake-do-not-add
 )
 
 FetchContent_Declare(cli11
     GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
     GIT_TAG "${UEMETA_CLI11_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/cli11-${UEMETA_CLI11_VERSION}"
 )
 
-FetchContent_MakeAvailable(llvm_prebuilt)
-FetchContent_MakeAvailable(simdjson_singleheader)
-FetchContent_MakeAvailable(cli11)
+function(UEMeta_FetchContent_MakeAvailable name)
+    string(TOLOWER "${name}" name_lc)
+    FetchContent_GetProperties(${name})
+
+    if(NOT ${name_lc}_POPULATED)
+        message(STATUS "FetchContent: preparing ${name}...")
+    endif()
+
+    FetchContent_MakeAvailable(${name})
+    FetchContent_GetProperties(${name})
+    message(STATUS "FetchContent: ${name} source: ${${name_lc}_SOURCE_DIR}")
+    set(${name_lc}_SOURCE_DIR "${${name_lc}_SOURCE_DIR}" PARENT_SCOPE)
+    set(${name_lc}_BINARY_DIR "${${name_lc}_BINARY_DIR}" PARENT_SCOPE)
+    set(${name_lc}_POPULATED "${${name_lc}_POPULATED}" PARENT_SCOPE)
+endfunction()
+
+UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
+UEMeta_FetchContent_MakeAvailable(simdjson_singleheader)
+UEMeta_FetchContent_MakeAvailable(cli11)
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
