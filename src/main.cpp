@@ -14,6 +14,7 @@ int main(int argc, char** argv) {
         switch (tool->clang_tool.run(clang::tooling::newFrontendActionFactory<UEMeta::ClangHandler>().get())) {
             case 0: {
                 std::cout << "Successfully ran tool!" << std::endl;
+                return 0;
             }
             case 1: {
                 std::cout << "Failed to run tool!" << std::endl;

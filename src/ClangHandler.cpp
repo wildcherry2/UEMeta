@@ -390,7 +390,8 @@ namespace {
             return std::nullopt;
         }
 
-        if (!method->getParent() || method->getParent()->isDependentContext() || !method->getParent()->isCompleteDefinition()) {
+        const auto* parent = method->getParent();
+        if (!parent || !parent->hasDefinition() || parent->isDependentContext() || !parent->isCompleteDefinition()) {
             return std::nullopt;
         }
 
@@ -576,12 +577,12 @@ namespace {
             return;
         }
 
-        const auto* key = llvm::cast<clang::TypeAliasDecl>(decl->getCanonicalDecl());
+        const auto* key = decl->getCanonicalDecl();
         if (!seen.insert(key).second) {
             return;
         }
 
-        nested.push_back(BuildAliasDeclaration(key, ctx));
+        nested.push_back(BuildAliasDeclaration(decl, ctx));
     }
 
     const clang::ASTRecordLayout* TryGetRecordLayout(const clang::RecordDecl* decl, const clang::ASTContext& ctx) {
@@ -590,7 +591,7 @@ namespace {
         }
 
         if (const auto* cxx_record = llvm::dyn_cast<clang::CXXRecordDecl>(decl);
-            cxx_record && (cxx_record->hasAnyDependentBases() || !cxx_record->isCompleteDefinition())) {
+            cxx_record && (!cxx_record->hasDefinition() || cxx_record->hasAnyDependentBases() || !cxx_record->isCompleteDefinition())) {
             return nullptr;
         }
 
@@ -613,7 +614,8 @@ namespace {
             out.align_bytes = static_cast<std::uint64_t>(layout->getAlignment().getQuantity());
         }
 
-        if (const auto* cxx_record = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+        if (const auto* cxx_record = llvm::dyn_cast<clang::CXXRecordDecl>(decl);
+            cxx_record && cxx_record->hasDefinition()) {
             for (const auto& base : cxx_record->bases()) {
                 UEMeta::JsonBase json_base;
                 json_base.type = PrintType(ctx, base.getType());
@@ -989,16 +991,16 @@ bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* decl) {
         return true;
     }
 
-    const auto* target = llvm::cast<clang::TypeAliasDecl>(decl->getCanonicalDecl());
-    if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
+    if (!IsTopLevelNamedDecl(decl) || IsInSystemHeader(decl, *context)) {
         return true;
     }
 
-    if (!visited_decls.insert(target).second) {
+    const auto* key = decl->getCanonicalDecl();
+    if (!visited_decls.insert(key).second) {
         return true;
     }
 
-    declarations.push_back(BuildAliasDeclaration(target, *context));
+    declarations.push_back(BuildAliasDeclaration(decl, *context));
     return true;
 }
 
