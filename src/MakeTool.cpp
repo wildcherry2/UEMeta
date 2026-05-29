@@ -10,7 +10,7 @@
 
 using namespace clang::tooling;
 
-static bool SameFile(const std::string_view candidate, const std::filesystem::path& target) {
+static bool SameFile(const std::string_view candidate, const std::filesystem::path& target) { //todo simplify
     std::error_code ec;
     if (std::filesystem::equivalent(std::filesystem::path{candidate}, target, ec)) {
         return true;
@@ -36,11 +36,31 @@ static bool SameFile(const std::string_view candidate, const std::filesystem::pa
 
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
     CommandLineArguments out{};
-    std::vector<std::string_view> ignored_options{{"/Yu", "/Fp", "/Fo", "/Fd", "/Fe", "/experimental:log"}};
+    const auto& ignored_options = UEMeta::Config::GetConfig().StripArgs();
 
+    int skip_count = 0;
     for (const std::string& arg : args) {
-        if (std::ranges::any_of(ignored_options, [&arg](auto& opt){ return arg == opt; }) || arg.ends_with(".sarif"))
+        if (skip_count) {
+            --skip_count;
             continue;
+        }
+
+        if (const auto opt =
+          std::ranges::find_if(ignored_options, [&arg](auto& opt) { return opt.starts_with(arg); });
+          opt != ignored_options.end()) {
+            if (opt->ends_with('}') && opt->length() >= 3) {
+                const auto begin_skip_index = opt->find_last_of('{');
+                if (begin_skip_index == std::string::npos) continue;
+                const auto skip_count_str = opt->substr(begin_skip_index + 1, opt->length() - 1);
+                try { skip_count = std::stoi(std::string{skip_count_str}); } catch (...) {
+                    skip_count = 0;
+                    std::cerr << std::format("Failed to parse skip argument count '{}' from option '{}'", skip_count_str, *opt);
+                    continue;
+                }
+                std::cout << std::format("Skipping {} arguments from option {}", skip_count, arg) << std::endl;
+            }
+            continue;
+        }
         out.push_back(arg);
     }
 

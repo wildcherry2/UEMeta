@@ -11,6 +11,8 @@
 #define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
 #endif
 
+#define UEM_DEFAULT_STRIP_LIST std::vector{{"/Yu", "/Fp", "/experimental:log{1}"}}
+
 int main(int argc, char** argv);
 
 namespace UEMeta {
@@ -31,14 +33,16 @@ namespace UEMeta {
         [[nodiscard]] const std::vector<std::filesystem::path>& PdPaths() const;
         [[nodiscard]] const std::filesystem::path& ClangPath() const;
         [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
+        [[nodiscard]] const std::vector<std::string>& StripArgs() const;
 
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             std::vector<std::string> pd_paths{};
             for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
             return os << std::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
-                                     "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}",
+                                     "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}\n"
+                                     "strip_args={}",
                 obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(), static_cast<int>(obj.split_strategy),
-                obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args);
+                obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args, obj.strip_args);
         }
 
         static Config& GetConfig();
@@ -54,5 +58,6 @@ namespace UEMeta {
         FileSplitStrategy split_strategy{FileSplitStrategy::Default};
         std::vector<std::filesystem::path> pd_paths{};
         std::vector<std::string> additional_clang_args{};
+        std::vector<std::string> strip_args{};
     };
 }

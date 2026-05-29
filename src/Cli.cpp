@@ -57,6 +57,10 @@ const std::vector<std::string> & UEMeta::Config::AdditionalClangArgs() const {
     return additional_clang_args;
 }
 
+const std::vector<std::string> & UEMeta::Config::StripArgs() const {
+    return strip_args;
+}
+
 UEMeta::Config& UEMeta::Config::GetConfig() {
     static Config config{};
     return config;
@@ -158,6 +162,13 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         "if --parse-as-linux is specified.")
         ->check(CLI::ExistingFile)->excludes(opt_parse_as_linux);
 
+    app.add_option("--skip-loaded-args", cfg.strip_args,
+        "Additional compile arguments to strip out of the compiler arguments loaded from compile_commands.json.\n"
+        "PCH-related arguments are stripped out by necessity.\n"
+        "For compiler arguments that have arguments themselves, you can append '{num_args}' to the argument to also strip"
+        "out the next num_args tokens. So, '/I{1}' would strip out any instances of the /I argument followed by the"
+        "token immediately after. Argument stripping happens before --additional-clang-args are appended.");
+
     app.add_option("--additional-clang-args", cfg.additional_clang_args,
         "Additional arguments to pass to the clang executable.");
 
@@ -189,6 +200,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
             std::format("Resolved clang path '{}' is not a file!", cfg.clang_path.string()),
             CLI::ExitCodes::FileError});
     }
+
+    cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
 
     std::cout << "Using config:\n" << cfg << std::endl;
 
