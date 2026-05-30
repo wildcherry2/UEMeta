@@ -70,9 +70,11 @@ namespace UEMeta {
         StablePath clang_path{};
         bool no_cl = false;
         FileSplitStrategy split_strategy{FileSplitStrategy::Default};
-        std::vector<StablePath> pd_paths{};
+        std::vector<StablePath> pd_paths{}; //replace with set?
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
+        std::vector<std::string> path_delimiters{{"Unreal", "UnrealEngine"}}; //replace with set?
+        std::vector<std::string> path_blacklist{}; //replace with set?
 
         std::atomic_flag initialized{};
     };

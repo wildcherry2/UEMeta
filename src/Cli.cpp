@@ -192,6 +192,18 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.add_option("--additional-clang-args", cfg.additional_clang_args,
         "Additional arguments to pass to the clang executable.");
 
+    app.add_option("--path-delimiters", cfg.path_delimiters,
+        "Highest level roots allowed in paths in generated JSON files. "
+        "If a path delimiter is found in a path in the JSON output, every directory/file above it is stripped from the path"
+        "string. If multiple delimiters are found, the most specific root is chosen. "
+        "This is for protecting PII when releasing JSONs publicly."
+        "Defaults: 'Unreal', 'UnrealEngine', 'MetadataHarness' (forced)");
+
+    app.add_option("--path-blacklist", cfg.path_blacklist,
+        "Substrings to strip in paths in generated JSON files."
+        "Found substrings will be replaced with the string 'blacklist'. "
+        "This is for protecting PII when releasing JSONs publicly.");
+
     try {
         app.parse(argc, argv);
     } catch (const CLI::CallForHelp& ex) {
@@ -277,7 +289,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     }
 
     cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
-
+    cfg.path_delimiters.emplace_back("MetadataHarness");
     cfg.initialized.test_and_set();
 
     std::cout << "Using config:\n" << cfg << std::endl;
