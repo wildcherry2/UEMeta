@@ -4,6 +4,10 @@
 #include <utility>
 #include "UEMeta/Cli.hpp"
 #include "CLI/CLI.hpp"
+#include "quill/Backend.h"
+#include "quill/Frontend.h"
+#include "quill/sinks/ConsoleSink.h"
+#include "quill/sinks/FileSink.h"
 
 std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
     {"Default", UEMeta::FileSplitStrategy::Default},
@@ -50,34 +54,42 @@ std::string ValidateFile(const std::string& path, const std::string& assertFileN
 }
 
 const UEMeta::StablePath& UEMeta::Config::CppPath() const {
+    AssertInitialized();
     return cpp_path;
 }
 
 const UEMeta::StablePath& UEMeta::Config::CcPath() const {
+    AssertInitialized();
     return cc_path;
 }
 
 const UEMeta::StablePath& UEMeta::Config::OutPath() const {
+    AssertInitialized();
     return out_path;
 }
 
 const UEMeta::FileSplitStrategy& UEMeta::Config::SplitStrategy() const {
+    AssertInitialized();
     return split_strategy;
 }
 
 const std::vector<UEMeta::StablePath>& UEMeta::Config::PdPaths() const {
+    AssertInitialized();
     return pd_paths;
 }
 
 const UEMeta::StablePath & UEMeta::Config::ClangPath() const {
+    AssertInitialized();
     return clang_path;
 }
 
 const std::vector<std::string> & UEMeta::Config::AdditionalClangArgs() const {
+    AssertInitialized();
     return additional_clang_args;
 }
 
 const std::vector<std::string> & UEMeta::Config::StripArgs() const {
+    AssertInitialized();
     return strip_args;
 }
 
@@ -86,8 +98,17 @@ UEMeta::Config& UEMeta::Config::GetConfig() {
     return config;
 }
 
+void UEMeta::Config::AssertInitialized() const {
+    if (initialized.test()) return;
+    throw std::runtime_error("Tried to use Config before it was initialized!");
+}
+
 int UEMeta::Config::Initialize(int argc, char **argv) {
     auto& cfg = GetConfig();
+    if (cfg.initialized.test()) {
+        UEM_WARN("Tried to initialize an already initialized Config!");
+        return 0;
+    }
 
     CLI::App app{"Dumps a simplified AST of a translation unit in an Unreal project.", "UEMeta"};
     app.allow_windows_style_options();
@@ -257,7 +278,53 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
 
+    cfg.initialized.test_and_set();
+
     std::cout << "Using config:\n" << cfg << std::endl;
+    return 0;
+}
+
+quill::Logger* UEMeta::Logger::GetQuill() const {
+    AssertInitialized();
+    return logger;
+}
+
+bool UEMeta::Logger::IsInitialized() const {
+    return !!logger;
+}
+
+UEMeta::Logger& UEMeta::Logger::GetLogger() {
+    static Logger logger{};
+    return logger;
+}
+
+void UEMeta::Logger::AssertInitialized() const {
+    if (logger) return;
+    throw std::runtime_error{"Tried to use Logger before it was initialized!."};
+}
+
+int UEMeta::Logger::Initialize() {
+    try {
+        auto& logger = GetLogger();
+
+        quill::Backend::start();
+        quill::FileSinkConfig file_sink_config{};
+        file_sink_config.set_filename_append_option(quill::FilenameAppendOption::StartDateTime);
+        auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console_main");
+        auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>("uemeta.log", file_sink_config);
+
+        if (!console_sink || !file_sink)  return -1;
+
+        logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink), std::move(file_sink)});
+
+        if (!logger.logger)  return -1;
+    } catch (const std::exception& ex) {
+        std::cerr << std::format("Failed to initialize logger with exception: {}", ex.what()) << std::endl;
+        return -1;
+    } catch (...) {
+        std::cerr << std::format("Failed to initialize logger with unknown exception") << std::endl;
+        return -1;
+    }
 
     return 0;
 }

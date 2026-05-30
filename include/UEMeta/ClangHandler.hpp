@@ -10,6 +10,7 @@
 
 // todo pretty logging?
 // todo strip pii from jsons?
+// todo rename configure presets to have 'configure' in the name
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:

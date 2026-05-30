@@ -7,6 +7,10 @@
 
 int main(int argc, char** argv) {
     try {
+        if (const auto log_init_result = UEMeta::Logger::Initialize()) {
+            return log_init_result;
+        }
+
         if (const auto cfg_init_result = UEMeta::Config::Initialize(argc, argv)) {
             return cfg_init_result;
         }
@@ -16,22 +20,32 @@ int main(int argc, char** argv) {
 
         switch (tool->clang_tool.run(clang::tooling::newFrontendActionFactory<UEMeta::ClangHandler>().get())) {
             case 0: {
-                std::cout << "Successfully ran tool!" << std::endl;
+                UEM_INFO("Successfully ran tool!");
                 return 0;
             }
             case 1: {
-                std::cout << "Failed to run tool!" << std::endl;
+                UEM_ERROR("Failed to run tool!");
                 return -1;
             }
             default: {
-                std::cout << "Ran tool on subset of files due to missing compile commands!" << std::endl;
+                UEM_WARN("Ran tool on subset of files due to missing compile commands!");
             }
         }
     } catch (std::exception& ex) {
-        std::cerr << std::format("Exception occurred: {}", ex.what()) << std::endl;
+        if (UEMeta::Logger::GetLogger().IsInitialized()) {
+            UEM_ERROR("Exception occurred: {}", ex.what());
+        }
+        else {
+            std::cerr << "Exception occurred:" << ex.what() << std::endl;
+        }
         return -1;
     } catch (...) {
-        std::cerr << std::format("Unknown exception occurred!") << std::endl;
+        if (UEMeta::Logger::GetLogger().IsInitialized()) {
+            UEM_ERROR("Unknown exception occurred!");
+        }
+        else {
+            std::cerr << "Unknown exception occurred!" << std::endl;
+        }
         return -1;
     }
     return 0;

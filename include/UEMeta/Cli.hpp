@@ -3,6 +3,10 @@
 #include <ostream>
 #include <string>
 #include <vector>
+#include <atomic>
+
+#include "quill/Logger.h"
+#include "quill/LogMacros.h"
 
 #include "UEMeta/StablePath.hpp"
 
@@ -49,10 +53,17 @@ namespace UEMeta {
         }
 
         static Config& GetConfig();
+
+        Config(const Config& Other) = delete;
+        Config(Config&& Other) noexcept = delete;
+        Config& operator=(const Config& Other) = delete;
+        Config& operator=(Config&& Other) noexcept = delete;
+
     private:
         friend int ::main(int argc, char** argv);
         Config() = default;
 
+        void AssertInitialized() const;
         static int Initialize(int argc, char** argv);
 
         StablePath cpp_path{}, cc_path{}, out_path{};
@@ -62,5 +73,34 @@ namespace UEMeta {
         std::vector<StablePath> pd_paths{};
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
+
+        std::atomic_flag initialized{};
+    };
+
+    class Logger {
+    public:
+        [[nodiscard]] quill::Logger* GetQuill() const;
+        [[nodiscard]] bool IsInitialized() const;
+
+        static Logger& GetLogger();
+
+        Logger(const Logger& Other) = delete;
+        Logger(Logger&& Other) noexcept = delete;
+        Logger& operator=(const Logger& Other) = delete;
+        Logger& operator=(Logger&& Other) noexcept = delete;
+
+    private:
+        friend int ::main(int argc, char** argv);
+        Logger() = default;
+
+        void AssertInitialized() const;
+        static int Initialize();
+
+        quill::Logger* logger{};
     };
 }
+
+#define UEM_INFO(fmt, ...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_WARN(fmt, ...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_DEBUG(fmt, ...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_ERROR(fmt, ...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)

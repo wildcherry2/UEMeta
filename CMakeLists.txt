@@ -60,6 +60,11 @@ set(UEMETA_CLI11_GIT_TAG
     "37bb6edc5317e99af72ef48405e65d9ca5218861"
     CACHE STRING "CLI11 Git commit fetched by CMake"
 )
+set(UEMETA_QUILL_VERSION "11.1.0" CACHE STRING "Quill release fetched by CMake")
+set(UEMETA_QUILL_GIT_TAG
+    "v11.1.0"
+    CACHE STRING "Quill Git tag fetched by CMake"
+)
 set(UEMETA_MSVC_DISABLED_WARNINGS
     /wd4100 # unreferenced formal parameter
     /wd4244 # conversion, possible loss of data
@@ -90,6 +95,13 @@ FetchContent_Declare(cli11
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/cli11-${UEMETA_CLI11_VERSION}"
 )
 
+FetchContent_Declare(quill
+    GIT_REPOSITORY https://github.com/odygrd/quill.git
+    GIT_TAG "${UEMETA_QUILL_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
+)
+
 function(UEMeta_FetchContent_MakeAvailable name)
     string(TOLOWER "${name}" name_lc)
     FetchContent_GetProperties(${name})
@@ -109,6 +121,7 @@ endfunction()
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(glaze)
 UEMeta_FetchContent_MakeAvailable(cli11)
+UEMeta_FetchContent_MakeAvailable(quill)
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
@@ -206,6 +219,7 @@ target_link_libraries(uemeta PRIVATE
     clangASTMatchers
     glaze::glaze
     CLI11::CLI11
+    quill::quill
 )
 
 set(UEMETA_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/UEMeta")
