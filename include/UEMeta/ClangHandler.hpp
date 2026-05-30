@@ -8,8 +8,10 @@
 
 #include "UEMeta/JsonBuilders.hpp"
 
-// use multiple jsons for multithreading purposes?
 //todo add include order to json
+// todo use faster json writing library
+// todo pretty logging?
+// strip pii from jsons?
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:
@@ -32,9 +34,6 @@ namespace UEMeta {
         bool VisitTypeAliasDecl(clang::TypeAliasDecl* decl);
         bool VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* decl);
 
-        // using namespace statements
-        //bool VisitUsingDirectiveDecl(clang::UsingDirectiveDecl* decl);
-
         // variable declarations (global, field, code, etc)
         bool VisitVarDecl(clang::VarDecl* decl);
         bool VisitVarTemplateDecl(clang::VarTemplateDecl* decl);
@@ -47,6 +46,7 @@ namespace UEMeta {
 
         clang::ASTContext* context{};
         std::vector<JsonDeclaration> declarations{};
+        std::vector<std::string> include_order{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
     };
 }

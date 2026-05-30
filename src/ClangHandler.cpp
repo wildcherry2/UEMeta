@@ -17,8 +17,12 @@
 #include <clang/AST/RecordLayout.h>
 #include <clang/AST/VTableBuilder.h>
 #include <clang/Basic/ExceptionSpecificationType.h>
+#include <clang/Basic/FileEntry.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Basic/Specifiers.h>
+#include <clang/Frontend/CompilerInstance.h>
+#include <clang/Lex/PPCallbacks.h>
+#include <clang/Lex/Preprocessor.h>
 #include <llvm/ADT/APSInt.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/Casting.h>
@@ -855,6 +859,50 @@ namespace {
         out << *view;
         return true;
     }
+
+    bool WriteStringArrayJsonFile(const UEMeta::StablePath& path, const std::vector<std::string>& values) {
+        simdjson::builder::string_builder builder{std::max<std::size_t>(1024, values.size() * 256)};
+
+        builder.start_array();
+        bool needs_comma = false;
+        for (const auto& value : values) {
+            if (needs_comma) {
+                builder.append_comma();
+            }
+            builder.append(value);
+            needs_comma = true;
+        }
+        builder.end_array();
+
+        if (!builder.validate_unicode()) {
+            std::cerr << std::format("(simdjson) Refusing to write non-UTF8 JSON to \"{}\"", path.string()) << std::endl;
+            return false;
+        }
+
+        auto view = builder.view();
+        if (view.error()) {
+            std::cerr << std::format("(simdjson) Failed to build JSON for \"{}\" with error: {}",
+                                     path.string(), static_cast<int>(view.error())) << std::endl;
+            return false;
+        }
+
+        std::error_code ec;
+        std::filesystem::create_directories(path.UnderlyingPath().parent_path(), ec);
+        if (ec) {
+            std::cerr << std::format("(fs) Failed to create output directory \"{}\": {}",
+                                     path.UnderlyingPath().parent_path().string(), ec.message()) << std::endl;
+            return false;
+        }
+
+        std::ofstream out{path.UnderlyingPath(), std::ios::binary | std::ios::trunc};
+        if (!out) {
+            std::cerr << std::format("(fs) Failed to open output JSON \"{}\"", path.string()) << std::endl;
+            return false;
+        }
+
+        out << *view;
+        return true;
+    }
 }
 
 bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; }
@@ -868,6 +916,9 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 }
 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
+    WriteStringArrayJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"),
+                             include_order);
+
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {
             WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"), declarations);
@@ -1025,8 +1076,8 @@ bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl* decl) {
 
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
                                                                             llvm::StringRef file) {
-    (void)compiler;
     (void)file;
+    include_order.clear();
 
     class Consumer : public clang::ASTConsumer {
     public:
@@ -1042,5 +1093,29 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         ClangHandler* owner;
     };
 
+    class IncludeOrderCallback : public clang::PPCallbacks {
+    public:
+        explicit IncludeOrderCallback(ClangHandler* owner) : owner(owner) {}
+
+        void InclusionDirective(clang::SourceLocation, const clang::Token&, llvm::StringRef,
+                                bool, clang::CharSourceRange, clang::OptionalFileEntryRef included_file,
+                                llvm::StringRef, llvm::StringRef, const clang::Module*,
+                                bool, clang::SrcMgr::CharacteristicKind) override {
+            if (!included_file) {
+                return;
+            }
+
+            auto path = included_file->getFileEntry().tryGetRealPathName();
+            if (path.empty()) {
+                path = included_file->getName();
+            }
+            owner->include_order.push_back(StablePathString(path.str()));
+        }
+
+    private:
+        ClangHandler* owner;
+    };
+
+    compiler.getPreprocessor().addPPCallbacks(std::make_unique<IncludeOrderCallback>(this));
     return std::make_unique<Consumer>(this);
 }
