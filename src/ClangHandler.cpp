@@ -25,6 +25,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include "UEMeta/Cli.hpp"
+#include "UEMeta/StablePath.hpp"
 
 namespace {
     clang::PrintingPolicy MakePrintingPolicy(const clang::ASTContext& ctx) {
@@ -219,21 +220,13 @@ namespace {
         return location.isInvalid() || source_manager.isInSystemHeader(location);
     }
 
-    std::filesystem::path NormalizePath(std::filesystem::path path) {
+    UEMeta::StablePath MakeStablePath(const std::filesystem::path& path) {
         std::error_code ec;
-        auto normalized = std::filesystem::weakly_canonical(path, ec);
-        if (ec) {
-            ec.clear();
-            normalized = std::filesystem::absolute(path, ec);
-        }
+        return UEMeta::StablePath{path, ec};
+    }
 
-        if (ec) {
-            normalized = std::move(path);
-        }
-
-        normalized = normalized.lexically_normal();
-        normalized.make_preferred();
-        return normalized;
+    std::string StablePathString(const std::filesystem::path& path) {
+        return MakeStablePath(path).string();
     }
 
     std::string DeclFilePath(const clang::Decl* decl, const clang::ASTContext& ctx) {
@@ -248,11 +241,11 @@ namespace {
         }
 
         if (const auto presumed = source_manager.getPresumedLoc(location); presumed.isValid()) {
-            return NormalizePath(presumed.getFilename()).string();
+            return StablePathString(presumed.getFilename());
         }
 
         if (auto file_entry = source_manager.getFileEntryRefForID(source_manager.getFileID(location))) {
-            return NormalizePath(file_entry->getName().str()).string();
+            return StablePathString(file_entry->getName().str());
         }
 
         return "";
@@ -796,14 +789,15 @@ namespace {
         return out;
     }
 
-    std::filesystem::path OutputFileForKey(const std::string& label, const std::string& key) {
+    UEMeta::StablePath OutputFileForKey(const std::string& label, const std::string& key) {
         const auto stem = SanitizeFileStem(label);
-        return UEMeta::Config::GetConfig().OutPath() /
-               std::format("{}-{:016x}.json", stem, StableHash(key));
+        return MakeStablePath(
+            UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
+            std::format("{}-{:016x}.json", stem, StableHash(key)));
     }
 
     std::string ParentDirectoryGroup(const std::string& file) {
-        const auto file_path = NormalizePath(file);
+        const auto file_path = MakeStablePath(file);
         const auto file_string = file_path.string();
         auto lowercase_file = file_string;
         std::ranges::transform(lowercase_file, lowercase_file.begin(), [](const unsigned char character) {
@@ -811,8 +805,7 @@ namespace {
         });
 
         for (const auto& configured_parent : UEMeta::Config::GetConfig().PdPaths()) {
-            const auto parent_path = NormalizePath(configured_parent);
-            auto parent_string = parent_path.string();
+            auto parent_string = configured_parent.string();
             std::ranges::transform(parent_string, parent_string.begin(), [](const unsigned char character) {
                 return static_cast<char>(std::tolower(character));
             });
@@ -822,14 +815,14 @@ namespace {
             }
 
             if (lowercase_file.starts_with(parent_string)) {
-                return parent_path.string();
+                return configured_parent.string();
             }
         }
 
         return file;
     }
 
-    bool WriteJsonFile(const std::filesystem::path& path, const std::vector<UEMeta::JsonDeclaration>& declarations) {
+    bool WriteJsonFile(const UEMeta::StablePath& path, const std::vector<UEMeta::JsonDeclaration>& declarations) {
         simdjson::builder::string_builder builder{std::max<std::size_t>(1024, declarations.size() * 1024)};
         UEMeta::AppendDeclarationArray(builder, declarations);
 
@@ -846,14 +839,14 @@ namespace {
         }
 
         std::error_code ec;
-        std::filesystem::create_directories(path.parent_path(), ec);
+        std::filesystem::create_directories(path.UnderlyingPath().parent_path(), ec);
         if (ec) {
             std::cerr << std::format("(fs) Failed to create output directory \"{}\": {}",
-                                     path.parent_path().string(), ec.message()) << std::endl;
+                                     path.UnderlyingPath().parent_path().string(), ec.message()) << std::endl;
             return false;
         }
 
-        std::ofstream out{path, std::ios::binary | std::ios::trunc};
+        std::ofstream out{path.UnderlyingPath(), std::ios::binary | std::ios::trunc};
         if (!out) {
             std::cerr << std::format("(fs) Failed to open output JSON \"{}\"", path.string()) << std::endl;
             return false;
@@ -877,7 +870,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {
-            WriteJsonFile(Config::GetConfig().OutPath() / "uemeta.json", declarations);
+            WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"), declarations);
             break;
         }
         case FileSplitStrategy::ByClass: {

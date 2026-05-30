@@ -1,7 +1,10 @@
 #pragma once
 #include <filesystem>
 #include <ostream>
+#include <string>
 #include <vector>
+
+#include "UEMeta/StablePath.hpp"
 
 #ifdef WIN32
 #define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl.exe"
@@ -26,12 +29,12 @@ namespace UEMeta {
 
     class Config {
     public:
-        [[nodiscard]] const std::filesystem::path& CppPath() const;
-        [[nodiscard]] const std::filesystem::path& CcPath() const;
-        [[nodiscard]] const std::filesystem::path& OutPath() const;
+        [[nodiscard]] const StablePath& CppPath() const;
+        [[nodiscard]] const StablePath& CcPath() const;
+        [[nodiscard]] const StablePath& OutPath() const;
         [[nodiscard]] const FileSplitStrategy& SplitStrategy() const;
-        [[nodiscard]] const std::vector<std::filesystem::path>& PdPaths() const;
-        [[nodiscard]] const std::filesystem::path& ClangPath() const;
+        [[nodiscard]] const std::vector<StablePath>& PdPaths() const;
+        [[nodiscard]] const StablePath& ClangPath() const;
         [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
         [[nodiscard]] const std::vector<std::string>& StripArgs() const;
 
@@ -52,11 +55,11 @@ namespace UEMeta {
 
         static int Initialize(int argc, char** argv);
 
-        std::filesystem::path cpp_path{}, cc_path{}, out_path{};
-        std::filesystem::path clang_path{};
+        StablePath cpp_path{}, cc_path{}, out_path{};
+        StablePath clang_path{};
         bool no_cl = false;
         FileSplitStrategy split_strategy{FileSplitStrategy::Default};
-        std::vector<std::filesystem::path> pd_paths{};
+        std::vector<StablePath> pd_paths{};
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
     };

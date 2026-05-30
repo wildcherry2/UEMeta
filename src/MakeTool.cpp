@@ -2,36 +2,19 @@
 #include <clang/Tooling/ArgumentsAdjusters.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <simdjson.h>
-#include <iostream>
+#include <compare>
 #include <format>
+#include <iostream>
 
 #include "UEMeta/MakeTool.hpp"
 #include "UEMeta/Cli.hpp"
 
 using namespace clang::tooling;
 
-static bool SameFile(const std::string_view candidate, const std::filesystem::path& target) { //todo simplify, or expand by transforming into absolute paths
+static bool SameFile(const std::string_view candidate, const UEMeta::StablePath& target) {
     std::error_code ec;
-    if (std::filesystem::equivalent(std::filesystem::path{candidate}, target, ec)) {
-        return true;
-    }
-
-    const auto normalize = [](std::filesystem::path path) {
-        std::error_code normalize_ec;
-        auto normalized = std::filesystem::weakly_canonical(path, normalize_ec);
-        if (normalize_ec) {
-            normalize_ec.clear();
-            normalized = std::filesystem::absolute(path, normalize_ec);
-        }
-        if (normalize_ec) {
-            normalized = std::move(path);
-        }
-        normalized = normalized.lexically_normal();
-        normalized.make_preferred();
-        return normalized;
-    };
-
-    return normalize(std::filesystem::path{candidate}) == normalize(target);
+    const UEMeta::StablePath candidate_path{candidate, ec};
+    return !ec && std::is_eq(candidate_path <=> target);
 }
 
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
