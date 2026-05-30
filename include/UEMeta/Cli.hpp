@@ -18,7 +18,7 @@
 #define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
 #endif
 
-#define UEM_DEFAULT_STRIP_LIST std::vector{{"/Yu", "/Fp", "/experimental:log{1}"}}
+#define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
 
 int main(int argc, char** argv);
 
@@ -41,15 +41,18 @@ namespace UEMeta {
         [[nodiscard]] const StablePath& ClangPath() const;
         [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
         [[nodiscard]] const std::vector<std::string>& StripArgs() const;
+        [[nodiscard]] const std::vector<std::string>& PathDelimiters() const;
+        [[nodiscard]] const std::vector<std::string>& PathBlacklist() const;
 
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             std::vector<std::string> pd_paths{};
             for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
             return os << std::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
                                      "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}\n"
-                                     "strip_args={}",
+                                     "strip_args={}\npath_delimiters={}\npath_blacklist{}",
                 obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(), static_cast<int>(obj.split_strategy),
-                obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args, obj.strip_args);
+                obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args, obj.strip_args, obj.path_delimiters,
+                obj.path_blacklist);
         }
 
         static Config& GetConfig();
@@ -73,7 +76,7 @@ namespace UEMeta {
         std::vector<StablePath> pd_paths{}; //replace with set?
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
-        std::vector<std::string> path_delimiters{{"Unreal", "UnrealEngine"}}; //replace with set?
+        std::vector<std::string> path_delimiters{"Unreal", "UnrealEngine"}; //replace with set?
         std::vector<std::string> path_blacklist{}; //replace with set?
 
         std::atomic_flag initialized{};

@@ -11,6 +11,10 @@
 // todo pretty logging?
 // todo strip pii from jsons?
 // todo validate field alignment/offset being respected
+// todo more exception handling
+// todo progress bar?
+// todo selective regeneration based on hashes?
+// todo per file include order?
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:

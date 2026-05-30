@@ -856,6 +856,15 @@ namespace {
 
         return WriteJsonTextFile(path, json);
     }
+
+    std::vector<std::string> ScrubFilePaths(const std::vector<std::string>& paths) {
+        std::vector<std::string> out;
+        out.reserve(paths.size());
+        for (const auto& path : paths) {
+            out.push_back(UEMeta::JsonDetail::ScrubFilePath(path));
+        }
+        return out;
+    }
 }
 
 bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; }
@@ -869,7 +878,8 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 }
 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
-    WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), include_order);
+    const auto scrubbed_include_order = ScrubFilePaths(include_order);
+    WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), scrubbed_include_order);
 
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {

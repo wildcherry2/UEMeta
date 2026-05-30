@@ -10,6 +10,8 @@
 
 #include <glaze/glaze.hpp>
 
+#include "Cli.hpp"
+
 namespace UEMeta {
     /**
      * @brief JSON representation of one C++ template parameter declaration.
@@ -971,6 +973,69 @@ namespace UEMeta {
             return true;
         }
 
+        inline std::string ScrubFilePath(const std::string_view file) noexcept {
+            std::string original_file;
+            try {
+                original_file = std::string{file};
+                std::string out_file = original_file;
+                const auto& delimiters = Config::GetConfig().PathDelimiters();
+                const auto& blacklist = Config::GetConfig().PathBlacklist();
+                bool changed = false;
+
+                if (!delimiters.empty()) {
+                    size_t highest_delim = std::string::npos;
+                    for (const auto& delimiter : delimiters) {
+                        if (delimiter.empty()) {
+                            continue;
+                        }
+
+                        const auto delim_loc = out_file.rfind(delimiter);
+                        if (delim_loc != std::string::npos &&
+                            (highest_delim == std::string::npos || delim_loc > highest_delim)) {
+                            highest_delim = delim_loc;
+                        }
+                    }
+                    if (highest_delim != std::string::npos) {
+                        out_file = out_file.substr(highest_delim);
+                        changed = true;
+                    }
+                }
+
+                if (!blacklist.empty()) {
+                    constexpr std::string_view replacement = "removed";
+
+                    for (const auto& token : blacklist) {
+                        if (token.empty()) {
+                            continue;
+                        }
+
+                        for (auto begin = out_file.find(token);
+                            begin != std::string::npos;
+                            begin = out_file.find(token, begin + replacement.size())) {
+                            out_file.replace(begin, token.size(), replacement);
+                            changed = true;
+                        }
+                    }
+                }
+
+                if (changed) {
+                    out_file = std::filesystem::path{out_file}.lexically_normal().string();
+                }
+
+                return out_file;
+            } catch (std::exception& ex) {
+                UEM_ERROR("Error scrubbing file {}: '{}', will replace with empty string!", original_file, ex.what());
+                return "";
+            } catch (...) {
+                UEM_ERROR("Unknown error scrubbing file {}, will replace with empty string!", original_file);
+                return "";
+            }
+        }
+
+        template<typename T>
+        std::string FileScrubber(const T& object) noexcept {
+            return ScrubFilePath(object.file);
+        }
     }
 }
 
@@ -1038,7 +1103,7 @@ struct glz::meta<UEMeta::JsonFunction> {
         "functionKind", &T::kind,
         "name", &T::name,
         "qualifiedName", &T::qualified_name,
-        "file", &T::file,
+        "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonFunction>>,
         "scope", &T::scope,
         "returnType", &T::return_type,
         "access", &T::access,
@@ -1084,7 +1149,7 @@ struct glz::meta<UEMeta::JsonVariable> {
     static constexpr auto value = object(
         "name", &T::name,
         "qualifiedName", &T::qualified_name,
-        "file", &T::file,
+        "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonVariable>>,
         "scope", &T::scope,
         "type", &T::type,
         "declaration", &T::declaration,
@@ -1115,7 +1180,7 @@ struct glz::meta<UEMeta::JsonEnumerator> {
     static constexpr auto value = object(
         "name", &T::name,
         "value", &T::value,
-        "file", &T::file,
+        "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonEnumerator>>,
         "scope", &T::scope
     );
 };
@@ -1126,7 +1191,7 @@ struct glz::meta<UEMeta::JsonField> {
 
     static constexpr auto value = object(
         "name", &T::name,
-        "file", &T::file,
+        "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonField>>,
         "scope", &T::scope,
         "type", &T::type,
         "declaration", &T::declaration,
@@ -1190,11 +1255,13 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
         auto scope = SpanOf(declaration.scope);
         auto is_anonymous = TrueOnly(declaration.is_anonymous);
         auto template_parameters = NonEmptySpanOf(declaration.template_parameters);
+        // glz::obj stores string-like values as string_view, so keep the scrubbed string alive through serialization.
+        auto file = FileScrubber(declaration);
         auto common = glz::obj{
             "kind", declaration.kind,
             "name", name,
             "qualifiedName", qualified_name,
-            "file", declaration.file,
+            "file", file,
             "scope", scope,
             "isAnonymous", is_anonymous,
             "templateParameters", template_parameters

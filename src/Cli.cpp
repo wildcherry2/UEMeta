@@ -2,6 +2,7 @@
 #include <format>
 #include <string_view>
 #include <utility>
+
 #include "UEMeta/Cli.hpp"
 #include "CLI/CLI.hpp"
 #include "quill/Backend.h"
@@ -78,19 +79,29 @@ const std::vector<UEMeta::StablePath>& UEMeta::Config::PdPaths() const {
     return pd_paths;
 }
 
-const UEMeta::StablePath & UEMeta::Config::ClangPath() const {
+const UEMeta::StablePath& UEMeta::Config::ClangPath() const {
     AssertInitialized();
     return clang_path;
 }
 
-const std::vector<std::string> & UEMeta::Config::AdditionalClangArgs() const {
+const std::vector<std::string>& UEMeta::Config::AdditionalClangArgs() const {
     AssertInitialized();
     return additional_clang_args;
 }
 
-const std::vector<std::string> & UEMeta::Config::StripArgs() const {
+const std::vector<std::string>& UEMeta::Config::StripArgs() const {
     AssertInitialized();
     return strip_args;
+}
+
+const std::vector<std::string>& UEMeta::Config::PathDelimiters() const {
+    AssertInitialized();
+    return path_delimiters;
+}
+
+const std::vector<std::string>& UEMeta::Config::PathBlacklist() const {
+    AssertInitialized();
+    return path_blacklist;
 }
 
 UEMeta::Config& UEMeta::Config::GetConfig() {
@@ -201,7 +212,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     app.add_option("--path-blacklist", cfg.path_blacklist,
         "Substrings to strip in paths in generated JSON files."
-        "Found substrings will be replaced with the string 'blacklist'. "
+        "Found substrings will be replaced with the string 'removed'. "
         "This is for protecting PII when releasing JSONs publicly.");
 
     try {
@@ -282,7 +293,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return app.exit({"NoContentInParentDirectories", async_error, CLI::ExitCodes::FileError});
     }
 
-    if (!ValidateFile(cfg.clang_path.string()).empty()) {
+    if (const auto clang_error = ValidateFile(cfg.clang_path.string()); !clang_error.empty()) {
         return app.exit({"MissingClang",
             std::format("Resolved clang path '{}' is not a file!", cfg.clang_path.string()),
             CLI::ExitCodes::FileError});
