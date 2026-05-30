@@ -10,7 +10,7 @@
 
 using namespace clang::tooling;
 
-static bool SameFile(const std::string_view candidate, const std::filesystem::path& target) { //todo simplify
+static bool SameFile(const std::string_view candidate, const std::filesystem::path& target) { //todo simplify, or expand by transforming into absolute paths
     std::error_code ec;
     if (std::filesystem::equivalent(std::filesystem::path{candidate}, target, ec)) {
         return true;

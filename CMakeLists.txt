@@ -158,7 +158,8 @@ endif()
 
 add_executable(uemeta src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
-        src/MakeTool.cpp)
+        src/MakeTool.cpp
+        src/StablePath.cpp)
 
 add_library(simdjson STATIC "${simdjson_singleheader_SOURCE_DIR}/simdjson.cpp")
 target_include_directories(simdjson PUBLIC "${simdjson_singleheader_SOURCE_DIR}")
