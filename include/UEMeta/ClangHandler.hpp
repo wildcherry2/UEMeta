@@ -9,7 +9,6 @@
 #include "UEMeta/JsonBuilders.hpp"
 
 // todo pretty logging?
-// todo strip pii from jsons?
 // todo validate field alignment/offset being respected
 // todo more exception handling
 // todo progress bar?

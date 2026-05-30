@@ -7,6 +7,7 @@
 
 #include "quill/Logger.h"
 #include "quill/LogMacros.h"
+#include "quill/bundled/fmt/ranges.h"
 
 #include "UEMeta/StablePath.hpp"
 
@@ -47,9 +48,9 @@ namespace UEMeta {
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             std::vector<std::string> pd_paths{};
             for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
-            return os << std::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
+            return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
                                      "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}\n"
-                                     "strip_args={}\npath_delimiters={}\npath_blacklist{}",
+                                     "strip_args={}\npath_delimiters={}\npath_blacklist={}",
                 obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(), static_cast<int>(obj.split_strategy),
                 obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args, obj.strip_args, obj.path_delimiters,
                 obj.path_blacklist);

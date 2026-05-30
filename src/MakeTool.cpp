@@ -3,9 +3,7 @@
 #include <llvm/Support/VirtualFileSystem.h>
 #include <glaze/glaze.hpp>
 #include <compare>
-#include <format>
 #include <fstream>
-#include <iostream>
 #include <iterator>
 #include <optional>
 #include <string_view>
@@ -64,10 +62,10 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
                 const auto skip_count_str = opt->substr(begin_skip_index + 1, opt->length() - 1);
                 try { skip_count = std::stoi(std::string{skip_count_str}); } catch (...) {
                     skip_count = 0;
-                    std::cerr << std::format("Failed to parse skip argument count '{}' from option '{}'", skip_count_str, *opt);
+                    UEM_WARN("Failed to parse skip argument count '{}' from option '{}'", skip_count_str, *opt);
                     continue;
                 }
-                std::cout << std::format("Skipping {} arguments from option {}", skip_count, arg) << std::endl;
+                UEM_INFO("Skipping {} arguments from option {}", skip_count, arg);
             }
             continue;
         }
@@ -84,7 +82,7 @@ static std::string FixupCommand(const std::string& cc_path) {
 
         std::ifstream in{cc_path, std::ios::binary};
         if (!in) {
-            std::cerr << std::format("(fs) Failed to open compile commands at \"{}\"", cc_path) << std::endl;
+            UEM_ERROR("(fs) Failed to open compile commands at \"{}\"", cc_path);
             return "";
         }
 
@@ -92,8 +90,8 @@ static std::string FixupCommand(const std::string& cc_path) {
         std::vector<CompileCommandEntry> entries;
         constexpr auto read_options = glz::opts{.error_on_unknown_keys = false};
         if (const auto error = glz::read<read_options>(entries, json)) {
-            std::cerr << std::format("(glaze) Failed to parse compile commands at \"{}\": {}",
-                                     cc_path, glz::format_error(error, json)) << std::endl;
+            UEM_ERROR("(glaze) Failed to parse compile commands at \"{}\": {}",
+                      cc_path, glz::format_error(error, json));
             return "";
         }
 
@@ -102,14 +100,14 @@ static std::string FixupCommand(const std::string& cc_path) {
                 continue;
 
             if (!entry.command) {
-                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path_string) << std::endl;
+                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path_string);
                 return "";
             }
 
             const auto& command = *entry.command;
             const auto cmd_start = command.find_first_not_of(" \t");
             if (cmd_start == std::string::npos || cmd_start == command.size() - 1) {
-                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
+                UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
                 return "";
             }
 
@@ -117,7 +115,7 @@ static std::string FixupCommand(const std::string& cc_path) {
             if (command[cmd_start] == '\"') {
                 cmd_end = command.find_first_of('\"', cmd_start + 1);
                 if (cmd_end == std::string::npos) {
-                    std::cerr << std::format("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
+                    UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
                     return "";
                 }
                 ++cmd_end;
@@ -126,19 +124,19 @@ static std::string FixupCommand(const std::string& cc_path) {
             }
 
             if (cmd_end == std::string::npos || cmd_end == command.size()) {
-                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
+                UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
                 return "";
             }
             auto keep = command.substr(cmd_end);
             std::string new_command = UEMeta::Config::GetConfig().ClangPath().string() + keep;
 
             if (!entry.directory) {
-                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path_string) << std::endl;
+                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path_string);
                 return "";
             }
 
             if (!entry.output) {
-                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's missing an 'output' field!", cpp_path_string) << std::endl;
+                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing an 'output' field!", cpp_path_string);
                 return "";
             }
 
@@ -153,18 +151,18 @@ static std::string FixupCommand(const std::string& cc_path) {
 
             std::string out;
             if (const auto error = glz::write_json(transformed, out)) {
-                std::cerr << std::format("(glaze) Failed to build transformed compile_commands for file \"{}\": {}",
-                                         cpp_path_string, glz::format_error(error, out)) << std::endl;
+                UEM_ERROR("(glaze) Failed to build transformed compile_commands for file \"{}\": {}",
+                          cpp_path_string, glz::format_error(error, out));
                 return "";
             }
             return out;
         }
 
-        std::cerr << "(glaze) Failed to find matching entry in compile_commands.json for file " << cpp_path_string << std::endl;
+        UEM_ERROR("(glaze) Failed to find matching entry in compile_commands.json for file {}", cpp_path_string);
     } catch (std::exception& ex) {
-        std::cerr << std::format("(glaze) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what()) << std::endl;
+        UEM_ERROR("(glaze) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what());
     } catch (...) {
-        std::cerr << std::format("(glaze) Failed to load compile commands at \"{}\" with unknown error!", cc_path) << std::endl;
+        UEM_ERROR("(glaze) Failed to load compile commands at \"{}\" with unknown error!", cc_path);
     }
     return "";
 }
@@ -175,17 +173,17 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
         const auto cc_as_string = FixupCommand(Config::GetConfig().CcPath().string());
 
         if (cc_as_string.empty()) return nullptr;
-        std::cout << "Using compile_commands.json entry as " << cc_as_string << std::endl;
+        UEM_INFO("Using compile_commands.json entry as {}", cc_as_string);
 
         std::unique_ptr<JSONCompilationDatabase> json_db = JSONCompilationDatabase::loadFromBuffer(cc_as_string, error, JSONCommandLineSyntax::AutoDetect);
         if (!json_db) {
-            std::cerr << std::format("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string) << std::endl;
+            UEM_ERROR("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string);
             return nullptr;
         }
 
         std::unique_ptr<CompilationDatabase> db = expandResponseFiles(std::move(json_db), llvm::vfs::getRealFileSystem());
         if (!db) {
-            std::cerr << std::format("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string) << std::endl;
+            UEM_ERROR("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string);
             return nullptr;
         }
 
@@ -201,9 +199,9 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
 
         return tool;
     } catch (std::exception& ex) {
-        std::cerr << std::format("(llvm) Failed to make tools with error: {}", ex.what()) << std::endl;
+        UEM_ERROR("(llvm) Failed to make tools with error: {}", ex.what());
     } catch (...) {
-        std::cerr << std::format("(llvm) Failed to make tools with unknown error!") << std::endl;
+        UEM_ERROR("(llvm) Failed to make tools with unknown error!");
     }
 
     return nullptr;

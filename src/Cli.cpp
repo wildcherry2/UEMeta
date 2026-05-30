@@ -1,5 +1,5 @@
 #include <map>
-#include <format>
+#include <sstream>
 #include <string_view>
 #include <utility>
 
@@ -22,7 +22,7 @@ std::string AssignStablePath(UEMeta::StablePath& out, const std::filesystem::pat
     std::error_code ec{};
     out.Assign(path, ec);
     if (ec) {
-        return std::format("Failed to stabilize {} path \"{}\": {}", label, path.string(), ec.message());
+        return fmtquill::format("Failed to stabilize {} path \"{}\": {}", label, path.string(), ec.message());
     }
     return "";
 }
@@ -35,20 +35,20 @@ std::string ValidateFile(const std::string& path, const std::string& assertFileN
     std::error_code ec{};
     const UEMeta::StablePath temp{std::string_view{path}, ec};
     if (ec) {
-        return std::format("Failed to stabilize file path \"{}\" (OS returned error code {})", path, ec.value());
+        return fmtquill::format("Failed to stabilize file path \"{}\" (OS returned error code {})", path, ec.value());
     }
     if (!temp.Exists(ec)) {
-        return std::format("File \"{}\" not found (OS returned error code {})", path, ec.value());
+        return fmtquill::format("File \"{}\" not found (OS returned error code {})", path, ec.value());
     }
     if (!temp.IsFile(ec)) {
-        return std::format("File \"{}\" is not a regular file (OS returned error code {})", path, ec.value());
+        return fmtquill::format("File \"{}\" is not a regular file (OS returned error code {})", path, ec.value());
     }
     const auto file_size = std::filesystem::file_size(temp.UnderlyingPath(), ec);
     if (ec || !file_size) {
-        return std::format("File \"{}\" is empty (OS returned error code {})", path, ec.value());
+        return fmtquill::format("File \"{}\" is empty (OS returned error code {})", path, ec.value());
     }
     if (!assertFileName.empty() && temp.UnderlyingPath().filename().string() != assertFileName) {
-        return std::format("File \"{}\" is not named \"{}\" (named '{}')!",
+        return fmtquill::format("File \"{}\" is not named \"{}\" (named '{}')!",
             path, assertFileName, temp.UnderlyingPath().filename().string());
     }
     return "";
@@ -172,11 +172,11 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
             }
 
             if (ec) {
-                return std::format("Failed to check output directory existence: {}", ec.message());
+                return fmtquill::format("Failed to check output directory existence: {}", ec.message());
             }
 
             if (!std::filesystem::create_directory(opt, ec)) {
-                return std::format("Failed to create output directory: {}", ec.message());
+                return fmtquill::format("Failed to create output directory: {}", ec.message());
             }
 
             return "";
@@ -223,10 +223,10 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     } catch(const CLI::ParseError& ex) {
         return app.exit(ex);
     } catch (const std::exception& ex) {
-        std::cerr << "CLI parse error: " << ex.what() << std::endl;
+        UEM_ERROR("CLI parse error: {}", ex.what());
         return -1;
     } catch (...) {
-        std::cerr << "Unknown CLI parse error!" << std::endl;
+        UEM_ERROR("Unknown CLI parse error!");
         return -1;
     }
 
@@ -295,7 +295,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     if (const auto clang_error = ValidateFile(cfg.clang_path.string()); !clang_error.empty()) {
         return app.exit({"MissingClang",
-            std::format("Resolved clang path '{}' is not a file!", cfg.clang_path.string()),
+            fmtquill::format("Resolved clang path '{}' is not a file!", cfg.clang_path.string()),
             CLI::ExitCodes::FileError});
     }
 
@@ -303,13 +303,24 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     cfg.path_delimiters.emplace_back("MetadataHarness");
     cfg.initialized.test_and_set();
 
-    std::cout << "Using config:\n" << cfg << std::endl;
+    std::ostringstream config_stream;
+    config_stream << cfg;
+    UEM_INFO("Using config:\n{}", config_stream.str());
     return 0;
 }
 
 quill::Logger* UEMeta::Logger::GetQuill() const {
-    AssertInitialized();
-    return logger;
+    if (logger) return logger;
+    if (auto* fallback_logger = quill::Frontend::get_logger("uemeta_bootstrap")) {
+        return fallback_logger;
+    }
+
+    quill::Backend::start();
+    quill::ConsoleSinkConfig console_sink_config{};
+    console_sink_config.set_stream("stderr");
+    auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>(
+        "uemeta_bootstrap_console", console_sink_config);
+    return quill::Frontend::create_or_get_logger("uemeta_bootstrap", std::move(console_sink));
 }
 
 bool UEMeta::Logger::IsInitialized() const {
@@ -336,16 +347,22 @@ int UEMeta::Logger::Initialize() {
         auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console_main");
         auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>("uemeta.log", file_sink_config);
 
-        if (!console_sink || !file_sink)  return -1;
+        if (!console_sink || !file_sink) {
+            UEM_ERROR("Failed to initialize logger sinks.");
+            return -1;
+        }
 
         logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink), std::move(file_sink)});
 
-        if (!logger.logger)  return -1;
+        if (!logger.logger) {
+            UEM_ERROR("Failed to initialize logger.");
+            return -1;
+        }
     } catch (const std::exception& ex) {
-        std::cerr << std::format("Failed to initialize logger with exception: {}", ex.what()) << std::endl;
+        UEM_ERROR("Failed to initialize logger with exception: {}", ex.what());
         return -1;
     } catch (...) {
-        std::cerr << std::format("Failed to initialize logger with unknown exception") << std::endl;
+        UEM_ERROR("Failed to initialize logger with unknown exception");
         return -1;
     }
 

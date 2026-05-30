@@ -4,9 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
-#include <format>
 #include <fstream>
-#include <iostream>
 #include <map>
 #include <string_view>
 
@@ -797,7 +795,7 @@ namespace {
         const auto stem = SanitizeFileStem(label);
         return MakeStablePath(
             UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
-            std::format("{}-{:016x}.json", stem, StableHash(key)));
+            fmtquill::format("{}-{:016x}.json", stem, StableHash(key)));
     }
 
     std::string ParentDirectoryGroup(const std::string& file) {
@@ -830,14 +828,14 @@ namespace {
         std::error_code ec;
         std::filesystem::create_directories(path.UnderlyingPath().parent_path(), ec);
         if (ec) {
-            std::cerr << std::format("(fs) Failed to create output directory \"{}\": {}",
-                                     path.UnderlyingPath().parent_path().string(), ec.message()) << std::endl;
+            UEM_ERROR("(fs) Failed to create output directory \"{}\": {}",
+                      path.UnderlyingPath().parent_path().string(), ec.message());
             return false;
         }
 
         std::ofstream out{path.UnderlyingPath(), std::ios::binary | std::ios::trunc};
         if (!out) {
-            std::cerr << std::format("(fs) Failed to open output JSON \"{}\"", path.string()) << std::endl;
+            UEM_ERROR("(fs) Failed to open output JSON \"{}\"", path.string());
             return false;
         }
 
@@ -849,8 +847,8 @@ namespace {
     bool WriteJsonFile(const UEMeta::StablePath& path, const Value& value) {
         std::string json;
         if (const auto error = glz::write_json(value, json)) {
-            std::cerr << std::format("(glaze) Failed to build JSON for \"{}\": {}",
-                                     path.string(), glz::format_error(error, json)) << std::endl;
+            UEM_ERROR("(glaze) Failed to build JSON for \"{}\": {}",
+                      path.string(), glz::format_error(error, json));
             return false;
         }
 
@@ -890,7 +888,7 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
             std::size_t anonymous_index = 0;
             for (const auto& declaration : declarations) {
                 const auto key = declaration.qualified_name.empty()
-                    ? std::format("{}-anonymous-{}", declaration.kind, anonymous_index++)
+                    ? fmtquill::format("{}-anonymous-{}", declaration.kind, anonymous_index++)
                     : declaration.qualified_name;
                 const auto label = declaration.qualified_name.empty() ? key : declaration.qualified_name;
                 WriteJsonFile(OutputFileForKey(label, key), std::vector{declaration});

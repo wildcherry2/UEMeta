@@ -1,7 +1,14 @@
 #include "UEMeta/StablePath.hpp"
+#include "UEMeta/Cli.hpp"
 
-#include <format>
-#include <iostream>
+namespace {
+    void LogStablePathFailure(const std::filesystem::path& raw_path, const std::string_view error) noexcept {
+        try {
+            UEM_ERROR("Failed to construct stable path for '{}': {}", raw_path.string(), error);
+        } catch (...) {
+        }
+    }
+}
 
 UEMeta::StablePath::StablePath(const std::string_view raw_path, std::error_code& ec) noexcept : StablePath(std::filesystem::path(raw_path), ec) {}
 
@@ -35,11 +42,11 @@ void UEMeta::StablePath::Assign(const std::filesystem::path& raw_path, std::erro
     } catch (std::exception& e) {
         ec.clear();
         ec.assign(1, std::generic_category());
-        std::cerr << std::format("Failed to construct stable path for '{}': {}", raw_path.string(), e.what());
+        LogStablePathFailure(raw_path, e.what());
     } catch (...) {
         ec.clear();
         ec.assign(1, std::generic_category());
-        std::cerr << std::format("Failed to construct stable path for '{}': unknown exception!", raw_path.string());
+        LogStablePathFailure(raw_path, "unknown exception!");
     }
 }
 

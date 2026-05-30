@@ -2,9 +2,6 @@
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/MakeTool.hpp"
 
-#include <format>
-#include <iostream>
-
 int main(int argc, char** argv) {
     try {
         if (const auto log_init_result = UEMeta::Logger::Initialize()) {
@@ -32,20 +29,10 @@ int main(int argc, char** argv) {
             }
         }
     } catch (std::exception& ex) {
-        if (UEMeta::Logger::GetLogger().IsInitialized()) {
-            UEM_ERROR("Exception occurred: {}", ex.what());
-        }
-        else {
-            std::cerr << "Exception occurred:" << ex.what() << std::endl;
-        }
+        UEM_ERROR("Exception occurred: {}", ex.what());
         return -1;
     } catch (...) {
-        if (UEMeta::Logger::GetLogger().IsInitialized()) {
-            UEM_ERROR("Unknown exception occurred!");
-        }
-        else {
-            std::cerr << "Unknown exception occurred!" << std::endl;
-        }
+        UEM_ERROR("Unknown exception occurred!");
         return -1;
     }
     return 0;
