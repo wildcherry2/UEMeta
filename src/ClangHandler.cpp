@@ -826,22 +826,7 @@ namespace {
         return file;
     }
 
-    bool WriteJsonFile(const UEMeta::StablePath& path, const std::vector<UEMeta::JsonDeclaration>& declarations) {
-        simdjson::builder::string_builder builder{std::max<std::size_t>(1024, declarations.size() * 1024)};
-        UEMeta::AppendDeclarationArray(builder, declarations);
-
-        if (!builder.validate_unicode()) {
-            std::cerr << std::format("(simdjson) Refusing to write non-UTF8 JSON to \"{}\"", path.string()) << std::endl;
-            return false;
-        }
-
-        auto view = builder.view();
-        if (view.error()) {
-            std::cerr << std::format("(simdjson) Failed to build JSON for \"{}\" with error: {}",
-                                     path.string(), static_cast<int>(view.error())) << std::endl;
-            return false;
-        }
-
+    bool WriteJsonTextFile(const UEMeta::StablePath& path, const std::string& json) {
         std::error_code ec;
         std::filesystem::create_directories(path.UnderlyingPath().parent_path(), ec);
         if (ec) {
@@ -856,52 +841,20 @@ namespace {
             return false;
         }
 
-        out << *view;
+        out << json;
         return true;
     }
 
-    bool WriteStringArrayJsonFile(const UEMeta::StablePath& path, const std::vector<std::string>& values) {
-        simdjson::builder::string_builder builder{std::max<std::size_t>(1024, values.size() * 256)};
-
-        builder.start_array();
-        bool needs_comma = false;
-        for (const auto& value : values) {
-            if (needs_comma) {
-                builder.append_comma();
-            }
-            builder.append(value);
-            needs_comma = true;
-        }
-        builder.end_array();
-
-        if (!builder.validate_unicode()) {
-            std::cerr << std::format("(simdjson) Refusing to write non-UTF8 JSON to \"{}\"", path.string()) << std::endl;
+    template <typename Value>
+    bool WriteJsonFile(const UEMeta::StablePath& path, const Value& value) {
+        std::string json;
+        if (const auto error = glz::write_json(value, json)) {
+            std::cerr << std::format("(glaze) Failed to build JSON for \"{}\": {}",
+                                     path.string(), glz::format_error(error, json)) << std::endl;
             return false;
         }
 
-        auto view = builder.view();
-        if (view.error()) {
-            std::cerr << std::format("(simdjson) Failed to build JSON for \"{}\" with error: {}",
-                                     path.string(), static_cast<int>(view.error())) << std::endl;
-            return false;
-        }
-
-        std::error_code ec;
-        std::filesystem::create_directories(path.UnderlyingPath().parent_path(), ec);
-        if (ec) {
-            std::cerr << std::format("(fs) Failed to create output directory \"{}\": {}",
-                                     path.UnderlyingPath().parent_path().string(), ec.message()) << std::endl;
-            return false;
-        }
-
-        std::ofstream out{path.UnderlyingPath(), std::ios::binary | std::ios::trunc};
-        if (!out) {
-            std::cerr << std::format("(fs) Failed to open output JSON \"{}\"", path.string()) << std::endl;
-            return false;
-        }
-
-        out << *view;
-        return true;
+        return WriteJsonTextFile(path, json);
     }
 }
 
@@ -916,8 +869,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 }
 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
-    WriteStringArrayJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"),
-                             include_order);
+    WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), include_order);
 
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {

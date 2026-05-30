@@ -2,10 +2,13 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 
-#include <simdjson.h>
+#include <glaze/glaze.hpp>
 
 namespace UEMeta {
     /**
@@ -940,269 +943,371 @@ namespace UEMeta {
         std::string aliased_type;
     };
 
-    template <typename Builder, typename Value>
-    void AppendMember(Builder& builder, bool& needs_comma, const char* key, const Value& value) {
-        if (needs_comma) {
-            builder.append_comma();
+    namespace JsonDetail {
+        template <typename T>
+        std::span<const T> SpanOf(const std::vector<T>& values) noexcept {
+            return {values.data(), values.size()};
         }
-        builder.append_key_value(key, value);
-        needs_comma = true;
-    }
 
-    template <typename Builder>
-    void AppendKey(Builder& builder, bool& needs_comma, const char* key) {
-        if (needs_comma) {
-            builder.append_comma();
-        }
-        builder.escape_and_append_with_quotes(key);
-        builder.append_colon();
-        needs_comma = true;
-    }
-
-    template <typename Builder, typename Range>
-    void AppendArrayMember(Builder& builder, bool& needs_comma, const char* key, const Range& range) {
-        AppendKey(builder, needs_comma, key);
-        builder.start_array();
-
-        bool item_needs_comma = false;
-        for (const auto& item : range) {
-            if (item_needs_comma) {
-                builder.append_comma();
+        template <typename T>
+        std::optional<std::span<const T>> NonEmptySpanOf(const std::vector<T>& values) noexcept {
+            if (values.empty()) {
+                return std::nullopt;
             }
-            builder.append(item);
-            item_needs_comma = true;
+            return SpanOf(values);
         }
 
-        builder.end_array();
-    }
-
-    template <typename Builder, typename Value>
-    void AppendOptionalMember(Builder& builder, bool& needs_comma, const char* key, const std::optional<Value>& value) {
-        if (value) {
-            AppendMember(builder, needs_comma, key, *value);
-        }
-    }
-
-    template <typename Builder>
-    void AppendStringIfNotEmpty(Builder& builder, bool& needs_comma, const char* key, const std::string& value) {
-        if (!value.empty()) {
-            AppendMember(builder, needs_comma, key, value);
-        }
-    }
-
-    template <typename Builder>
-    void AppendBoolIfTrue(Builder& builder, bool& needs_comma, const char* key, bool value) {
-        if (value) {
-            AppendMember(builder, needs_comma, key, value);
-        }
-    }
-
-    template <typename Builder>
-    void AppendTemplateParameters(Builder& builder, bool& needs_comma, const std::vector<JsonTemplateParameter>& parameters) {
-        if (!parameters.empty()) {
-            AppendArrayMember(builder, needs_comma, "templateParameters", parameters);
-        }
-    }
-
-    template <typename Builder>
-    void AppendLocationMembers(Builder& builder, bool& needs_comma, const std::string& file,
-                               const std::vector<std::string>& scope) {
-        AppendMember(builder, needs_comma, "file", file);
-        AppendArrayMember(builder, needs_comma, "scope", scope);
-    }
-
-    template <typename Builder>
-    void AppendFunctionMembers(Builder& builder, bool& needs_comma, const JsonFunction& function,
-                               const bool include_location = true) {
-        AppendMember(builder, needs_comma, "functionKind", function.kind);
-        AppendMember(builder, needs_comma, "name", function.name);
-        AppendStringIfNotEmpty(builder, needs_comma, "qualifiedName", function.qualified_name);
-        if (include_location) {
-            AppendLocationMembers(builder, needs_comma, function.file, function.scope);
-        }
-        AppendStringIfNotEmpty(builder, needs_comma, "returnType", function.return_type);
-        AppendStringIfNotEmpty(builder, needs_comma, "access", function.access);
-        AppendStringIfNotEmpty(builder, needs_comma, "storageClass", function.storage_class);
-        AppendBoolIfTrue(builder, needs_comma, "isConst", function.is_const);
-        AppendBoolIfTrue(builder, needs_comma, "isVolatile", function.is_volatile);
-        AppendBoolIfTrue(builder, needs_comma, "isStatic", function.is_static);
-        AppendBoolIfTrue(builder, needs_comma, "isVirtual", function.is_virtual);
-        AppendBoolIfTrue(builder, needs_comma, "isPure", function.is_pure);
-        AppendBoolIfTrue(builder, needs_comma, "isConstexpr", function.is_constexpr);
-        AppendBoolIfTrue(builder, needs_comma, "isConsteval", function.is_consteval);
-        AppendBoolIfTrue(builder, needs_comma, "isInline", function.is_inline);
-        AppendBoolIfTrue(builder, needs_comma, "isDeleted", function.is_deleted);
-        AppendBoolIfTrue(builder, needs_comma, "isDefaulted", function.is_defaulted);
-        AppendBoolIfTrue(builder, needs_comma, "isExplicit", function.is_explicit);
-        AppendStringIfNotEmpty(builder, needs_comma, "refQualifier", function.ref_qualifier);
-        AppendStringIfNotEmpty(builder, needs_comma, "exceptionSpec", function.exception_spec);
-        AppendTemplateParameters(builder, needs_comma, function.template_parameters);
-        AppendArrayMember(builder, needs_comma, "parameters", function.parameters);
-
-        if (function.vtable_index) {
-            AppendKey(builder, needs_comma, "vtableIndex");
-            builder.append(*function.vtable_index);
-        }
-    }
-
-    template <typename Builder>
-    void AppendVariableMembers(Builder& builder, bool& needs_comma, const JsonVariable& variable,
-                               const bool include_location = true) {
-        AppendMember(builder, needs_comma, "name", variable.name);
-        AppendStringIfNotEmpty(builder, needs_comma, "qualifiedName", variable.qualified_name);
-        if (include_location) {
-            AppendLocationMembers(builder, needs_comma, variable.file, variable.scope);
-        }
-        AppendMember(builder, needs_comma, "type", variable.type);
-        AppendMember(builder, needs_comma, "declaration", variable.declaration);
-        AppendStringIfNotEmpty(builder, needs_comma, "access", variable.access);
-        AppendStringIfNotEmpty(builder, needs_comma, "storageClass", variable.storage_class);
-        AppendBoolIfTrue(builder, needs_comma, "isConstexpr", variable.is_constexpr);
-        AppendBoolIfTrue(builder, needs_comma, "isInline", variable.is_inline);
-        AppendBoolIfTrue(builder, needs_comma, "isStaticDataMember", variable.is_static_data_member);
-        AppendBoolIfTrue(builder, needs_comma, "isThreadLocal", variable.is_thread_local);
-    }
-
-    template <typename Builder>
-    void AppendDeclarationArray(Builder& builder, const std::vector<JsonDeclaration>& declarations) {
-        builder.start_array();
-
-        bool needs_comma = false;
-        for (const auto& declaration : declarations) {
-            if (needs_comma) {
-                builder.append_comma();
+        inline std::optional<std::string_view> NonEmptyString(const std::string& value) noexcept {
+            if (value.empty()) {
+                return std::nullopt;
             }
-            builder.append(declaration);
-            needs_comma = true;
+            return std::string_view{value};
         }
 
-        builder.end_array();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonTemplateParameter& parameter) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendMember(builder, needs_comma, "kind", parameter.kind);
-        AppendStringIfNotEmpty(builder, needs_comma, "name", parameter.name);
-        AppendStringIfNotEmpty(builder, needs_comma, "type", parameter.type);
-        AppendBoolIfTrue(builder, needs_comma, "isParameterPack", parameter.is_parameter_pack);
-        if (!parameter.parameters.empty()) {
-            AppendArrayMember(builder, needs_comma, "parameters", parameter.parameters);
-        }
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonVTableIndex& vtable_index) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendMember(builder, needs_comma, "index", vtable_index.index);
-        AppendMember(builder, needs_comma, "offset", vtable_index.offset);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonParameter& parameter) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendStringIfNotEmpty(builder, needs_comma, "name", parameter.name);
-        AppendMember(builder, needs_comma, "type", parameter.type);
-        AppendMember(builder, needs_comma, "declaration", parameter.declaration);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonFunction& function) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendFunctionMembers(builder, needs_comma, function);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonVariable& variable) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendVariableMembers(builder, needs_comma, variable);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonEnumerator& enumerator) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendMember(builder, needs_comma, "name", enumerator.name);
-        AppendMember(builder, needs_comma, "value", enumerator.value);
-        AppendLocationMembers(builder, needs_comma, enumerator.file, enumerator.scope);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonField& field) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendStringIfNotEmpty(builder, needs_comma, "name", field.name);
-        AppendLocationMembers(builder, needs_comma, field.file, field.scope);
-        AppendMember(builder, needs_comma, "type", field.type);
-        AppendMember(builder, needs_comma, "declaration", field.declaration);
-        AppendStringIfNotEmpty(builder, needs_comma, "access", field.access);
-        AppendBoolIfTrue(builder, needs_comma, "isMutable", field.is_mutable);
-        AppendBoolIfTrue(builder, needs_comma, "isBitfield", field.is_bitfield);
-        AppendOptionalMember(builder, needs_comma, "bitWidth", field.bit_width);
-        AppendOptionalMember(builder, needs_comma, "offsetBits", field.offset_bits);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonBase& base) {
-        builder.start_object();
-        bool needs_comma = false;
-        AppendMember(builder, needs_comma, "type", base.type);
-        AppendStringIfNotEmpty(builder, needs_comma, "qualifiedName", base.qualified_name);
-        AppendStringIfNotEmpty(builder, needs_comma, "access", base.access);
-        AppendBoolIfTrue(builder, needs_comma, "isVirtual", base.is_virtual);
-        AppendOptionalMember(builder, needs_comma, "offset", base.offset);
-        builder.end_object();
-    }
-
-    template <typename Builder>
-    void tag_invoke(simdjson::serialize_tag, Builder& builder, const JsonDeclaration& declaration) {
-        builder.start_object();
-        bool needs_comma = false;
-
-        AppendMember(builder, needs_comma, "kind", declaration.kind);
-        const bool payload_has_identity = declaration.kind == "function" || declaration.kind == "variable";
-        if (!payload_has_identity) {
-            AppendStringIfNotEmpty(builder, needs_comma, "name", declaration.name);
-            AppendStringIfNotEmpty(builder, needs_comma, "qualifiedName", declaration.qualified_name);
-        }
-        AppendLocationMembers(builder, needs_comma, declaration.file, declaration.scope);
-        AppendBoolIfTrue(builder, needs_comma, "isAnonymous", declaration.is_anonymous);
-        AppendTemplateParameters(builder, needs_comma, declaration.template_parameters);
-
-        if (declaration.kind == "enum") {
-            AppendStringIfNotEmpty(builder, needs_comma, "underlyingType", declaration.underlying_type);
-            AppendBoolIfTrue(builder, needs_comma, "isScoped", declaration.is_scoped);
-            AppendStringIfNotEmpty(builder, needs_comma, "scopedKind", declaration.scoped_kind);
-            AppendArrayMember(builder, needs_comma, "enumerators", declaration.enumerators);
-        } else if (declaration.kind == "class" || declaration.kind == "struct" || declaration.kind == "union") {
-            AppendBoolIfTrue(builder, needs_comma, "isCompleteDefinition", declaration.is_complete_definition);
-            AppendOptionalMember(builder, needs_comma, "sizeBytes", declaration.size_bytes);
-            AppendOptionalMember(builder, needs_comma, "alignBytes", declaration.align_bytes);
-            AppendArrayMember(builder, needs_comma, "bases", declaration.bases);
-            AppendArrayMember(builder, needs_comma, "fields", declaration.fields);
-            AppendArrayMember(builder, needs_comma, "staticVariables", declaration.static_variables);
-            AppendArrayMember(builder, needs_comma, "methods", declaration.methods);
-            AppendArrayMember(builder, needs_comma, "nested", declaration.nested);
-        } else if (declaration.kind == "function" && declaration.function) {
-            AppendFunctionMembers(builder, needs_comma, *declaration.function, false);
-        } else if (declaration.kind == "variable" && declaration.variable) {
-            AppendVariableMembers(builder, needs_comma, *declaration.variable, false);
-        } else if (declaration.kind == "alias") {
-            AppendMember(builder, needs_comma, "aliasedType", declaration.aliased_type);
+        inline std::optional<bool> TrueOnly(const bool value) noexcept {
+            if (!value) {
+                return std::nullopt;
+            }
+            return true;
         }
 
-        builder.end_object();
     }
 }
+
+template <>
+struct glz::meta<UEMeta::JsonTemplateParameter> {
+    using T = UEMeta::JsonTemplateParameter;
+
+    static constexpr auto value = object(
+        "kind", &T::kind,
+        "name", &T::name,
+        "type", &T::type,
+        "isParameterPack", &T::is_parameter_pack,
+        "parameters", &T::parameters
+    );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return (key == "name" || key == "type") && value.empty();
+        } else if constexpr (std::same_as<V, bool>) {
+            return !value;
+        } else if constexpr (std::same_as<V, std::vector<UEMeta::JsonTemplateParameter>>) {
+            return key == "parameters" && value.empty();
+        }
+        return false;
+    }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonVTableIndex> {
+    using T = UEMeta::JsonVTableIndex;
+
+    static constexpr auto value = object(
+        "index", &T::index,
+        "offset", &T::offset
+    );
+};
+
+template <>
+struct glz::meta<UEMeta::JsonParameter> {
+    using T = UEMeta::JsonParameter;
+
+    static constexpr auto value = object(
+        "name", &T::name,
+        "type", &T::type,
+        "declaration", &T::declaration
+    );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return key == "name" && value.empty();
+        }
+        return false;
+    }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonFunction> {
+    using T = UEMeta::JsonFunction;
+
+    static constexpr auto value = object(
+        "functionKind", &T::kind,
+        "name", &T::name,
+        "qualifiedName", &T::qualified_name,
+        "file", &T::file,
+        "scope", &T::scope,
+        "returnType", &T::return_type,
+        "access", &T::access,
+        "storageClass", &T::storage_class,
+        "isConst", &T::is_const,
+        "isVolatile", &T::is_volatile,
+        "isStatic", &T::is_static,
+        "isVirtual", &T::is_virtual,
+        "isPure", &T::is_pure,
+        "isConstexpr", &T::is_constexpr,
+        "isConsteval", &T::is_consteval,
+        "isInline", &T::is_inline,
+        "isDeleted", &T::is_deleted,
+        "isDefaulted", &T::is_defaulted,
+        "isExplicit", &T::is_explicit,
+        "refQualifier", &T::ref_qualifier,
+        "exceptionSpec", &T::exception_spec,
+        "templateParameters", &T::template_parameters,
+        "parameters", &T::parameters,
+        "vtableIndex", &T::vtable_index
+    );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return (key == "qualifiedName" || key == "returnType" || key == "access" ||
+                    key == "storageClass" || key == "refQualifier" || key == "exceptionSpec") &&
+                   value.empty();
+        } else if constexpr (std::same_as<V, bool>) {
+            return !value;
+        } else if constexpr (std::same_as<V, std::vector<UEMeta::JsonTemplateParameter>>) {
+            return key == "templateParameters" && value.empty();
+        }
+        return false;
+    }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonVariable> {
+    using T = UEMeta::JsonVariable;
+
+    static constexpr auto value = object(
+        "name", &T::name,
+        "qualifiedName", &T::qualified_name,
+        "file", &T::file,
+        "scope", &T::scope,
+        "type", &T::type,
+        "declaration", &T::declaration,
+        "access", &T::access,
+        "storageClass", &T::storage_class,
+        "isConstexpr", &T::is_constexpr,
+        "isInline", &T::is_inline,
+        "isStaticDataMember", &T::is_static_data_member,
+        "isThreadLocal", &T::is_thread_local
+    );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return (key == "qualifiedName" || key == "access" || key == "storageClass") && value.empty();
+        } else if constexpr (std::same_as<V, bool>) {
+            return !value;
+        }
+        return false;
+    }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonEnumerator> {
+    using T = UEMeta::JsonEnumerator;
+
+    static constexpr auto value = object(
+        "name", &T::name,
+        "value", &T::value,
+        "file", &T::file,
+        "scope", &T::scope
+    );
+};
+
+template <>
+struct glz::meta<UEMeta::JsonField> {
+    using T = UEMeta::JsonField;
+
+    static constexpr auto value = object(
+        "name", &T::name,
+        "file", &T::file,
+        "scope", &T::scope,
+        "type", &T::type,
+        "declaration", &T::declaration,
+        "access", &T::access,
+        "isMutable", &T::is_mutable,
+        "isBitfield", &T::is_bitfield,
+        "bitWidth", &T::bit_width,
+        "offsetBits", &T::offset_bits
+    );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return (key == "name" || key == "access") && value.empty();
+        } else if constexpr (std::same_as<V, bool>) {
+            return !value;
+        }
+        return false;
+    }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonBase> {
+    using T = UEMeta::JsonBase;
+
+    static constexpr auto value = object(
+        "type", &T::type,
+        "qualifiedName", &T::qualified_name,
+        "access", &T::access,
+        "isVirtual", &T::is_virtual,
+        "offset", &T::offset
+    );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return (key == "qualifiedName" || key == "access") && value.empty();
+        } else if constexpr (std::same_as<V, bool>) {
+            return !value;
+        }
+        return false;
+    }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonDeclaration> {
+    static constexpr auto custom_write = true;
+};
+
+template <>
+struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
+    template <auto Opts>
+    static void op(const UEMeta::JsonDeclaration& declaration, is_context auto&& ctx, auto&& b, auto&& ix) noexcept {
+        using namespace UEMeta::JsonDetail;
+
+        const bool payload_has_identity = declaration.kind == "function" || declaration.kind == "variable";
+        auto name = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.name);
+        auto qualified_name = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.qualified_name);
+        auto scope = SpanOf(declaration.scope);
+        auto is_anonymous = TrueOnly(declaration.is_anonymous);
+        auto template_parameters = NonEmptySpanOf(declaration.template_parameters);
+        auto common = glz::obj{
+            "kind", declaration.kind,
+            "name", name,
+            "qualifiedName", qualified_name,
+            "file", declaration.file,
+            "scope", scope,
+            "isAnonymous", is_anonymous,
+            "templateParameters", template_parameters
+        };
+
+        if (declaration.kind == "enum") {
+            auto underlying_type = NonEmptyString(declaration.underlying_type);
+            auto is_scoped = TrueOnly(declaration.is_scoped);
+            auto scoped_kind = NonEmptyString(declaration.scoped_kind);
+            auto enumerators = SpanOf(declaration.enumerators);
+            auto payload = glz::obj{
+                "underlyingType", underlying_type,
+                "isScoped", is_scoped,
+                "scopedKind", scoped_kind,
+                "enumerators", enumerators
+            };
+            auto object = glz::merge{common, payload};
+            serialize<JSON>::op<Opts>(object, ctx, b, ix);
+        } else if (declaration.kind == "class" || declaration.kind == "struct" || declaration.kind == "union") {
+            auto is_complete_definition = TrueOnly(declaration.is_complete_definition);
+            auto bases = SpanOf(declaration.bases);
+            auto fields = SpanOf(declaration.fields);
+            auto static_variables = SpanOf(declaration.static_variables);
+            auto methods = SpanOf(declaration.methods);
+            auto nested = SpanOf(declaration.nested);
+            auto payload = glz::obj{
+                "isCompleteDefinition", is_complete_definition,
+                "sizeBytes", declaration.size_bytes,
+                "alignBytes", declaration.align_bytes,
+                "bases", bases,
+                "fields", fields,
+                "staticVariables", static_variables,
+                "methods", methods,
+                "nested", nested
+            };
+            auto object = glz::merge{common, payload};
+            serialize<JSON>::op<Opts>(object, ctx, b, ix);
+        } else if (declaration.kind == "function" && declaration.function) {
+            const auto& function = *declaration.function;
+            auto function_qualified_name = NonEmptyString(function.qualified_name);
+            auto return_type = NonEmptyString(function.return_type);
+            auto access = NonEmptyString(function.access);
+            auto storage_class = NonEmptyString(function.storage_class);
+            auto is_const = TrueOnly(function.is_const);
+            auto is_volatile = TrueOnly(function.is_volatile);
+            auto is_static = TrueOnly(function.is_static);
+            auto is_virtual = TrueOnly(function.is_virtual);
+            auto is_pure = TrueOnly(function.is_pure);
+            auto is_constexpr = TrueOnly(function.is_constexpr);
+            auto is_consteval = TrueOnly(function.is_consteval);
+            auto is_inline = TrueOnly(function.is_inline);
+            auto is_deleted = TrueOnly(function.is_deleted);
+            auto is_defaulted = TrueOnly(function.is_defaulted);
+            auto is_explicit = TrueOnly(function.is_explicit);
+            auto ref_qualifier = NonEmptyString(function.ref_qualifier);
+            auto exception_spec = NonEmptyString(function.exception_spec);
+            auto function_template_parameters = NonEmptySpanOf(function.template_parameters);
+            auto parameters = SpanOf(function.parameters);
+            auto payload = glz::obj{
+                "functionKind", function.kind,
+                "name", function.name,
+                "qualifiedName", function_qualified_name,
+                "returnType", return_type,
+                "access", access,
+                "storageClass", storage_class,
+                "isConst", is_const,
+                "isVolatile", is_volatile,
+                "isStatic", is_static,
+                "isVirtual", is_virtual,
+                "isPure", is_pure,
+                "isConstexpr", is_constexpr,
+                "isConsteval", is_consteval,
+                "isInline", is_inline,
+                "isDeleted", is_deleted,
+                "isDefaulted", is_defaulted,
+                "isExplicit", is_explicit,
+                "refQualifier", ref_qualifier,
+                "exceptionSpec", exception_spec,
+                "templateParameters", function_template_parameters,
+                "parameters", parameters,
+                "vtableIndex", function.vtable_index
+            };
+            auto object = glz::merge{common, payload};
+            serialize<JSON>::op<Opts>(object, ctx, b, ix);
+        } else if (declaration.kind == "variable" && declaration.variable) {
+            const auto& variable = *declaration.variable;
+            auto variable_qualified_name = NonEmptyString(variable.qualified_name);
+            auto access = NonEmptyString(variable.access);
+            auto storage_class = NonEmptyString(variable.storage_class);
+            auto is_constexpr = TrueOnly(variable.is_constexpr);
+            auto is_inline = TrueOnly(variable.is_inline);
+            auto is_static_data_member = TrueOnly(variable.is_static_data_member);
+            auto is_thread_local = TrueOnly(variable.is_thread_local);
+            auto payload = glz::obj{
+                "name", variable.name,
+                "qualifiedName", variable_qualified_name,
+                "type", variable.type,
+                "declaration", variable.declaration,
+                "access", access,
+                "storageClass", storage_class,
+                "isConstexpr", is_constexpr,
+                "isInline", is_inline,
+                "isStaticDataMember", is_static_data_member,
+                "isThreadLocal", is_thread_local
+            };
+            auto object = glz::merge{common, payload};
+            serialize<JSON>::op<Opts>(object, ctx, b, ix);
+        } else if (declaration.kind == "alias") {
+            auto payload = glz::obj{"aliasedType", declaration.aliased_type};
+            auto object = glz::merge{common, payload};
+            serialize<JSON>::op<Opts>(object, ctx, b, ix);
+        } else {
+            serialize<JSON>::op<Opts>(common, ctx, b, ix);
+        }
+    }
+};

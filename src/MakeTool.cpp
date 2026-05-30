@@ -1,15 +1,42 @@
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/ArgumentsAdjusters.h>
 #include <llvm/Support/VirtualFileSystem.h>
-#include <simdjson.h>
+#include <glaze/glaze.hpp>
 #include <compare>
 #include <format>
+#include <fstream>
 #include <iostream>
+#include <iterator>
+#include <optional>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "UEMeta/MakeTool.hpp"
 #include "UEMeta/Cli.hpp"
 
 using namespace clang::tooling;
+
+namespace {
+    struct CompileCommandEntry {
+        std::string file;
+        std::optional<std::string> command;
+        std::optional<std::string> directory;
+        std::optional<std::string> output;
+    };
+}
+
+template <>
+struct glz::meta<CompileCommandEntry> {
+    using T = CompileCommandEntry;
+
+    static constexpr auto value = object(
+        "file", &T::file,
+        "command", &T::command,
+        "directory", &T::directory,
+        "output", &T::output
+    );
+};
 
 static bool SameFile(const std::string_view candidate, const UEMeta::StablePath& target) {
     std::error_code ec;
@@ -52,106 +79,92 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
 
 static std::string FixupCommand(const std::string& cc_path) {
     try {
-        simdjson::ondemand::parser p{};
         auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
         auto cpp_path_string = UEMeta::Config::GetConfig().CppPath().string();
-        auto json = simdjson::padded_string::load(cc_path);
 
-        if (json.error()) {
-            std::cerr << std::format("(simdjson) Failed to load compile commands at \"{}\" with error: {}", cc_path, static_cast<int>(json.error())) << std::endl;
+        std::ifstream in{cc_path, std::ios::binary};
+        if (!in) {
+            std::cerr << std::format("(fs) Failed to open compile commands at \"{}\"", cc_path) << std::endl;
             return "";
         }
-        auto document = p.iterate(json.value());
-        if (document.error()) {
-            std::cerr << std::format("(simdjson) Failed to iterate compile commands at \"{}\" with error: {}", cc_path, static_cast<int>(document.error())) << std::endl;
-        }
-        for (auto command_obj : document.get_array()) {
-            auto object = command_obj.get_object();
-            if (object.error()) {
-                continue;
-            }
 
-            auto file_obj = object.find_field("file");
-            if (file_obj.error())
-                continue;
-            auto file = file_obj.get_string();
-            if (file.error())
-                continue;
-            if (!SameFile(*file, cpp_path))
-                continue;
-
-            auto command_field = object.find_field("command");
-            if (command_field.error()) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path_string) << std::endl;
-                return "";
-            }
-
-            auto command = command_field.get_string();
-            if (command.error()) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but its 'command' field is not a string!", cpp_path_string) << std::endl;
-                return "";
-            }
-            auto cmd_start = command->find_first_of('\"');
-            if (cmd_start == std::string_view::npos || cmd_start == command->size() - 1) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
-                return "";
-            }
-            auto cmd_end = command->find_first_of('\"', cmd_start + 1);
-            if (cmd_end == std::string_view::npos) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
-                return "";
-            }
-            auto keep = command->substr(cmd_end + 1);
-            std::string new_command = UEMeta::Config::GetConfig().ClangPath().string() + std::string(keep);
-
-            auto directory_field = object.find_field("directory");
-            if (directory_field.error()) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path_string) << std::endl;
-                return "";
-            }
-
-            auto output_field = object.find_field("output");
-            if (output_field.error()) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but it's missing an 'output' field!", cpp_path_string) << std::endl;
-                return "";
-            }
-
-            auto directory = directory_field.get_string();
-            if (directory.error()) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but its 'directory' field is not a string!", cpp_path_string) << std::endl;
-                return "";
-            }
-
-            auto output = output_field.get_string();
-            if (output.error()) {
-                std::cerr << std::format("(simdjson) Found command for file \"{}\", but its 'output' field is not a string!", cpp_path_string) << std::endl;
-                return "";
-            }
-
-            simdjson::builder::string_builder sb{};
-            sb.start_array();
-            sb.start_object();
-            sb.append_key_value("file", *file);
-            sb.append_comma();
-            sb.append_key_value("command", new_command);
-            sb.append_comma();
-            sb.append_key_value("directory", *directory);
-            sb.append_comma();
-            sb.append_key_value("output", *output);
-            sb.end_object();
-            sb.end_array();
-            if (!sb.validate_unicode()) {
-                std::cerr << std::format("(simdjson) Failed to validate unicode for transformed compile_commands from file \"{}\"", cpp_path_string) << std::endl;
-                return "";
-            }
-            return std::string(*sb.view());
+        const std::string json{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        std::vector<CompileCommandEntry> entries;
+        constexpr auto read_options = glz::opts{.error_on_unknown_keys = false};
+        if (const auto error = glz::read<read_options>(entries, json)) {
+            std::cerr << std::format("(glaze) Failed to parse compile commands at \"{}\": {}",
+                                     cc_path, glz::format_error(error, json)) << std::endl;
+            return "";
         }
 
-        std::cerr << "(simdjson) Failed to find matching entry in compile_commands.json for file " << cpp_path_string << std::endl;
+        for (const auto& entry : entries) {
+            if (!SameFile(entry.file, cpp_path))
+                continue;
+
+            if (!entry.command) {
+                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path_string) << std::endl;
+                return "";
+            }
+
+            const auto& command = *entry.command;
+            const auto cmd_start = command.find_first_not_of(" \t");
+            if (cmd_start == std::string::npos || cmd_start == command.size() - 1) {
+                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
+                return "";
+            }
+
+            std::size_t cmd_end{};
+            if (command[cmd_start] == '\"') {
+                cmd_end = command.find_first_of('\"', cmd_start + 1);
+                if (cmd_end == std::string::npos) {
+                    std::cerr << std::format("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
+                    return "";
+                }
+                ++cmd_end;
+            } else {
+                cmd_end = command.find_first_of(" \t", cmd_start);
+            }
+
+            if (cmd_end == std::string::npos || cmd_end == command.size()) {
+                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string) << std::endl;
+                return "";
+            }
+            auto keep = command.substr(cmd_end);
+            std::string new_command = UEMeta::Config::GetConfig().ClangPath().string() + keep;
+
+            if (!entry.directory) {
+                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path_string) << std::endl;
+                return "";
+            }
+
+            if (!entry.output) {
+                std::cerr << std::format("(glaze) Found command for file \"{}\", but it's missing an 'output' field!", cpp_path_string) << std::endl;
+                return "";
+            }
+
+            const auto transformed = std::vector{
+                CompileCommandEntry{
+                    .file = entry.file,
+                    .command = std::move(new_command),
+                    .directory = entry.directory,
+                    .output = entry.output
+                }
+            };
+
+            std::string out;
+            if (const auto error = glz::write_json(transformed, out)) {
+                std::cerr << std::format("(glaze) Failed to build transformed compile_commands for file \"{}\": {}",
+                                         cpp_path_string, glz::format_error(error, out)) << std::endl;
+                return "";
+            }
+            return out;
+        }
+
+        std::cerr << "(glaze) Failed to find matching entry in compile_commands.json for file " << cpp_path_string << std::endl;
     } catch (std::exception& ex) {
-        std::cerr << std::format("(simdjson) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what()) << std::endl;
+        std::cerr << std::format("(glaze) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what()) << std::endl;
     } catch (...) {
-        std::cerr << std::format("(simdjson) Failed to load compile commands at \"{}\" with unknown error!", cc_path) << std::endl;
+        std::cerr << std::format("(glaze) Failed to load compile commands at \"{}\" with unknown error!", cc_path) << std::endl;
     }
     return "";
 }

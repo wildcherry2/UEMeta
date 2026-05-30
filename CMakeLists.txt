@@ -50,14 +50,10 @@ set(UEMETA_LLVM_PREBUILT_URL_HASH
     "${UEMETA_LLVM_DEFAULT_PREBUILT_URL_HASH}"
     CACHE STRING "LLVM binary release archive hash"
 )
-set(UEMETA_SIMDJSON_VERSION "4.6.4" CACHE STRING "simdjson release fetched by CMake")
-set(UEMETA_SIMDJSON_SINGLEHEADER_URL
-    "https://github.com/simdjson/simdjson/releases/download/v${UEMETA_SIMDJSON_VERSION}/singleheader.zip"
-    CACHE STRING "simdjson single-header release archive"
-)
-set(UEMETA_SIMDJSON_SINGLEHEADER_URL_HASH
-    "SHA256=ccd85a1f1f9e43485c5661742b52bebf4806d1c7aa617cdb658a56dfa356e5a7"
-    CACHE STRING "simdjson single-header release archive hash"
+set(UEMETA_GLAZE_VERSION "7.3.3" CACHE STRING "Glaze release fetched by CMake")
+set(UEMETA_GLAZE_GIT_TAG
+    "dbf6caec935b768546587a413e45d033480c4483"
+    CACHE STRING "Glaze Git commit fetched by CMake"
 )
 set(UEMETA_CLI11_VERSION "2.6.2" CACHE STRING "CLI11 release fetched by CMake")
 set(UEMETA_CLI11_GIT_TAG
@@ -80,13 +76,11 @@ FetchContent_Declare(llvm_prebuilt
     SOURCE_SUBDIR cmake-do-not-add
 )
 
-FetchContent_Declare(simdjson_singleheader
-    URL "${UEMETA_SIMDJSON_SINGLEHEADER_URL}"
-    URL_HASH "${UEMETA_SIMDJSON_SINGLEHEADER_URL_HASH}"
-    DOWNLOAD_DIR "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}/simdjson_singleheader-${UEMETA_SIMDJSON_VERSION}"
-    DOWNLOAD_NO_PROGRESS FALSE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/simdjson_singleheader-${UEMETA_SIMDJSON_VERSION}"
-    SOURCE_SUBDIR cmake-do-not-add
+FetchContent_Declare(glaze
+    GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+    GIT_TAG "${UEMETA_GLAZE_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/glaze-${UEMETA_GLAZE_VERSION}"
 )
 
 FetchContent_Declare(cli11
@@ -113,7 +107,7 @@ function(UEMeta_FetchContent_MakeAvailable name)
 endfunction()
 
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
-UEMeta_FetchContent_MakeAvailable(simdjson_singleheader)
+UEMeta_FetchContent_MakeAvailable(glaze)
 UEMeta_FetchContent_MakeAvailable(cli11)
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
@@ -161,14 +155,6 @@ add_executable(uemeta src/main.cpp src/ClangHandler.cpp
         src/MakeTool.cpp
         src/StablePath.cpp)
 
-add_library(simdjson STATIC "${simdjson_singleheader_SOURCE_DIR}/simdjson.cpp")
-target_include_directories(simdjson PUBLIC "${simdjson_singleheader_SOURCE_DIR}")
-target_compile_options(simdjson PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
-    $<$<CXX_COMPILER_ID:MSVC>:${UEMETA_MSVC_DISABLED_WARNINGS}>
-)
-target_compile_features(simdjson PUBLIC cxx_std_17)
-
 set_target_properties(uemeta PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
@@ -187,6 +173,7 @@ target_compile_options(uemeta PRIVATE
     ${UEMETA_LLVM_DEFINITIONS}
     $<$<CXX_COMPILER_ID:MSVC>:/std:c++latest>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+    $<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>
     $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
     $<$<CXX_COMPILER_ID:MSVC>:${UEMETA_MSVC_DISABLED_WARNINGS}>
     $<$<CXX_COMPILER_ID:Clang>:-std=c++2c>
@@ -217,7 +204,7 @@ target_link_libraries(uemeta PRIVATE
     clangTooling
     clangFrontend
     clangASTMatchers
-    simdjson
+    glaze::glaze
     CLI11::CLI11
 )
 

@@ -8,10 +8,8 @@
 
 #include "UEMeta/JsonBuilders.hpp"
 
-//todo add include order to json
-// todo use faster json writing library
 // todo pretty logging?
-// strip pii from jsons?
+// todo strip pii from jsons?
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:

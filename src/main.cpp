@@ -2,6 +2,9 @@
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/MakeTool.hpp"
 
+#include <format>
+#include <iostream>
+
 int main(int argc, char** argv) {
     try {
         if (const auto cfg_init_result = UEMeta::Config::Initialize(argc, argv)) {
