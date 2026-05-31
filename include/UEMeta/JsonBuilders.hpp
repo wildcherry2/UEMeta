@@ -1342,11 +1342,10 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
     static void op(const UEMeta::JsonDeclaration& declaration, is_context auto&& ctx, auto&& b, auto&& ix) noexcept {
         using namespace UEMeta::JsonDetail;
 
-        const bool payload_has_identity = declaration.kind == "function" || declaration.kind == "variable";
-        auto name = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.name);
-        auto qualified_name = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.qualified_name);
+        auto name = NonEmptyString(declaration.name);
+        auto qualified_name = NonEmptyString(declaration.qualified_name);
         auto scope = SpanOf(declaration.scope);
-        auto documentation = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.documentation);
+        auto docs = NonEmptyString(declaration.documentation);
         auto is_anonymous = TrueOnly(declaration.is_anonymous);
         auto template_parameters = NonEmptySpanOf(declaration.template_parameters);
         auto hash = NonEmptyString(declaration.hash);
@@ -1359,7 +1358,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             "file", file,
             "hash", hash,
             "scope", scope,
-            "documentation", documentation,
+            "documentation", docs,
             "isAnonymous", is_anonymous,
             "templateParameters", template_parameters
         };
@@ -1411,11 +1410,9 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             serialize<JSON>::op<Opts>(object, ctx, b, ix);
         } else if (declaration.kind == "function" && declaration.function) {
             const auto& function = *declaration.function;
-            auto function_qualified_name = NonEmptyString(function.qualified_name);
             auto return_type = NonEmptyString(function.return_type);
             auto access = NonEmptyString(function.access);
             auto storage_class = NonEmptyString(function.storage_class);
-            auto documentation = NonEmptyString(function.documentation);
             auto is_const = TrueOnly(function.is_const);
             auto is_volatile = TrueOnly(function.is_volatile);
             auto is_static = TrueOnly(function.is_static);
@@ -1433,12 +1430,9 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             auto parameters = SpanOf(function.parameters);
             auto payload = glz::obj{
                 "functionKind", function.kind,
-                "name", function.name,
-                "qualifiedName", function_qualified_name,
                 "returnType", return_type,
                 "access", access,
                 "storageClass", storage_class,
-                "documentation", documentation,
                 "isConst", is_const,
                 "isVolatile", is_volatile,
                 "isStatic", is_static,
@@ -1460,22 +1454,17 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             serialize<JSON>::op<Opts>(object, ctx, b, ix);
         } else if (declaration.kind == "variable" && declaration.variable) {
             const auto& variable = *declaration.variable;
-            auto variable_qualified_name = NonEmptyString(variable.qualified_name);
             auto access = NonEmptyString(variable.access);
             auto storage_class = NonEmptyString(variable.storage_class);
-            auto documentation = NonEmptyString(variable.documentation);
             auto is_constexpr = TrueOnly(variable.is_constexpr);
             auto is_inline = TrueOnly(variable.is_inline);
             auto is_static_data_member = TrueOnly(variable.is_static_data_member);
             auto is_thread_local = TrueOnly(variable.is_thread_local);
             auto payload = glz::obj{
-                "name", variable.name,
-                "qualifiedName", variable_qualified_name,
                 "type", variable.type,
                 "declaration", variable.declaration,
                 "access", access,
                 "storageClass", storage_class,
-                "documentation", documentation,
                 "isConstexpr", is_constexpr,
                 "isInline", is_inline,
                 "isStaticDataMember", is_static_data_member,
