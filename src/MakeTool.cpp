@@ -37,9 +37,8 @@ struct glz::meta<CompileCommandEntry> {
 };
 
 static bool SameFile(const std::string_view candidate, const UEMeta::StablePath& target) {
-    std::error_code ec;
-    const UEMeta::StablePath candidate_path{candidate, ec};
-    return !ec && std::is_eq(candidate_path <=> target);
+    const UEMeta::StablePath candidate_path{candidate};
+    return std::is_eq(candidate_path <=> target);
 }
 
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {

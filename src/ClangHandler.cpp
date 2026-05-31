@@ -224,13 +224,8 @@ namespace {
         return location.isInvalid() || source_manager.isInSystemHeader(location);
     }
 
-    UEMeta::StablePath MakeStablePath(const std::filesystem::path& path) {
-        std::error_code ec;
-        return UEMeta::StablePath{path, ec};
-    }
-
     std::string StablePathString(const std::filesystem::path& path) {
-        return MakeStablePath(path).string();
+        return UEMeta::StablePath{path}.string();
     }
 
     std::string FilePathForLocation(const clang::SourceManager& source_manager,
@@ -866,13 +861,13 @@ namespace {
 
     UEMeta::StablePath OutputFileForKey(const std::string& label, const std::string& key) {
         const auto stem = SanitizeFileStem(label);
-        return MakeStablePath(
+        return UEMeta::StablePath{
             UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
-            fmtquill::format("{}-{:016x}.json", stem, StableHash(key)));
+            fmtquill::format("{}-{:016x}.json", stem, StableHash(key))};
     }
 
     std::string ParentDirectoryGroup(const std::string& file) {
-        const auto file_path = MakeStablePath(file);
+        const UEMeta::StablePath file_path{file};
         const auto file_string = file_path.string();
         auto lowercase_file = file_string;
         std::ranges::transform(lowercase_file, lowercase_file.begin(), [](const unsigned char character) {
@@ -1011,13 +1006,13 @@ static bool DeclarationPassesHeaderFilters(const UEMeta::JsonDeclaration& decl) 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     UEM_SPINNER_STOP("Finished parsing AST");
     const auto scrubbed_include_order = ScrubIncludeOrder(include_order);
-    WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), scrubbed_include_order);
+    WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"}, scrubbed_include_order);
     UEM_INFO("Filtering {} declarations...", declarations.size());
     std::erase_if(declarations, [](const JsonDeclaration& decl){ return !DeclarationPassesHeaderFilters(decl); });
     UEM_INFO("Serializing {} declarations...", declarations.size());
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {
-            WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"), declarations);
+            WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"}, declarations);
             break;
         }
         case FileSplitStrategy::ByClass: {

@@ -10,20 +10,23 @@ namespace {
     }
 }
 
-UEMeta::StablePath::StablePath(const std::string_view raw_path, std::error_code& ec) noexcept : StablePath(std::filesystem::path(raw_path), ec) {}
+UEMeta::StablePath::StablePath(const std::string_view raw_path) noexcept : StablePath(std::filesystem::path(raw_path)) {}
 
-UEMeta::StablePath::StablePath(const std::filesystem::path& raw_path, std::error_code& ec) noexcept {
-    Assign(raw_path, ec);
+UEMeta::StablePath::StablePath(const std::string& path) noexcept : StablePath(std::filesystem::path(path)){
 }
 
-void UEMeta::StablePath::Assign(const std::filesystem::path& raw_path, std::error_code& ec) noexcept {
+UEMeta::StablePath::StablePath(const std::filesystem::path& raw_path) noexcept {
+    Assign(raw_path);
+}
+
+void UEMeta::StablePath::Assign(const std::filesystem::path& raw_path) noexcept {
     try {
-        ec.clear();
         // if the path is empty, it's stable
         if (raw_path.empty()) {
             path = raw_path;
         }
         else {
+            std::error_code ec{};
             // try to convert to absolute canonical, will fail if it doesn't exist
             path = std::filesystem::canonical(raw_path, ec);
             if (ec) {
@@ -40,18 +43,14 @@ void UEMeta::StablePath::Assign(const std::filesystem::path& raw_path, std::erro
             path.make_preferred();
         }
     } catch (std::exception& e) {
-        ec.clear();
-        ec.assign(1, std::generic_category());
         LogStablePathFailure(raw_path, e.what());
     } catch (...) {
-        ec.clear();
-        ec.assign(1, std::generic_category());
         LogStablePathFailure(raw_path, "unknown exception!");
     }
 }
 
-void UEMeta::StablePath::Assign(std::string_view raw_path, std::error_code& ec) noexcept {
-    return Assign(std::filesystem::path(raw_path), ec);
+void UEMeta::StablePath::Assign(std::string_view raw_path) noexcept {
+    return Assign(std::filesystem::path(raw_path));
 }
 
 const std::filesystem::path & UEMeta::StablePath::UnderlyingPath() const noexcept {

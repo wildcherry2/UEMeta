@@ -106,25 +106,9 @@ public:
     }
 };
 
-std::string AssignStablePath(UEMeta::StablePath& out, const std::filesystem::path& path, const std::string_view label) {
-    std::error_code ec{};
-    out.Assign(path, ec);
-    if (ec) {
-        return fmtquill::format("Failed to stabilize {} path \"{}\": {}", label, path.string(), ec.message());
-    }
-    return "";
-}
-
-std::string AssignStablePath(UEMeta::StablePath& out, const std::string& path, const std::string_view label) {
-    return AssignStablePath(out, std::filesystem::path{path}, label);
-}
-
 std::string ValidateFile(const std::string& path, const std::string& assertFileName = "") {
     std::error_code ec{};
-    const UEMeta::StablePath temp{std::string_view{path}, ec};
-    if (ec) {
-        return fmtquill::format("Failed to stabilize file path \"{}\" (OS returned error code {})", path, ec.value());
-    }
+    const UEMeta::StablePath temp{std::string_view{path}};
     if (!temp.Exists(ec)) {
         return fmtquill::format("File \"{}\" not found (OS returned error code {})", path, ec.value());
     }
@@ -336,33 +320,20 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return -1;
     }
 
-    if (const auto error = AssignStablePath(cfg.cpp_path, cpp_path, "--file"); !error.empty()) {
-        return app.exit({"InvalidFilePath", error, CLI::ExitCodes::FileError});
-    }
-
-    if (const auto error = AssignStablePath(cfg.cc_path, cc_path, "--compile-commands"); !error.empty()) {
-        return app.exit({"InvalidCompileCommandsPath", error, CLI::ExitCodes::FileError});
-    }
-
-    if (const auto error = AssignStablePath(cfg.out_path, out_path, "--out"); !error.empty()) {
-        return app.exit({"InvalidOutputPath", error, CLI::ExitCodes::FileError});
-    }
+    cfg.cpp_path.Assign(std::string_view{cpp_path});
+    cfg.cc_path.Assign(std::string_view{cc_path});
+    cfg.out_path.Assign(std::string_view{out_path});
 
     cfg.pd_paths.clear();
     cfg.pd_paths.reserve(pd_paths.size());
     for (const auto& pd_path : pd_paths) {
-        StablePath stable_path{};
-        if (const auto error = AssignStablePath(stable_path, pd_path, "--parent-directories"); !error.empty()) {
-            return app.exit({"InvalidParentDirectoryPath", error, CLI::ExitCodes::FileError});
-        }
-        cfg.pd_paths.push_back(std::move(stable_path));
+        cfg.pd_paths.emplace_back(std::string_view{pd_path});
     }
 
-    if (const auto error = clang_path.empty()
-            ? AssignStablePath(cfg.clang_path, cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH, "--clang")
-            : AssignStablePath(cfg.clang_path, clang_path, "--clang");
-        !error.empty()) {
-        return app.exit({"InvalidClangPath", error, CLI::ExitCodes::FileError});
+    if (clang_path.empty()) {
+        cfg.clang_path.Assign(cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH);
+    } else {
+        cfg.clang_path.Assign(std::string_view{clang_path});
     }
 
     if (cfg.split_strategy == FileSplitStrategy::ByParentDirectory) {

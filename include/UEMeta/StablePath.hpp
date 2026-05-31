@@ -12,9 +12,9 @@ namespace UEMeta {
         StablePath() = default;
 
         // ReSharper disable once CppNonExplicitConvertingConstructor
-        StablePath(std::string_view path, std::error_code& ec) noexcept;
-
-        explicit StablePath(const std::filesystem::path& path, std::error_code& ec) noexcept;
+        StablePath(std::string_view path) noexcept;
+        explicit StablePath(const std::string& path) noexcept;
+        explicit StablePath(const std::filesystem::path& path) noexcept;
 
         [[nodiscard]] const std::filesystem::path& UnderlyingPath() const noexcept;
         [[nodiscard]] std::string string() const;
@@ -24,21 +24,19 @@ namespace UEMeta {
         [[nodiscard]] bool IsEmptyPath() const noexcept;
         [[nodiscard]] bool IsEmptyContents(std::error_code& ec) const noexcept;
 
-        void Assign(const std::filesystem::path& path, std::error_code& ec) noexcept;
-        void Assign(std::string_view path, std::error_code& ec) noexcept;
+        void Assign(const std::filesystem::path& path) noexcept;
+        void Assign(std::string_view path) noexcept;
 
         friend std::strong_ordering operator<=>(const StablePath& lhs, const StablePath& rhs) noexcept {
             return lhs.path <=> rhs.path;
         }
 
         friend std::strong_ordering operator<=>(const StablePath& lhs, const std::filesystem::path& rhs) noexcept {
-            std::error_code ec{};
-            return lhs <=> StablePath(rhs, ec);
+            return lhs.path <=> StablePath(rhs).path;
         }
 
         friend std::strong_ordering operator<=>(const std::filesystem::path& lhs, const StablePath& rhs) noexcept {
-            std::error_code ec{};
-            return StablePath(lhs, ec) <=> rhs.path;
+            return StablePath(lhs).path <=> rhs.path;
         }
 
         friend std::ostream& operator<<(std::ostream& os, const StablePath& obj) {
