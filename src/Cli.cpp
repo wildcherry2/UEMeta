@@ -192,6 +192,16 @@ const std::vector<std::string>& UEMeta::Config::PathBlacklist() const {
     return path_blacklist;
 }
 
+const std::vector<std::string> & UEMeta::Config::HeaderBlacklist() const {
+    AssertInitialized();
+    return header_blacklist;
+}
+
+const std::vector<std::string> & UEMeta::Config::HeaderWhitelist() const {
+    AssertInitialized();
+    return header_whitelist;
+}
+
 UEMeta::Config& UEMeta::Config::GetConfig() {
     static Config config{};
     return config;
@@ -293,7 +303,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     app.add_option("--path-delimiters", cfg.path_delimiters,
         "Highest level roots allowed in paths in generated JSON files. "
-        "If a path delimiter is found in a path in the JSON output, every directory/file above it is stripped from the path"
+        "If a path delimiter is found in a path in the JSON output, every directory/file above it is stripped from the path "
         "string. If multiple delimiters are found, the most specific root is chosen. "
         "This is for protecting PII when releasing JSONs publicly."
         "Defaults: 'Unreal', 'UnrealEngine', 'MetadataHarness' (forced)");
@@ -302,6 +312,14 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         "Substrings to strip in paths in generated JSON files."
         "Found substrings will be replaced with the string 'removed'. "
         "This is for protecting PII when releasing JSONs publicly.");
+
+    app.add_option("--header-whitelist", cfg.header_whitelist,
+        "If a header's path does not contain at least one token in the header-whitelist, the header will "
+        "be excluded from JSON generation. If blacklist tokens are also given, the whitelist runs before the blacklist.");
+
+    app.add_option("--header-blacklist", cfg.header_blacklist,
+        "If a header's path contains at least one token in the header-blacklist, the header will be "
+        "excluded from JSON generation. If whitelist tokens are also given, the whitelist runs before the blacklist.");
 
     try {
         app.parse(argc, argv);

@@ -982,10 +982,38 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     UEM_SPINNER_START("Parsing AST for declarations (0)");
 }
 
+static bool StringPassesHeaderFilters(const std::string& str) {
+    const auto& cfg = UEMeta::Config::GetConfig();
+    const auto& wl = cfg.HeaderWhitelist();
+    const auto& bl = cfg.HeaderBlacklist();
+
+    if (wl.empty() && bl.empty()) return true;
+
+    const auto StringContainsToken = [&str](const std::string& token) { return str.contains(token); };
+
+    if (!wl.empty()) {
+        if (!std::ranges::any_of(wl, StringContainsToken))
+            return false;
+    }
+
+    if (!bl.empty()) {
+        if (std::ranges::any_of(bl, StringContainsToken))
+            return false;
+    }
+
+    return true;
+}
+
+static bool DeclarationPassesHeaderFilters(const UEMeta::JsonDeclaration& decl) {
+    return StringPassesHeaderFilters(decl.file);
+}
+
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     UEM_SPINNER_STOP("Finished parsing AST");
     const auto scrubbed_include_order = ScrubIncludeOrder(include_order);
     WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), scrubbed_include_order);
+    UEM_INFO("Filtering {} declarations...", declarations.size());
+    std::erase_if(declarations, [](const JsonDeclaration& decl){ return !DeclarationPassesHeaderFilters(decl); });
     UEM_INFO("Serializing {} declarations...", declarations.size());
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {
@@ -1194,12 +1222,14 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
                 return;
             }
 
-            const auto file = FilePathForLocation(source_manager, hash_location);
-            auto path = included_file->getFileEntry().tryGetRealPathName();
-            if (path.empty()) {
-                path = included_file->getName();
+            const auto src_file = FilePathForLocation(source_manager, hash_location);
+            auto included_path = included_file->getFileEntry().tryGetRealPathName();
+            if (included_path.empty()) {
+                included_path = included_file->getName();
             }
-            AppendIncludeOrder(owner->include_order, file, StablePathString(path.str()));
+            auto included_stable_path = StablePathString(included_path.str());
+            if (!StringPassesHeaderFilters(src_file) || !StringPassesHeaderFilters(included_stable_path)) return;
+            AppendIncludeOrder(owner->include_order, src_file, included_stable_path);
         }
 
     private:

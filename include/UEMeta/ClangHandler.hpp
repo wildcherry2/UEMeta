@@ -11,7 +11,8 @@
 
 // todo more exception handling
 // todo selective regeneration based on hashes? exclude certain headers in args?
-// todo inline single-use helpers
+// todo inline single-use helpers, remove anon namespaces
+// todo remove ec from StablePath ctor?
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:

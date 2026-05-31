@@ -44,16 +44,19 @@ namespace UEMeta {
         [[nodiscard]] const std::vector<std::string>& StripArgs() const;
         [[nodiscard]] const std::vector<std::string>& PathDelimiters() const;
         [[nodiscard]] const std::vector<std::string>& PathBlacklist() const;
+        [[nodiscard]] const std::vector<std::string>& HeaderBlacklist() const;
+        [[nodiscard]] const std::vector<std::string>& HeaderWhitelist() const;
 
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             std::vector<std::string> pd_paths{};
             for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
             return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
                                      "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}\n"
-                                     "strip_args={}\npath_delimiters={}\npath_blacklist={}",
+                                     "strip_args={}\npath_delimiters={}\npath_blacklist={}\n"
+                                     "header_blacklist={}\nheader_whitelist={}",
                 obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(), static_cast<int>(obj.split_strategy),
                 obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args, obj.strip_args, obj.path_delimiters,
-                obj.path_blacklist);
+                obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
         }
 
         static Config& GetConfig();
@@ -79,6 +82,8 @@ namespace UEMeta {
         std::vector<std::string> strip_args{};
         std::vector<std::string> path_delimiters{"Unreal", "UnrealEngine"}; //replace with set?
         std::vector<std::string> path_blacklist{}; //replace with set?
+        std::vector<std::string> header_whitelist{};
+        std::vector<std::string> header_blacklist{};
 
         std::atomic_flag initialized{};
     };
