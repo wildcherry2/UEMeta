@@ -11,7 +11,6 @@
 
 // todo more exception handling
 // todo selective regeneration based on hashes? exclude certain headers in args?
-// todo extract documentation?
 // todo inline single-use helpers
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {

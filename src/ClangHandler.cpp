@@ -12,8 +12,10 @@
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/GlobalDecl.h>
 #include <clang/AST/PrettyPrinter.h>
+#include <clang/AST/RawCommentList.h>
 #include <clang/AST/RecordLayout.h>
 #include <clang/AST/VTableBuilder.h>
+#include <clang/Basic/Diagnostic.h>
 #include <clang/Basic/ExceptionSpecificationType.h>
 #include <clang/Basic/FileEntry.h>
 #include <clang/Basic/SourceManager.h>
@@ -259,6 +261,64 @@ namespace {
         return FilePathForLocation(source_manager, location);
     }
 
+    std::string TrimDocumentation(std::string value) {
+        const auto begin = std::ranges::find_if_not(value, [](const unsigned char character) {
+            return std::isspace(character);
+        });
+        const auto end = std::ranges::find_if_not(value.rbegin(), value.rend(), [](const unsigned char character) {
+            return std::isspace(character);
+        }).base();
+
+        if (begin >= end) {
+            return "";
+        }
+
+        return {begin, end};
+    }
+
+    std::string DocumentationForSingleDecl(const clang::Decl* decl, const clang::ASTContext& ctx) {
+        if (!decl) {
+            return "";
+        }
+
+        const auto* comment = ctx.getRawCommentForAnyRedecl(decl);
+        if (!comment || !comment->isDocumentation()) {
+            return "";
+        }
+
+        return TrimDocumentation(comment->getFormattedText(ctx.getSourceManager(), ctx.getDiagnostics()));
+    }
+
+    std::string DocumentationForDecl(const clang::Decl* decl, const clang::ASTContext& ctx) {
+        if (auto documentation = DocumentationForSingleDecl(decl, ctx); !documentation.empty()) {
+            return documentation;
+        }
+
+        if (const auto* cxx_record = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl)) {
+            if (auto documentation = DocumentationForSingleDecl(cxx_record->getDescribedClassTemplate(), ctx);
+                !documentation.empty()) {
+                return documentation;
+            }
+        } else if (const auto* function = llvm::dyn_cast_or_null<clang::FunctionDecl>(decl)) {
+            if (auto documentation = DocumentationForSingleDecl(function->getDescribedFunctionTemplate(), ctx);
+                !documentation.empty()) {
+                return documentation;
+            }
+        } else if (const auto* alias = llvm::dyn_cast_or_null<clang::TypeAliasDecl>(decl)) {
+            if (auto documentation = DocumentationForSingleDecl(alias->getDescribedAliasTemplate(), ctx);
+                !documentation.empty()) {
+                return documentation;
+            }
+        } else if (const auto* variable = llvm::dyn_cast_or_null<clang::VarDecl>(decl)) {
+            if (auto documentation = DocumentationForSingleDecl(variable->getDescribedVarTemplate(), ctx);
+                !documentation.empty()) {
+                return documentation;
+            }
+        }
+
+        return "";
+    }
+
     std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
         std::vector<std::string> scope;
         const auto* context = NonTransparentContext(decl ? decl->getDeclContext() : nullptr);
@@ -287,6 +347,7 @@ namespace {
         out.file = DeclFilePath(decl, ctx);
         out.scope = BuildScope(decl);
         out.is_anonymous = out.name.empty();
+        out.documentation = DocumentationForDecl(decl, ctx);
     }
 
     UEMeta::JsonTemplateParameter BuildTemplateParameter(const clang::NamedDecl* param, const clang::ASTContext& ctx);
@@ -314,6 +375,7 @@ namespace {
 
         out.name = param->getNameAsString();
         out.is_parameter_pack = param->isParameterPack();
+        out.documentation = DocumentationForDecl(param, ctx);
 
         if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
             out.kind = type_param->wasDeclaredWithTypename() ? "typename" : "class";
@@ -434,6 +496,7 @@ namespace {
         out.qualified_name = QualifiedName(decl);
         out.file = DeclFilePath(decl, ctx);
         out.scope = BuildScope(decl);
+        out.documentation = DocumentationForDecl(decl, ctx);
         out.return_type = PrintType(ctx, decl->getReturnType());
         out.storage_class = StorageClassToString(decl->getStorageClass());
         out.is_constexpr = decl->isConstexpr();
@@ -475,6 +538,7 @@ namespace {
             json_param.name = param->getNameAsString();
             json_param.type = PrintType(ctx, param->getType());
             json_param.declaration = PrintType(ctx, param->getType(), json_param.name);
+            json_param.documentation = DocumentationForDecl(param, ctx);
             out.parameters.push_back(std::move(json_param));
         }
 
@@ -487,6 +551,7 @@ namespace {
         out.qualified_name = QualifiedName(decl);
         out.file = DeclFilePath(decl, ctx);
         out.scope = BuildScope(decl);
+        out.documentation = DocumentationForDecl(decl, ctx);
         out.type = PrintType(ctx, decl->getType());
         out.declaration = PrintType(ctx, decl->getType(), out.name);
         out.access = AccessToString(decl->getAccess());
@@ -514,7 +579,8 @@ namespace {
                 .name = enumerator->getNameAsString(),
                 .value = EnumValueToString(enumerator),
                 .file = DeclFilePath(enumerator, ctx),
-                .scope = BuildScope(enumerator)
+                .scope = BuildScope(enumerator),
+                .documentation = DocumentationForDecl(enumerator, ctx)
             });
         }
 
@@ -649,6 +715,7 @@ namespace {
             json_field.name = field->getNameAsString();
             json_field.file = DeclFilePath(field, ctx);
             json_field.scope = BuildScope(field);
+            json_field.documentation = DocumentationForDecl(field, ctx);
             json_field.type = PrintType(ctx, field->getType());
             json_field.declaration = PrintType(ctx, field->getType(), json_field.name);
             json_field.access = AccessToString(field->getAccess());

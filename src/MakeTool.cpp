@@ -195,6 +195,7 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
             out.insert_range(out.end(), Config::GetConfig().AdditionalClangArgs());
             return out;
         });
+        tool->clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-fparse-all-comments"));
         tool->clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-w"));
 
         return tool;

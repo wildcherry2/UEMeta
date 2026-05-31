@@ -38,6 +38,11 @@ namespace UEMeta {
         std::string name;
 
         /**
+         * @brief Formatted Doxygen documentation attached to the template parameter declaration.
+         */
+        std::string documentation;
+
+        /**
          * @brief Declared type of a non-type template parameter, including the parameter name.
          *
          * @code{.cpp}
@@ -128,6 +133,11 @@ namespace UEMeta {
          * @endcode
          */
         std::string declaration;
+
+        /**
+         * @brief Formatted Doxygen documentation attached to the parameter declaration.
+         */
+        std::string documentation;
     };
 
     /**
@@ -185,6 +195,11 @@ namespace UEMeta {
          * @endcode
          */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Formatted Doxygen documentation attached to the function declaration.
+         */
+        std::string documentation;
 
         /**
          * @brief Return type for ordinary functions and methods; empty for constructors and destructors.
@@ -424,6 +439,11 @@ namespace UEMeta {
         std::vector<std::string> scope;
 
         /**
+         * @brief Formatted Doxygen documentation attached to the variable declaration.
+         */
+        std::string documentation;
+
+        /**
          * @brief Variable type without the variable identifier.
          *
          * @code{.cpp}
@@ -548,6 +568,11 @@ namespace UEMeta {
          * @endcode
          */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Formatted Doxygen documentation attached to the enumerator declaration.
+         */
+        std::string documentation;
     };
 
     /**
@@ -584,6 +609,11 @@ namespace UEMeta {
          * @endcode
          */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Formatted Doxygen documentation attached to the field declaration.
+         */
+        std::string documentation;
 
         /**
          * @brief Field type without the field identifier.
@@ -786,6 +816,11 @@ namespace UEMeta {
          * @endcode
          */
         std::vector<std::string> scope;
+
+        /**
+         * @brief Formatted Doxygen documentation attached to the declaration.
+         */
+        std::string documentation;
 
         /**
          * @brief True when the declaration has no C++ identifier.
@@ -1061,6 +1096,7 @@ struct glz::meta<UEMeta::JsonTemplateParameter> {
     static constexpr auto value = object(
         "kind", &T::kind,
         "name", &T::name,
+        "documentation", &T::documentation,
         "type", &T::type,
         "isParameterPack", &T::is_parameter_pack,
         "parameters", &T::parameters
@@ -1070,7 +1106,7 @@ struct glz::meta<UEMeta::JsonTemplateParameter> {
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
         if constexpr (std::same_as<V, std::string>) {
-            return (key == "name" || key == "type") && value.empty();
+            return (key == "name" || key == "documentation" || key == "type") && value.empty();
         } else if constexpr (std::same_as<V, bool>) {
             return !value;
         } else if constexpr (std::same_as<V, std::vector<UEMeta::JsonTemplateParameter>>) {
@@ -1097,14 +1133,15 @@ struct glz::meta<UEMeta::JsonParameter> {
     static constexpr auto value = object(
         "name", &T::name,
         "type", &T::type,
-        "declaration", &T::declaration
+        "declaration", &T::declaration,
+        "documentation", &T::documentation
     );
 
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
         if constexpr (std::same_as<V, std::string>) {
-            return key == "name" && value.empty();
+            return (key == "name" || key == "documentation") && value.empty();
         }
         return false;
     }
@@ -1120,6 +1157,7 @@ struct glz::meta<UEMeta::JsonFunction> {
         "qualifiedName", &T::qualified_name,
         "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonFunction>>,
         "scope", &T::scope,
+        "documentation", &T::documentation,
         "returnType", &T::return_type,
         "access", &T::access,
         "storageClass", &T::storage_class,
@@ -1146,7 +1184,8 @@ struct glz::meta<UEMeta::JsonFunction> {
         using V = std::decay_t<Value>;
         if constexpr (std::same_as<V, std::string>) {
             return (key == "qualifiedName" || key == "returnType" || key == "access" ||
-                    key == "storageClass" || key == "refQualifier" || key == "exceptionSpec") &&
+                    key == "storageClass" || key == "documentation" ||
+                    key == "refQualifier" || key == "exceptionSpec") &&
                    value.empty();
         } else if constexpr (std::same_as<V, bool>) {
             return !value;
@@ -1166,6 +1205,7 @@ struct glz::meta<UEMeta::JsonVariable> {
         "qualifiedName", &T::qualified_name,
         "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonVariable>>,
         "scope", &T::scope,
+        "documentation", &T::documentation,
         "type", &T::type,
         "declaration", &T::declaration,
         "access", &T::access,
@@ -1180,7 +1220,8 @@ struct glz::meta<UEMeta::JsonVariable> {
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
         if constexpr (std::same_as<V, std::string>) {
-            return (key == "qualifiedName" || key == "access" || key == "storageClass") && value.empty();
+            return (key == "qualifiedName" || key == "documentation" ||
+                    key == "access" || key == "storageClass") && value.empty();
         } else if constexpr (std::same_as<V, bool>) {
             return !value;
         }
@@ -1196,8 +1237,18 @@ struct glz::meta<UEMeta::JsonEnumerator> {
         "name", &T::name,
         "value", &T::value,
         "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonEnumerator>>,
-        "scope", &T::scope
+        "scope", &T::scope,
+        "documentation", &T::documentation
     );
+
+    template <typename Value>
+    static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
+        using V = std::decay_t<Value>;
+        if constexpr (std::same_as<V, std::string>) {
+            return key == "documentation" && value.empty();
+        }
+        return false;
+    }
 };
 
 template <>
@@ -1208,6 +1259,7 @@ struct glz::meta<UEMeta::JsonField> {
         "name", &T::name,
         "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonField>>,
         "scope", &T::scope,
+        "documentation", &T::documentation,
         "type", &T::type,
         "declaration", &T::declaration,
         "access", &T::access,
@@ -1221,7 +1273,7 @@ struct glz::meta<UEMeta::JsonField> {
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
         if constexpr (std::same_as<V, std::string>) {
-            return (key == "name" || key == "access") && value.empty();
+            return (key == "name" || key == "documentation" || key == "access") && value.empty();
         } else if constexpr (std::same_as<V, bool>) {
             return !value;
         }
@@ -1278,6 +1330,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
         auto name = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.name);
         auto qualified_name = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.qualified_name);
         auto scope = SpanOf(declaration.scope);
+        auto documentation = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.documentation);
         auto is_anonymous = TrueOnly(declaration.is_anonymous);
         auto template_parameters = NonEmptySpanOf(declaration.template_parameters);
         // glz::obj stores string-like values as string_view, so keep the scrubbed string alive through serialization.
@@ -1288,6 +1341,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             "qualifiedName", qualified_name,
             "file", file,
             "scope", scope,
+            "documentation", documentation,
             "isAnonymous", is_anonymous,
             "templateParameters", template_parameters
         };
@@ -1330,6 +1384,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             auto return_type = NonEmptyString(function.return_type);
             auto access = NonEmptyString(function.access);
             auto storage_class = NonEmptyString(function.storage_class);
+            auto documentation = NonEmptyString(function.documentation);
             auto is_const = TrueOnly(function.is_const);
             auto is_volatile = TrueOnly(function.is_volatile);
             auto is_static = TrueOnly(function.is_static);
@@ -1352,6 +1407,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
                 "returnType", return_type,
                 "access", access,
                 "storageClass", storage_class,
+                "documentation", documentation,
                 "isConst", is_const,
                 "isVolatile", is_volatile,
                 "isStatic", is_static,
@@ -1376,6 +1432,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             auto variable_qualified_name = NonEmptyString(variable.qualified_name);
             auto access = NonEmptyString(variable.access);
             auto storage_class = NonEmptyString(variable.storage_class);
+            auto documentation = NonEmptyString(variable.documentation);
             auto is_constexpr = TrueOnly(variable.is_constexpr);
             auto is_inline = TrueOnly(variable.is_inline);
             auto is_static_data_member = TrueOnly(variable.is_static_data_member);
@@ -1387,6 +1444,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
                 "declaration", variable.declaration,
                 "access", access,
                 "storageClass", storage_class,
+                "documentation", documentation,
                 "isConstexpr", is_constexpr,
                 "isInline", is_inline,
                 "isStaticDataMember", is_static_data_member,
