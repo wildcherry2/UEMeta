@@ -65,6 +65,11 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
+set(UEMETA_INDICATORS_VERSION "2.3" CACHE STRING "indicators release fetched by CMake")
+set(UEMETA_INDICATORS_GIT_TAG
+    "v2.3"
+    CACHE STRING "indicators Git tag fetched by CMake"
+)
 set(UEMETA_MSVC_DISABLED_WARNINGS
     /wd4100 # unreferenced formal parameter
     /wd4244 # conversion, possible loss of data
@@ -102,6 +107,13 @@ FetchContent_Declare(quill
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
 )
 
+FetchContent_Declare(indicators
+    GIT_REPOSITORY https://github.com/p-ranav/indicators.git
+    GIT_TAG "${UEMETA_INDICATORS_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/indicators-${UEMETA_INDICATORS_VERSION}"
+)
+
 function(UEMeta_FetchContent_MakeAvailable name)
     string(TOLOWER "${name}" name_lc)
     FetchContent_GetProperties(${name})
@@ -122,6 +134,7 @@ UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(glaze)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
+UEMeta_FetchContent_MakeAvailable(indicators)
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
@@ -220,6 +233,7 @@ target_link_libraries(uemeta PRIVATE
     glaze::glaze
     CLI11::CLI11
     quill::quill
+    indicators::indicators
 )
 
 set(UEMETA_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/UEMeta")

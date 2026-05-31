@@ -878,7 +878,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     const auto scrubbed_include_order = ScrubFilePaths(include_order);
     WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), scrubbed_include_order);
-
+    UEM_INFO("Serializing {} declarations...", declarations.size());
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {
             WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"), declarations);

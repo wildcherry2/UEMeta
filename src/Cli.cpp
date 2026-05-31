@@ -2,6 +2,7 @@
 #include <sstream>
 #include <string_view>
 #include <utility>
+#include <atomic>
 
 #include "UEMeta/Cli.hpp"
 #include "CLI/CLI.hpp"
@@ -9,6 +10,7 @@
 #include "quill/Frontend.h"
 #include "quill/sinks/ConsoleSink.h"
 #include "quill/sinks/FileSink.h"
+#include "indicators/progress_spinner.hpp"
 
 std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
     {"Default", UEMeta::FileSplitStrategy::Default},
@@ -16,6 +18,30 @@ std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
     {"ByParentDirectory", UEMeta::FileSplitStrategy::ByParentDirectory},
     {"ByFile", UEMeta::FileSplitStrategy::ByFile},
     {"Monofile", UEMeta::FileSplitStrategy::Monofile},
+};
+
+class ConsoleSinkWithSpinner : public quill::ConsoleSink {
+public:
+    //todo use log_metadata->tags with constexpr strings to tell the spinner what to do
+    void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
+        std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
+        quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
+        const std::vector<std::pair<std::string, std::string>> *named_args, std::string_view log_message,
+        std::string_view log_statement) override {
+
+        if (!spinner) return ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
+            logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
+
+        std::cout << "\r\33[2K\r" << std::flush;
+        ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
+            logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
+        spinner->tick();
+    }
+
+private:
+    std::unique_ptr<indicators::ProgressSpinner> spinner{};
+
+
 };
 
 std::string AssignStablePath(UEMeta::StablePath& out, const std::filesystem::path& path, const std::string_view label) {

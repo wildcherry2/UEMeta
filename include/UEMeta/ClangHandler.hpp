@@ -5,15 +5,15 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
+#include <atomic>
 
 #include "UEMeta/JsonBuilders.hpp"
 
-// todo pretty logging?
-// todo validate field alignment/offset being respected
 // todo more exception handling
 // todo progress bar?
 // todo selective regeneration based on hashes?
 // todo per file include order?
+// todo multithreading
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:
