@@ -22,6 +22,15 @@ set(UEMETA_DEPENDENCY_DOWNLOAD_ROOT
     "${PROJECT_SOURCE_DIR}/out/deps/downloads"
     CACHE PATH "Shared download directory for fetched dependency archives"
 )
+set(UEMETA_DEPENDENCY_LOCK_ROOT
+    "${PROJECT_SOURCE_DIR}/out/deps/locks"
+    CACHE PATH "Shared lock directory for fetched dependencies"
+)
+file(MAKE_DIRECTORY
+    "${UEMETA_DEPENDENCY_SOURCE_ROOT}"
+    "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}"
+    "${UEMETA_DEPENDENCY_LOCK_ROOT}"
+)
 
 set(UEMETA_LLVM_VERSION "22.1.6" CACHE STRING "LLVM release fetched by CMake")
 
@@ -122,6 +131,7 @@ function(UEMeta_FetchContent_MakeAvailable name)
         message(STATUS "FetchContent: preparing ${name}...")
     endif()
 
+    file(LOCK "${UEMETA_DEPENDENCY_LOCK_ROOT}/${name_lc}.lock" GUARD FUNCTION)
     FetchContent_MakeAvailable(${name})
     FetchContent_GetProperties(${name})
     message(STATUS "FetchContent: ${name} source: ${${name_lc}_SOURCE_DIR}")
