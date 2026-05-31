@@ -423,8 +423,12 @@ int UEMeta::Logger::Initialize() {
         file_sink_config.set_filename_append_option(quill::FilenameAppendOption::StartDateTime);
         quill::ConsoleSinkConfig console_sink_config{};
         quill::ConsoleSinkConfig::Colours colours{};
+        quill::PatternFormatterOptions formatter_options{};
+        formatter_options.format_pattern = "%(time) [%(log_level)] %(message)";
         colours.assign_colour_to_log_level(quill::LogLevel::Info, quill::ConsoleSinkConfig::Colours::white);
         console_sink_config.set_colours(colours);
+        console_sink_config.set_override_pattern_formatter_options(formatter_options);
+        file_sink_config.set_override_pattern_formatter_options(formatter_options);
         auto console_sink = quill::Frontend::create_or_get_sink<ConsoleSinkWithSpinner>("console_main", console_sink_config);
         auto file_sink = quill::Frontend::create_or_get_sink<FileSinkWithSpinner>("uemeta.log", file_sink_config);
 
