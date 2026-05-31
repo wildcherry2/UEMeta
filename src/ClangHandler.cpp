@@ -231,6 +231,24 @@ namespace {
         return MakeStablePath(path).string();
     }
 
+    std::string FilePathForLocation(const clang::SourceManager& source_manager,
+                                    const clang::SourceLocation location) {
+        const auto expansion_location = source_manager.getExpansionLoc(location);
+        if (expansion_location.isInvalid()) {
+            return "";
+        }
+
+        if (const auto presumed = source_manager.getPresumedLoc(expansion_location); presumed.isValid()) {
+            return StablePathString(presumed.getFilename());
+        }
+
+        if (auto file_entry = source_manager.getFileEntryRefForID(source_manager.getFileID(expansion_location))) {
+            return StablePathString(file_entry->getName().str());
+        }
+
+        return "";
+    }
+
     std::string DeclFilePath(const clang::Decl* decl, const clang::ASTContext& ctx) {
         if (!decl) {
             return "";
@@ -238,19 +256,7 @@ namespace {
 
         const auto& source_manager = ctx.getSourceManager();
         const auto location = source_manager.getExpansionLoc(decl->getLocation());
-        if (location.isInvalid()) {
-            return "";
-        }
-
-        if (const auto presumed = source_manager.getPresumedLoc(location); presumed.isValid()) {
-            return StablePathString(presumed.getFilename());
-        }
-
-        if (auto file_entry = source_manager.getFileEntryRefForID(source_manager.getFileID(location))) {
-            return StablePathString(file_entry->getName().str());
-        }
-
-        return "";
+        return FilePathForLocation(source_manager, location);
     }
 
     std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
@@ -863,6 +869,39 @@ namespace {
         }
         return out;
     }
+
+    void AppendIncludeOrder(std::vector<UEMeta::JsonIncludeOrder>& include_order,
+                            std::string file, std::string inclusion) {
+        if (file.empty() || inclusion.empty()) {
+            return;
+        }
+
+        const auto existing_entry = std::ranges::find_if(include_order, [&file](const auto& entry) {
+            return entry.file == file;
+        });
+
+        if (existing_entry == include_order.end()) {
+            include_order.push_back(UEMeta::JsonIncludeOrder{
+                .file = std::move(file),
+                .inclusions = {std::move(inclusion)}
+            });
+            return;
+        }
+
+        existing_entry->inclusions.push_back(std::move(inclusion));
+    }
+
+    std::vector<UEMeta::JsonIncludeOrder> ScrubIncludeOrder(const std::vector<UEMeta::JsonIncludeOrder>& include_order) {
+        std::vector<UEMeta::JsonIncludeOrder> out;
+        out.reserve(include_order.size());
+        for (const auto& entry : include_order) {
+            out.push_back(UEMeta::JsonIncludeOrder{
+                .file = UEMeta::JsonDetail::ScrubFilePath(entry.file),
+                .inclusions = ScrubFilePaths(entry.inclusions)
+            });
+        }
+        return out;
+    }
 }
 
 bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; }
@@ -878,7 +917,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     UEM_SPINNER_STOP("Finished parsing AST");
-    const auto scrubbed_include_order = ScrubFilePaths(include_order);
+    const auto scrubbed_include_order = ScrubIncludeOrder(include_order);
     WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), scrubbed_include_order);
     UEM_INFO("Serializing {} declarations...", declarations.size());
     switch (Config::GetConfig().SplitStrategy()) {
@@ -1077,9 +1116,10 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
 
     class IncludeOrderCallback : public clang::PPCallbacks {
     public:
-        explicit IncludeOrderCallback(ClangHandler* owner) : owner(owner) {}
+        IncludeOrderCallback(ClangHandler* owner, const clang::SourceManager& source_manager)
+            : owner(owner), source_manager(source_manager) {}
 
-        void InclusionDirective(clang::SourceLocation, const clang::Token&, llvm::StringRef,
+        void InclusionDirective(clang::SourceLocation hash_location, const clang::Token&, llvm::StringRef,
                                 bool, clang::CharSourceRange, clang::OptionalFileEntryRef included_file,
                                 llvm::StringRef, llvm::StringRef, const clang::Module*,
                                 bool, clang::SrcMgr::CharacteristicKind) override {
@@ -1087,17 +1127,19 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
                 return;
             }
 
+            const auto file = FilePathForLocation(source_manager, hash_location);
             auto path = included_file->getFileEntry().tryGetRealPathName();
             if (path.empty()) {
                 path = included_file->getName();
             }
-            owner->include_order.push_back(StablePathString(path.str()));
+            AppendIncludeOrder(owner->include_order, file, StablePathString(path.str()));
         }
 
     private:
         ClangHandler* owner;
+        const clang::SourceManager& source_manager;
     };
 
-    compiler.getPreprocessor().addPPCallbacks(std::make_unique<IncludeOrderCallback>(this));
+    compiler.getPreprocessor().addPPCallbacks(std::make_unique<IncludeOrderCallback>(this, compiler.getSourceManager()));
     return std::make_unique<Consumer>(this);
 }

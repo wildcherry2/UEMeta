@@ -5,14 +5,14 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
-#include <atomic>
 #include <thread>
 
 #include "UEMeta/JsonBuilders.hpp"
 
 // todo more exception handling
-// todo selective regeneration based on hashes?
-// todo per file include order?
+// todo selective regeneration based on hashes? exclude certain headers in args?
+// todo extract documentation?
+// todo inline single-use helpers
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:
@@ -47,7 +47,7 @@ namespace UEMeta {
 
         clang::ASTContext* context{};
         std::vector<JsonDeclaration> declarations{};
-        std::vector<std::string> include_order{};
+        std::vector<JsonIncludeOrder> include_order{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
         std::jthread ticker_thread{};
     };

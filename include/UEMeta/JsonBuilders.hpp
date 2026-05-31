@@ -714,6 +714,21 @@ namespace UEMeta {
     };
 
     /**
+     * @brief JSON representation of one file's ordered include directives.
+     */
+    struct JsonIncludeOrder {
+        /**
+         * @brief Source file that contains the include directives.
+         */
+        std::string file;
+
+        /**
+         * @brief Included files in directive order for the source file.
+         */
+        std::vector<std::string> inclusions;
+    };
+
+    /**
      * @brief Top-level JSON declaration object and nested declaration payload.
      */
     struct JsonDeclaration {
@@ -1236,6 +1251,16 @@ struct glz::meta<UEMeta::JsonBase> {
         }
         return false;
     }
+};
+
+template <>
+struct glz::meta<UEMeta::JsonIncludeOrder> {
+    using T = UEMeta::JsonIncludeOrder;
+
+    static constexpr auto value = object(
+        "file", &T::file,
+        "inclusions", &T::inclusions
+    );
 };
 
 template <>
