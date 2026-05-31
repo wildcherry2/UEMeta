@@ -22,26 +22,84 @@ std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
 
 class ConsoleSinkWithSpinner : public quill::ConsoleSink {
 public:
-    //todo use log_metadata->tags with constexpr strings to tell the spinner what to do
     void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
         std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
         quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
         const std::vector<std::pair<std::string, std::string>> *named_args, std::string_view log_message,
         std::string_view log_statement) override {
 
-        if (!spinner) return ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
-            logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
+        if (log_level != quill::LogLevel::TraceL1) {
+            if (spinner) {
+                std::cout << "\r\33[2K\r" << std::flush;
+                ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
+                    logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
 
-        std::cout << "\r\33[2K\r" << std::flush;
-        ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
-            logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
-        spinner->tick();
+                tick_count = (tick_count + 1) % 8;
+                return spinner->set_progress(tick_count);
+            }
+
+            return ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
+                logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
+        }
+
+        auto ooo_msg = [] (std::string_view ctrl){ std::cerr << fmtquill::format("Out-of-order spinner control message '{}' received!", ctrl) << std::endl; };
+        if (auto tag = log_metadata->tags(); tag == UEMeta::__start_spinner_tag) {
+            if (spinner) return ooo_msg(tag);
+            spinner = std::make_unique<indicators::ProgressSpinner>(
+                    indicators::option::PostfixText(log_message),
+                    indicators::option::ForegroundColor{indicators::Color::white},
+                    indicators::option::SpinnerStates{std::vector<std::string>{"⠈", "⠐", "⠠", "⢀", "⡀", "⠄", "⠂", "⠁"}},
+                    indicators::option::FontStyles{std::vector{indicators::FontStyle::bold}},
+                    indicators::option::ShowPercentage(false));
+            tick_count = 0;
+        }
+        else if (tag == UEMeta::__tick_spinner_tag) {
+            if (!spinner) return ooo_msg(tag);
+            tick_count = (tick_count + 1) % 8;
+            spinner->set_progress(tick_count);
+        }
+        else if (tag == UEMeta::__update_spinner_text_tag) {
+            if (!spinner) return ooo_msg(tag);
+            spinner->set_option(indicators::option::PostfixText(log_message));
+            tick_count = (tick_count + 1) % 8;
+            spinner->set_progress(tick_count);
+        }
+        else if (tag == UEMeta::__stop_spinner_tag) {
+            if (!spinner) return ooo_msg(tag);
+            spinner->set_progress(100);
+            spinner->set_option(indicators::option::PostfixText(log_message));
+            spinner->mark_as_completed();
+            spinner = nullptr;
+
+        }
     }
 
 private:
     std::unique_ptr<indicators::ProgressSpinner> spinner{};
+    size_t tick_count = 0;
+};
 
+class FileSinkWithSpinner : public quill::FileSink {
+public:
+    FileSinkWithSpinner(std::filesystem::path const &filename, quill::FileSinkConfig const &config)
+        : FileSink(filename, config) {}
 
+    void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
+                   std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
+                   quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
+                   const std::vector<std::pair<std::string, std::string>> *named_args, std::string_view log_message,
+                   std::string_view log_statement) override {
+
+        if (log_level != quill::LogLevel::TraceL1) {
+            return FileSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
+                logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
+        }
+        if (log_metadata->tags() == UEMeta::__tick_spinner_tag || log_metadata->tags() == UEMeta::__update_spinner_text_tag) return;
+
+        const quill::MacroMetadata metadata{log_metadata->source_location(), log_metadata->caller_function(), log_metadata->message_format(), "", log_level, log_metadata->event()};
+        return FileSink::write_log(&metadata, log_timestamp, thread_id,thread_name, process_id,
+                logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
+    }
 };
 
 std::string AssignStablePath(UEMeta::StablePath& out, const std::filesystem::path& path, const std::string_view label) {
@@ -370,8 +428,8 @@ int UEMeta::Logger::Initialize() {
         quill::Backend::start();
         quill::FileSinkConfig file_sink_config{};
         file_sink_config.set_filename_append_option(quill::FilenameAppendOption::StartDateTime);
-        auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console_main");
-        auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>("uemeta.log", file_sink_config);
+        auto console_sink = quill::Frontend::create_or_get_sink<ConsoleSinkWithSpinner>("console_main");
+        auto file_sink = quill::Frontend::create_or_get_sink<FileSinkWithSpinner>("uemeta.log", file_sink_config);
 
         if (!console_sink || !file_sink) {
             UEM_ERROR("Failed to initialize logger sinks.");

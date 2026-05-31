@@ -104,9 +104,18 @@ namespace UEMeta {
 
         quill::Logger* logger{};
     };
+
+    inline constexpr std::string_view __start_spinner_tag = "_uemspinner-start";
+    inline constexpr std::string_view __update_spinner_text_tag = "_uemspinner-text";
+    inline constexpr std::string_view __tick_spinner_tag = "_uemspinner-tick";
+    inline constexpr std::string_view __stop_spinner_tag = "_uemspinner-stop";
 }
 
 #define UEM_INFO(fmt, ...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
 #define UEM_WARN(fmt, ...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
 #define UEM_DEBUG(fmt, ...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
 #define UEM_ERROR(fmt, ...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_SPINNER_START(start_msg) LOG_TRACE_L1(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(::UEMeta::__start_spinner_tag), start_msg)
+#define UEM_SPINNER_UPDATE(update_msg) LOG_TRACE_L1(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(::UEMeta::__update_spinner_text_tag), update_msg)
+#define UEM_SPINNER_TICK LOG_TRACE_L1(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(::UEMeta::__tick_spinner_tag), "tick")
+#define UEM_SPINNER_STOP(stop_msg) LOG_TRACE_L1(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(::UEMeta::__stop_spinner_tag), stop_msg)
