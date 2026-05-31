@@ -6,14 +6,13 @@
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
 #include <atomic>
+#include <thread>
 
 #include "UEMeta/JsonBuilders.hpp"
 
 // todo more exception handling
-// todo progress bar?
 // todo selective regeneration based on hashes?
 // todo per file include order?
-// todo multithreading
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:
@@ -50,5 +49,6 @@ namespace UEMeta {
         std::vector<JsonDeclaration> declarations{};
         std::vector<std::string> include_order{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
+        std::jthread ticker_thread{};
     };
 }

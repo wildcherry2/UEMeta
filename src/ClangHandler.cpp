@@ -873,9 +873,11 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     context = &ctx;
     declarations.clear();
     visited_decls.clear();
+    UEM_SPINNER_START("Parsing AST for declarations (0)");
 }
 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
+    UEM_SPINNER_STOP("Finished parsing AST");
     const auto scrubbed_include_order = ScrubFilePaths(include_order);
     WriteJsonFile(MakeStablePath(Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"), scrubbed_include_order);
     UEM_INFO("Serializing {} declarations...", declarations.size());
@@ -942,6 +944,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* decl) {
     }
 
     declarations.push_back(BuildRecordDeclaration(target, *context, visited_decls));
+    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
 
@@ -965,6 +968,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* decl) {
     }
 
     declarations.push_back(BuildEnumDeclaration(target, *context));
+    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
 
@@ -983,6 +987,7 @@ bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* decl) {
     }
 
     declarations.push_back(BuildFunctionDeclaration(target, *context));
+    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
 
@@ -1005,6 +1010,7 @@ bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* decl) {
     }
 
     declarations.push_back(BuildAliasDeclaration(decl, *context));
+    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
 
@@ -1027,6 +1033,7 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* decl) {
     }
 
     declarations.push_back(BuildVariableDeclaration(target, *context));
+    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
 
@@ -1036,7 +1043,19 @@ bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl* decl) {
 
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
                                                                             llvm::StringRef file) {
-    (void)file;
+    const auto tu_name = std::filesystem::path(file.str()).filename().string();
+    UEM_SPINNER_START(fmtquill::format("Parsing TU '{}' (this may take a moment)",
+                                       tu_name.empty() ? file.str() : tu_name));
+    ticker_thread = std::jthread([tu_name](std::stop_token token) {
+        while (true) {
+            if (token.stop_requested()) {
+                UEM_SPINNER_STOP(fmtquill::format("TU '{}' parsed!", tu_name)); // NOLINT(*-lambda-function-name)
+                return;
+            }
+            UEM_SPINNER_TICK; // NOLINT(*-lambda-function-name)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    });
     include_order.clear();
 
     class Consumer : public clang::ASTConsumer {
@@ -1044,6 +1063,9 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         explicit Consumer(ClangHandler* owner) : owner(owner) {}
 
         void HandleTranslationUnit(clang::ASTContext& ctx) override {
+            owner->ticker_thread.request_stop();
+            owner->ticker_thread.join();
+            UEM_INFO("Starting AST traversal...");
             owner->BeginTranslationUnit(ctx);
             owner->TraverseDecl(ctx.getTranslationUnitDecl());
             owner->EndTranslationUnit(ctx);
