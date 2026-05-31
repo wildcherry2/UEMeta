@@ -50,6 +50,7 @@ namespace UEMeta {
         std::vector<JsonDeclaration> declarations{};
         std::vector<JsonIncludeOrder> include_order{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
+        llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
         std::jthread ticker_thread{};
     };
 }

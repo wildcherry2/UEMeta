@@ -5,8 +5,11 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
+#include <optional>
 #include <string_view>
+#include <utility>
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclCXX.h>
@@ -22,10 +25,12 @@
 #include <clang/Basic/Specifiers.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Lex/PPCallbacks.h>
+#include <clang/Lex/Lexer.h>
 #include <clang/Lex/Preprocessor.h>
 #include <llvm/ADT/APSInt.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/MD5.h>
 #include <llvm/Support/raw_ostream.h>
 
 #include "UEMeta/Cli.hpp"
@@ -106,6 +111,14 @@ namespace {
         }
 
         return "";
+    }
+
+    std::string Md5Hex(const std::string_view value) {
+        llvm::MD5 hash;
+        hash.update(llvm::StringRef{value.data(), value.size()});
+        auto result = hash.final();
+        const auto digest = result.digest();
+        return digest.str().str();
     }
 
     std::string RefQualifierToString(const clang::RefQualifierKind qualifier) {
@@ -312,6 +325,69 @@ namespace {
         }
 
         return "";
+    }
+
+    const clang::Decl* SourceDeclForHash(const clang::NamedDecl* decl) {
+        if (const auto* cxx_record = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl)) {
+            if (const auto* templ = cxx_record->getDescribedClassTemplate()) {
+                return templ;
+            }
+        } else if (const auto* function = llvm::dyn_cast_or_null<clang::FunctionDecl>(decl)) {
+            if (const auto* templ = function->getDescribedFunctionTemplate()) {
+                return templ;
+            }
+        } else if (const auto* alias = llvm::dyn_cast_or_null<clang::TypeAliasDecl>(decl)) {
+            if (const auto* templ = alias->getDescribedAliasTemplate()) {
+                return templ;
+            }
+        } else if (const auto* variable = llvm::dyn_cast_or_null<clang::VarDecl>(decl)) {
+            if (const auto* templ = variable->getDescribedVarTemplate()) {
+                return templ;
+            }
+        }
+
+        return decl;
+    }
+
+    std::optional<std::string> RawSourceTextForHash(const clang::NamedDecl* decl, const clang::ASTContext& ctx) {
+        const auto* source_decl = SourceDeclForHash(decl);
+        if (!source_decl) {
+            return std::nullopt;
+        }
+
+        const auto range = source_decl->getSourceRange();
+        if (range.isInvalid()) {
+            return std::nullopt;
+        }
+
+        const auto& source_manager = ctx.getSourceManager();
+        const auto begin = source_manager.getExpansionLoc(range.getBegin());
+        const auto end = source_manager.getExpansionLoc(range.getEnd());
+        if (begin.isInvalid() || end.isInvalid() ||
+            source_manager.getFileID(begin) != source_manager.getFileID(end)) {
+            return std::nullopt;
+        }
+
+        bool invalid = false;
+        const auto text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(begin, end),
+            source_manager,
+            ctx.getLangOpts(),
+            &invalid);
+        if (invalid) {
+            return std::nullopt;
+        }
+
+        return text.str();
+    }
+
+    std::string DeclarationSourceHash(const clang::NamedDecl* decl, const clang::ASTContext& ctx) {
+        const auto text = RawSourceTextForHash(decl, ctx);
+        if (!text) {
+            return "";
+        }
+
+        return Md5Hex(*text);
     }
 
     std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
@@ -559,7 +635,7 @@ namespace {
     }
 
     UEMeta::JsonDeclaration BuildEnumDeclaration(const clang::EnumDecl* input, const clang::ASTContext& ctx) {
-        const auto* decl = input->getDefinition() ? input->getDefinition() : input;
+        const auto* decl = input;
 
         UEMeta::JsonDeclaration out;
         out.kind = "enum";
@@ -579,6 +655,17 @@ namespace {
             });
         }
 
+        return out;
+    }
+
+    UEMeta::JsonDeclaration BuildEnumForwardDeclaration(const clang::EnumDecl* decl, const clang::ASTContext& ctx) {
+        UEMeta::JsonDeclaration out;
+        out.kind = "forwardDeclaration";
+        FillCommonDeclaration(out, decl, ctx);
+        out.forward_declaration_kind = "enum";
+        out.is_scoped = decl->isScoped();
+        out.scoped_kind = decl->isScoped() ? (decl->isScopedUsingClassTag() ? "class" : "struct") : "";
+        out.underlying_type = decl->getIntegerType().isNull() ? "" : PrintType(ctx, decl->getIntegerType());
         return out;
     }
 
@@ -610,26 +697,37 @@ namespace {
 
     void AppendNestedRecord(const clang::RecordDecl* decl, clang::ASTContext& ctx,
                             llvm::DenseSet<const clang::Decl*>& seen,
+                            llvm::DenseSet<const clang::Decl*>& seen_forwards,
                             std::vector<UEMeta::JsonDeclaration>& nested);
 
     void AppendNestedEnum(const clang::EnumDecl* decl, const clang::ASTContext& ctx,
                           llvm::DenseSet<const clang::Decl*>& seen,
+                          llvm::DenseSet<const clang::Decl*>& seen_forwards,
                           std::vector<UEMeta::JsonDeclaration>& nested) {
         if (ShouldSkipEnum(decl)) {
             return;
         }
 
-        const auto* target = decl->getDefinition() ? decl->getDefinition() : decl;
+        const auto* target = decl;
         if (IsInSystemHeader(target, ctx)) {
             return;
         }
 
-        const auto* key = target->getCanonicalDecl();
-        if (!seen.insert(key).second) {
-            return;
+        UEMeta::JsonDeclaration declaration;
+        if (target->isThisDeclarationADefinition()) {
+            const auto* key = target->getCanonicalDecl();
+            if (!seen.insert(key).second) {
+                return;
+            }
+            declaration = BuildEnumDeclaration(target, ctx);
+        } else {
+            if (!seen_forwards.insert(target).second) {
+                return;
+            }
+            declaration = BuildEnumForwardDeclaration(target, ctx);
         }
 
-        nested.push_back(BuildEnumDeclaration(target, ctx));
+        nested.push_back(std::move(declaration));
     }
 
     void AppendNestedAlias(const clang::TypeAliasDecl* decl, const clang::ASTContext& ctx,
@@ -660,9 +758,19 @@ namespace {
         return &ctx.getASTRecordLayout(decl);
     }
 
+    UEMeta::JsonDeclaration BuildRecordForwardDeclaration(const clang::RecordDecl* decl, const clang::ASTContext& ctx) {
+        UEMeta::JsonDeclaration out;
+        out.kind = "forwardDeclaration";
+        FillCommonDeclaration(out, decl, ctx);
+        out.template_parameters = TemplateParametersForRecord(decl, ctx);
+        out.forward_declaration_kind = RecordKind(decl);
+        return out;
+    }
+
     UEMeta::JsonDeclaration BuildRecordDeclaration(const clang::RecordDecl* input, clang::ASTContext& ctx,
-                                                   llvm::DenseSet<const clang::Decl*>& seen) {
-        const auto* decl = input->getDefinition() ? input->getDefinition() : input;
+                                                   llvm::DenseSet<const clang::Decl*>& seen,
+                                                   llvm::DenseSet<const clang::Decl*>& seen_forwards) {
+        const auto* decl = input;
 
         UEMeta::JsonDeclaration out;
         out.kind = RecordKind(decl);
@@ -765,17 +873,17 @@ namespace {
             }
 
             if (const auto* class_template = llvm::dyn_cast<clang::ClassTemplateDecl>(member)) {
-                AppendNestedRecord(class_template->getTemplatedDecl(), ctx, seen, out.nested);
+                AppendNestedRecord(class_template->getTemplatedDecl(), ctx, seen, seen_forwards, out.nested);
                 continue;
             }
 
             if (const auto* nested_record = llvm::dyn_cast<clang::RecordDecl>(member)) {
-                AppendNestedRecord(nested_record, ctx, seen, out.nested);
+                AppendNestedRecord(nested_record, ctx, seen, seen_forwards, out.nested);
                 continue;
             }
 
             if (const auto* nested_enum = llvm::dyn_cast<clang::EnumDecl>(member)) {
-                AppendNestedEnum(nested_enum, ctx, seen, out.nested);
+                AppendNestedEnum(nested_enum, ctx, seen, seen_forwards, out.nested);
                 continue;
             }
 
@@ -794,31 +902,32 @@ namespace {
 
     void AppendNestedRecord(const clang::RecordDecl* decl, clang::ASTContext& ctx,
                             llvm::DenseSet<const clang::Decl*>& seen,
+                            llvm::DenseSet<const clang::Decl*>& seen_forwards,
                             std::vector<UEMeta::JsonDeclaration>& nested) {
         if (ShouldSkipRecord(decl)) {
             return;
         }
 
-        const auto* target = decl->getDefinition() ? decl->getDefinition() : decl;
+        const auto* target = decl;
         if (IsInSystemHeader(target, ctx)) {
             return;
         }
 
-        const auto* key = target->getCanonicalDecl();
-        if (!seen.insert(key).second) {
-            return;
+        UEMeta::JsonDeclaration declaration;
+        if (target->isThisDeclarationADefinition()) {
+            const auto* key = target->getCanonicalDecl();
+            if (!seen.insert(key).second) {
+                return;
+            }
+            declaration = BuildRecordDeclaration(target, ctx, seen, seen_forwards);
+        } else {
+            if (!seen_forwards.insert(target).second) {
+                return;
+            }
+            declaration = BuildRecordForwardDeclaration(target, ctx);
         }
 
-        nested.push_back(BuildRecordDeclaration(target, ctx, seen));
-    }
-
-    std::uint64_t StableHash(const std::string_view value) {
-        std::uint64_t hash = 14695981039346656037ull;
-        for (const auto character : value) {
-            hash ^= static_cast<unsigned char>(character);
-            hash *= 1099511628211ull;
-        }
-        return hash;
+        nested.push_back(std::move(declaration));
     }
 
     std::string SanitizeFileStem(const std::string_view value) {
@@ -859,11 +968,72 @@ namespace {
         return out;
     }
 
-    UEMeta::StablePath OutputFileForKey(const std::string& label, const std::string& key) {
+    UEMeta::StablePath OutputFileForHash(const std::string& label, const std::string& hash) {
         const auto stem = SanitizeFileStem(label);
+        const auto suffix = hash.empty() ? Md5Hex(label) : hash;
         return UEMeta::StablePath{
             UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
-            fmtquill::format("{}-{:016x}.json", stem, StableHash(key))};
+            fmtquill::format("{}-{}.json", stem, suffix)};
+    }
+
+    UEMeta::StablePath OutputFileForKey(const std::string& label, const std::string& key) {
+        return OutputFileForHash(label, Md5Hex(key));
+    }
+
+    std::string FileGroupKey(const std::string& file) {
+        return file.empty() ? "unknown" : file;
+    }
+
+    std::optional<std::string> ReadFileContents(const std::string& file) {
+        if (file.empty() || file == "unknown") {
+            return std::nullopt;
+        }
+
+        const UEMeta::StablePath stable_path{file};
+        std::ifstream in{stable_path.UnderlyingPath(), std::ios::binary};
+        if (!in) {
+            UEM_WARN("(fs) Failed to open source file \"{}\" for hashing; falling back to path hash", file);
+            return std::nullopt;
+        }
+
+        return std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+    }
+
+    std::string FileContentHash(const std::string& file) {
+        if (const auto contents = ReadFileContents(file)) {
+            return Md5Hex(*contents);
+        }
+
+        return Md5Hex(file);
+    }
+
+    std::map<std::string, std::string> BuildFileHashes(const std::vector<UEMeta::JsonDeclaration>& declarations) {
+        std::map<std::string, std::string> hashes;
+        for (const auto& declaration : declarations) {
+            const auto file = FileGroupKey(declaration.file);
+            if (!hashes.contains(file)) {
+                hashes.emplace(file, FileContentHash(file));
+            }
+        }
+
+        return hashes;
+    }
+
+    std::string HashForFile(const std::map<std::string, std::string>& file_hashes, const std::string& file) {
+        if (const auto it = file_hashes.find(file); it != file_hashes.end()) {
+            return it->second;
+        }
+
+        return FileContentHash(file);
+    }
+
+    std::map<std::string, std::string> ScrubFileHashes(const std::map<std::string, std::string>& file_hashes) {
+        std::map<std::string, std::string> out;
+        for (const auto& [file, hash] : file_hashes) {
+            out[UEMeta::JsonDetail::ScrubFilePath(file)] = hash;
+        }
+
+        return out;
     }
 
     std::string ParentDirectoryGroup(const std::string& file) {
@@ -974,6 +1144,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     context = &ctx;
     declarations.clear();
     visited_decls.clear();
+    visited_forward_decls.clear();
     UEM_SPINNER_START("Parsing AST for declarations (0)");
 }
 
@@ -1009,6 +1180,8 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"}, scrubbed_include_order);
     UEM_INFO("Filtering {} declarations...", declarations.size());
     std::erase_if(declarations, [](const JsonDeclaration& decl){ return !DeclarationPassesHeaderFilters(decl); });
+    const auto file_hashes = BuildFileHashes(declarations);
+    WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "FileHashes.json"}, ScrubFileHashes(file_hashes));
     UEM_INFO("Serializing {} declarations...", declarations.size());
     switch (Config::GetConfig().SplitStrategy()) {
         case FileSplitStrategy::Monofile: {
@@ -1022,7 +1195,8 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
                     ? fmtquill::format("{}-anonymous-{}", declaration.kind, anonymous_index++)
                     : declaration.qualified_name;
                 const auto label = declaration.qualified_name.empty() ? key : declaration.qualified_name;
-                WriteJsonFile(OutputFileForKey(label, key), std::vector{declaration});
+                const auto hash = declaration.hash.empty() ? Md5Hex(key) : declaration.hash;
+                WriteJsonFile(OutputFileForHash(label, hash), std::vector{declaration});
             }
             break;
         }
@@ -1045,12 +1219,13 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
         case FileSplitStrategy::ByFile: {
             std::map<std::string, std::vector<JsonDeclaration>> groups;
             for (const auto& declaration : declarations) {
-                groups[declaration.file.empty() ? "unknown" : declaration.file].push_back(declaration);
+                groups[FileGroupKey(declaration.file)].push_back(declaration);
             }
 
             for (const auto& [file, file_declarations] : groups) {
                 const auto filename = std::filesystem::path{file}.filename().string();
-                WriteJsonFile(OutputFileForKey(filename.empty() ? file : filename, file), file_declarations);
+                WriteJsonFile(OutputFileForHash(filename.empty() ? file : filename, HashForFile(file_hashes, file)),
+                              file_declarations);
             }
             break;
         }
@@ -1062,17 +1237,27 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* decl) {
         return true;
     }
 
-    const auto* target = decl->getDefinition() ? decl->getDefinition() : decl;
+    const auto* target = decl;
     if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
         return true;
     }
 
-    const auto* key = target->getCanonicalDecl();
-    if (!visited_decls.insert(key).second) {
-        return true;
+    JsonDeclaration declaration;
+    if (target->isThisDeclarationADefinition()) {
+        const auto* key = target->getCanonicalDecl();
+        if (!visited_decls.insert(key).second) {
+            return true;
+        }
+        declaration = BuildRecordDeclaration(target, *context, visited_decls, visited_forward_decls);
+    } else {
+        if (!visited_forward_decls.insert(target).second) {
+            return true;
+        }
+        declaration = BuildRecordForwardDeclaration(target, *context);
     }
 
-    declarations.push_back(BuildRecordDeclaration(target, *context, visited_decls));
+    declaration.hash = DeclarationSourceHash(target, *context);
+    declarations.push_back(std::move(declaration));
     UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
@@ -1086,17 +1271,27 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* decl) {
         return true;
     }
 
-    const auto* target = decl->getDefinition() ? decl->getDefinition() : decl;
+    const auto* target = decl;
     if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
         return true;
     }
 
-    const auto* key = target->getCanonicalDecl();
-    if (!visited_decls.insert(key).second) {
-        return true;
+    JsonDeclaration declaration;
+    if (target->isThisDeclarationADefinition()) {
+        const auto* key = target->getCanonicalDecl();
+        if (!visited_decls.insert(key).second) {
+            return true;
+        }
+        declaration = BuildEnumDeclaration(target, *context);
+    } else {
+        if (!visited_forward_decls.insert(target).second) {
+            return true;
+        }
+        declaration = BuildEnumForwardDeclaration(target, *context);
     }
 
-    declarations.push_back(BuildEnumDeclaration(target, *context));
+    declaration.hash = DeclarationSourceHash(target, *context);
+    declarations.push_back(std::move(declaration));
     UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
@@ -1115,7 +1310,9 @@ bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* decl) {
         return true;
     }
 
-    declarations.push_back(BuildFunctionDeclaration(target, *context));
+    auto declaration = BuildFunctionDeclaration(target, *context);
+    declaration.hash = DeclarationSourceHash(target, *context);
+    declarations.push_back(std::move(declaration));
     UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
@@ -1138,7 +1335,9 @@ bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* decl) {
         return true;
     }
 
-    declarations.push_back(BuildAliasDeclaration(decl, *context));
+    auto declaration = BuildAliasDeclaration(decl, *context);
+    declaration.hash = DeclarationSourceHash(decl, *context);
+    declarations.push_back(std::move(declaration));
     UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }
@@ -1161,7 +1360,9 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* decl) {
         return true;
     }
 
-    declarations.push_back(BuildVariableDeclaration(target, *context));
+    auto declaration = BuildVariableDeclaration(target, *context);
+    declaration.hash = DeclarationSourceHash(target, *context);
+    declarations.push_back(std::move(declaration));
     UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
     return true;
 }

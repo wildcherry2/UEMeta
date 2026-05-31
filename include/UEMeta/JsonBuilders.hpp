@@ -763,7 +763,8 @@ namespace UEMeta {
      */
     struct JsonDeclaration {
         /**
-         * @brief Declaration category, such as `class`, `struct`, `union`, `enum`, `alias`, `function`, or `variable`.
+         * @brief Declaration category, such as `class`, `struct`, `union`, `enum`, `forwardDeclaration`, `alias`,
+         * `function`, or `variable`.
          *
          * @code{.cpp}
          * class Alpha {};
@@ -806,6 +807,11 @@ namespace UEMeta {
          * @endcode
          */
         std::string file;
+
+        /**
+         * @brief MD5 hash of the raw source text for this top-level declaration.
+         */
+        std::string hash;
 
         /**
          * @brief Lexical namespace and record scope containing the declaration.
@@ -882,6 +888,16 @@ namespace UEMeta {
          * @endcode
          */
         std::vector<JsonEnumerator> enumerators;
+
+        /**
+         * @brief C++ tag kind named by a forward declaration.
+         *
+         * @code{.cpp}
+         * class Forward;
+         * // forwardDeclarationKind == "class"
+         * @endcode
+         */
+        std::string forward_declaration_kind;
 
         /**
          * @brief True when a record declaration includes a definition body.
@@ -1333,6 +1349,7 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
         auto documentation = payload_has_identity ? std::optional<std::string_view>{} : NonEmptyString(declaration.documentation);
         auto is_anonymous = TrueOnly(declaration.is_anonymous);
         auto template_parameters = NonEmptySpanOf(declaration.template_parameters);
+        auto hash = NonEmptyString(declaration.hash);
         // glz::obj stores string-like values as string_view, so keep the scrubbed string alive through serialization.
         auto file = FileScrubber(declaration);
         auto common = glz::obj{
@@ -1340,13 +1357,27 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             "name", name,
             "qualifiedName", qualified_name,
             "file", file,
+            "hash", hash,
             "scope", scope,
             "documentation", documentation,
             "isAnonymous", is_anonymous,
             "templateParameters", template_parameters
         };
 
-        if (declaration.kind == "enum") {
+        if (declaration.kind == "forwardDeclaration") {
+            auto forward_declaration_kind = NonEmptyString(declaration.forward_declaration_kind);
+            auto underlying_type = NonEmptyString(declaration.underlying_type);
+            auto is_scoped = TrueOnly(declaration.is_scoped);
+            auto scoped_kind = NonEmptyString(declaration.scoped_kind);
+            auto payload = glz::obj{
+                "forwardDeclarationKind", forward_declaration_kind,
+                "underlyingType", underlying_type,
+                "isScoped", is_scoped,
+                "scopedKind", scoped_kind
+            };
+            auto object = glz::merge{common, payload};
+            serialize<JSON>::op<Opts>(object, ctx, b, ix);
+        } else if (declaration.kind == "enum") {
             auto underlying_type = NonEmptyString(declaration.underlying_type);
             auto is_scoped = TrueOnly(declaration.is_scoped);
             auto scoped_kind = NonEmptyString(declaration.scoped_kind);
