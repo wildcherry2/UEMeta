@@ -1,12 +1,10 @@
 #include "UEMeta/StablePath.hpp"
 #include "UEMeta/Cli.hpp"
 
-namespace {
-    void LogStablePathFailure(const std::filesystem::path& raw_path, const std::string_view error) noexcept {
-        try {
-            UEM_ERROR("Failed to construct stable path for '{}': {}", raw_path.string(), error);
-        } catch (...) {
-        }
+static inline void LogStablePathFailure(const std::filesystem::path& raw_path, const std::string_view error) noexcept {
+    try {
+        UEM_ERROR("Failed to construct stable path for '{}': {}", raw_path.string(), error);
+    } catch (...) {
     }
 }
 

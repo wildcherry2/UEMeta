@@ -10,9 +10,7 @@
 #include "UEMeta/JsonBuilders.hpp"
 
 // todo more exception handling
-// todo selective regeneration based on hashes? exclude certain headers in args?
 // todo inline single-use helpers, remove anon namespaces
-// todo proper hashes
 // todo simplify var usage
 namespace UEMeta {
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {

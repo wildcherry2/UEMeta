@@ -15,14 +15,12 @@
 
 using namespace clang::tooling;
 
-namespace {
-    struct CompileCommandEntry {
-        std::string file;
-        std::optional<std::string> command;
-        std::optional<std::string> directory;
-        std::optional<std::string> output;
-    };
-}
+struct CompileCommandEntry {
+    std::string file;
+    std::optional<std::string> command;
+    std::optional<std::string> directory;
+    std::optional<std::string> output;
+};
 
 template <>
 struct glz::meta<CompileCommandEntry> {
@@ -35,11 +33,6 @@ struct glz::meta<CompileCommandEntry> {
         "output", &T::output
     );
 };
-
-static bool SameFile(const std::string_view candidate, const UEMeta::StablePath& target) {
-    const UEMeta::StablePath candidate_path{candidate};
-    return std::is_eq(candidate_path <=> target);
-}
 
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
     CommandLineArguments out{};
@@ -95,7 +88,8 @@ static std::string FixupCommand(const std::string& cc_path) {
         }
 
         for (const auto& entry : entries) {
-            if (!SameFile(entry.file, cpp_path))
+            const UEMeta::StablePath candidate_path{entry.file};
+            if (!std::is_eq(candidate_path <=> cpp_path))
                 continue;
 
             if (!entry.command) {

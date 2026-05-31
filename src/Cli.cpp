@@ -12,7 +12,7 @@
 #include "quill/sinks/FileSink.h"
 #include "indicators/progress_spinner.hpp"
 
-std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
+static std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
     {"Default", UEMeta::FileSplitStrategy::Default},
     {"ByClass", UEMeta::FileSplitStrategy::ByClass},
     {"ByParentDirectory", UEMeta::FileSplitStrategy::ByParentDirectory},
@@ -106,7 +106,7 @@ public:
     }
 };
 
-std::string ValidateFile(const std::string& path, const std::string& assertFileName = "") {
+static std::string ValidateFile(const std::string& path, const std::string& assertFileName = "") {
     std::error_code ec{};
     const UEMeta::StablePath temp{std::string_view{path}};
     if (!temp.Exists(ec)) {
