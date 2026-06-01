@@ -53,7 +53,7 @@
       "configurePreset": "vs2026",
       "configuration": "Debug",
       "targets": [
-        "uemeta"
+        "parser"
       ]
     },
     {
@@ -62,7 +62,7 @@
       "configurePreset": "vs2026",
       "configuration": "Release",
       "targets": [
-        "uemeta"
+        "parser"
       ]
     },
     {
@@ -70,7 +70,7 @@
       "displayName": "Ninja Debug",
       "configurePreset": "ninja-debug",
       "targets": [
-        "uemeta"
+        "parser"
       ]
     },
     {
@@ -78,7 +78,7 @@
       "displayName": "Ninja Release",
       "configurePreset": "ninja-release",
       "targets": [
-        "uemeta"
+        "parser"
       ]
     }
   ]

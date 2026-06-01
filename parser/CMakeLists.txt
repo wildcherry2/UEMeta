@@ -4,7 +4,7 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(UEMeta LANGUAGES CXX)
+project(parser LANGUAGES CXX)
 
 include(FetchContent)
 
@@ -186,27 +186,27 @@ if(MSVC AND TARGET LLVMDebugInfoPDB)
     endif()
 endif()
 
-add_executable(uemeta src/main.cpp src/ClangHandler.cpp
+add_executable(parser src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
         src/JsonHelpers.cpp
         src/MakeTool.cpp
         src/StablePath.cpp)
 
-set_target_properties(uemeta PROPERTIES
+set_target_properties(parser PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
-    RUNTIME_OUTPUT_NAME UEMeta
+    RUNTIME_OUTPUT_NAME parser
 )
 
-target_include_directories(uemeta PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_include_directories(parser PRIVATE "${PROJECT_SOURCE_DIR}/include")
 
-target_include_directories(uemeta SYSTEM PRIVATE
+target_include_directories(parser SYSTEM PRIVATE
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )
 
-target_compile_options(uemeta PRIVATE
+target_compile_options(parser PRIVATE
     ${UEMETA_LLVM_DEFINITIONS}
     $<$<CXX_COMPILER_ID:MSVC>:/std:c++latest>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
@@ -231,13 +231,13 @@ target_compile_options(uemeta PRIVATE
     $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Release>>:-DNDEBUG>
 )
 
-target_link_options(uemeta PRIVATE
+target_link_options(parser PRIVATE
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/DEBUG:FULL>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:REF>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:ICF>
 )
 
-target_link_libraries(uemeta PRIVATE
+target_link_libraries(parser PRIVATE
     clangTooling
     clangFrontend
     clangASTMatchers
@@ -247,29 +247,32 @@ target_link_libraries(uemeta PRIVATE
     indicators::indicators
 )
 
-set(UEMETA_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/UEMeta")
-set(UEMETA_BUNDLE_CLANG_DIR "${UEMETA_BUNDLE_DIR}/Clang")
-set(UEMETA_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
-add_compile_definitions(-DQUILL_DISABLE_FUNCTION_NAME -DQUILL_DISABLE_FILE_INFO)
-
-set_property(DIRECTORY APPEND PROPERTY
-    ADDITIONAL_CLEAN_FILES "${UEMETA_BUNDLE_DIR}"
+set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/parser")
+set(PARSER_BUNDLE_CLANG_DIR "${PARSER_BUNDLE_DIR}/Clang")
+set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
+target_compile_definitions(parser PRIVATE
+    QUILL_DISABLE_FUNCTION_NAME
+    QUILL_DISABLE_FILE_INFO
 )
 
-if(NOT IS_DIRECTORY "${UEMETA_LLVM_BIN_DIR}")
-    message(FATAL_ERROR "Expected LLVM/Clang binary directory at ${UEMETA_LLVM_BIN_DIR}")
+set_property(DIRECTORY APPEND PROPERTY
+    ADDITIONAL_CLEAN_FILES "${PARSER_BUNDLE_DIR}"
+)
+
+if(NOT IS_DIRECTORY "${PARSER_LLVM_BIN_DIR}")
+    message(FATAL_ERROR "Expected LLVM/Clang binary directory at ${PARSER_LLVM_BIN_DIR}")
 endif()
 
-add_custom_command(TARGET uemeta POST_BUILD
+add_custom_command(TARGET parser POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory
-        "${UEMETA_BUNDLE_DIR}"
-        "${UEMETA_BUNDLE_CLANG_DIR}"
+        "${PARSER_BUNDLE_DIR}"
+        "${PARSER_BUNDLE_CLANG_DIR}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        "$<TARGET_FILE:uemeta>"
-        "${UEMETA_BUNDLE_DIR}/$<TARGET_FILE_NAME:uemeta>"
+        "$<TARGET_FILE:parser>"
+        "${PARSER_BUNDLE_DIR}/$<TARGET_FILE_NAME:parser>"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
-        "${UEMETA_LLVM_BIN_DIR}"
-        "${UEMETA_BUNDLE_CLANG_DIR}"
-    COMMENT "Bundling UEMeta executable and LLVM/Clang binaries"
+        "${PARSER_LLVM_BIN_DIR}"
+        "${PARSER_BUNDLE_CLANG_DIR}"
+    COMMENT "Bundling parser executable and LLVM/Clang binaries"
     VERBATIM
 )
