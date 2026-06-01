@@ -259,6 +259,17 @@ static bool ShouldSkipFunction(const clang::FunctionDecl* decl) {
     return false;
 }
 
+/// @brief Returns true for implicit virtual destructors that should still be emitted as class methods.
+static bool ShouldEmitImplicitVirtualDestructor(const clang::CXXMethodDecl* method) {
+    const auto* destructor = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(method);
+    return destructor && destructor->isImplicit() && destructor->isVirtual() && !destructor->isInvalidDecl();
+}
+
+/// @brief Returns true for record methods that should appear in JSON output.
+static bool ShouldEmitRecordMethod(const clang::CXXMethodDecl* method) {
+    return method && (ShouldEmitImplicitVirtualDestructor(method) || !ShouldSkipFunction(method));
+}
+
 /// @brief Determines whether a variable declaration should be ignored during metadata extraction.
 static bool ShouldSkipVariable(const clang::VarDecl* decl) {
     if (!decl || decl->isImplicit() || decl->isInvalidDecl()) {
@@ -314,6 +325,22 @@ static std::string FilePathForLocation(const clang::SourceManager& source_manage
 
     if (auto file_entry = source_manager.getFileEntryRefForID(source_manager.getFileID(expansion_location))) {
         return UEMeta::JsonDetail::StablePathString(file_entry->getName().str());
+    }
+
+    return "";
+}
+
+/// @brief Resolves a function source file, falling back to the containing record for implicit methods.
+static std::string FilePathForFunction(const clang::FunctionDecl* decl, const clang::ASTContext& ctx) {
+    auto file = FilePathForLocation(ctx.getSourceManager(), decl ? decl->getLocation() : clang::SourceLocation{});
+    if (!file.empty()) {
+        return file;
+    }
+
+    if (const auto* method = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
+        if (const auto* parent = method->getParent()) {
+            return FilePathForLocation(ctx.getSourceManager(), parent->getLocation());
+        }
     }
 
     return "";
@@ -604,7 +631,7 @@ static UEMeta::JsonFunction BuildFunction(const clang::FunctionDecl* decl, clang
     out.kind = "function";
     out.name = decl->getNameAsString();
     out.qualified_name = QualifiedName(decl);
-    out.file = FilePathForLocation(ctx.getSourceManager(), decl->getLocation());
+    out.file = FilePathForFunction(decl, ctx);
     out.scope = BuildScope(decl);
     out.documentation = DocumentationForDecl(decl, ctx);
     out.return_type = PrintType(ctx, decl->getReturnType());
@@ -899,14 +926,14 @@ static UEMeta::JsonDeclaration BuildRecordDeclaration(const clang::RecordDecl* i
     for (const auto* member : decl->decls()) {
         if (const auto* function_template = llvm::dyn_cast<clang::FunctionTemplateDecl>(member)) {
             if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(function_template->getTemplatedDecl());
-                method && !ShouldSkipFunction(method) && methods_seen.insert(method->getCanonicalDecl()).second) {
+                ShouldEmitRecordMethod(method) && methods_seen.insert(method->getCanonicalDecl()).second) {
                 out.methods.push_back(BuildFunction(method, ctx));
             }
             continue;
         }
 
         if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(member)) {
-            if (!ShouldSkipFunction(method) && methods_seen.insert(method->getCanonicalDecl()).second) {
+            if (ShouldEmitRecordMethod(method) && methods_seen.insert(method->getCanonicalDecl()).second) {
                 out.methods.push_back(BuildFunction(method, ctx));
             }
             continue;
@@ -951,6 +978,14 @@ static UEMeta::JsonDeclaration BuildRecordDeclaration(const clang::RecordDecl* i
 
         if (const auto* alias = llvm::dyn_cast<clang::TypeAliasDecl>(member)) {
             AppendNestedAlias(alias, ctx, seen, out.nested);
+        }
+    }
+
+    if (const auto* cxx_record = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+        if (const auto* destructor = cxx_record->getDestructor();
+            ShouldEmitImplicitVirtualDestructor(destructor) &&
+            methods_seen.insert(destructor->getCanonicalDecl()).second) {
+            out.methods.push_back(BuildFunction(destructor, ctx));
         }
     }
 
