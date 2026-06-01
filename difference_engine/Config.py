@@ -1,19 +1,23 @@
 import argparse
-from pathlib import Path
 import os
+from pathlib import Path
+
+def directory_contains_json(directory: Path) -> bool:
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.json'):
+                return True
+        for directory in dirs:
+            if directory_contains_json(Path(os.path.join(root, directory))):
+                return True
+    return False
 
 def validate_json_dir(json_dir: str) -> str:
     try:
         as_path = Path(json_dir)
         if not as_path.is_dir():
             raise argparse.ArgumentTypeError(json_dir, f"{json_dir} is not a directory!")
-        found_a_json = False
-        with os.scandir(as_path) as it:
-            for entry in it:
-                if entry.is_file() and entry.name.endswith('.json'):
-                    found_a_json = True
-                    break
-        if not found_a_json:
+        if not directory_contains_json(as_path):
             raise argparse.ArgumentTypeError(json_dir, f"{json_dir} does not contain a JSON file!")
     except Exception as e:
         raise argparse.ArgumentTypeError(json_dir,f"Attempting to validate {json_dir} raised exception: {e}")
