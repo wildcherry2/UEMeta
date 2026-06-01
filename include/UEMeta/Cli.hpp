@@ -12,41 +12,136 @@
 #include "UEMeta/StablePath.hpp"
 
 #ifdef WIN32
+/**
+ * @brief Default bundled clang-cl executable path on Windows.
+ */
 #define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl.exe"
+
+/**
+ * @brief Default bundled clang executable path on Windows.
+ */
 #define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang.exe"
 #else
+/**
+ * @brief Default bundled clang-cl executable path on non-Windows platforms.
+ */
 #define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl"
+
+/**
+ * @brief Default bundled clang executable path on non-Windows platforms.
+ */
 #define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
 #endif
 
+/**
+ * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
+ */
 #define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
 
+/**
+ * @brief Application entry point declared so configuration and logging singletons can restrict initialization.
+ */
 int main(int argc, char** argv);
 
 namespace UEMeta {
+    /**
+     * @brief Strategy used to partition generated declaration JSON files.
+     */
     enum class FileSplitStrategy {
+        /**
+         * @brief Uses the default file split behavior.
+         */
         Default,
+
+        /**
+         * @brief Writes each significant declaration to its own JSON file.
+         */
         ByClass,
+
+        /**
+         * @brief Groups output by configured parent directories.
+         */
         ByParentDirectory,
+
+        /**
+         * @brief Groups declarations by their source file.
+         */
         ByFile,
+
+        /**
+         * @brief Writes all declarations into one JSON file.
+         */
         Monofile
     };
 
+    /**
+     * @brief Process-wide CLI configuration used by tool setup, path scrubbing, and JSON emission.
+     */
     class Config {
     public:
+        /**
+         * @brief Returns the C++ translation unit path.
+         */
         [[nodiscard]] const StablePath& CppPath() const;
+
+        /**
+         * @brief Returns the compile_commands.json path.
+         */
         [[nodiscard]] const StablePath& CcPath() const;
+
+        /**
+         * @brief Returns the output directory path.
+         */
         [[nodiscard]] const StablePath& OutPath() const;
+
+        /**
+         * @brief Returns the configured JSON file split strategy.
+         */
         [[nodiscard]] const FileSplitStrategy& SplitStrategy() const;
+
+        /**
+         * @brief Returns parent directories used by the parent-directory split strategy.
+         */
         [[nodiscard]] const std::vector<StablePath>& PdPaths() const;
+
+        /**
+         * @brief Returns the clang or clang-cl executable path.
+         */
         [[nodiscard]] const StablePath& ClangPath() const;
+
+        /**
+         * @brief Returns compiler arguments appended after compile command filtering.
+         */
         [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
+
+        /**
+         * @brief Returns compile command arguments that should be stripped before invoking Clang.
+         */
         [[nodiscard]] const std::vector<std::string>& StripArgs() const;
+
+        /**
+         * @brief Returns path delimiter tokens used to trim generated file paths.
+         */
         [[nodiscard]] const std::vector<std::string>& PathDelimiters() const;
+
+        /**
+         * @brief Returns path blacklist tokens replaced in generated file paths.
+         */
         [[nodiscard]] const std::vector<std::string>& PathBlacklist() const;
+
+        /**
+         * @brief Returns header blacklist tokens used to exclude declarations and include edges.
+         */
         [[nodiscard]] const std::vector<std::string>& HeaderBlacklist() const;
+
+        /**
+         * @brief Returns header whitelist tokens used to include declarations and include edges.
+         */
         [[nodiscard]] const std::vector<std::string>& HeaderWhitelist() const;
 
+        /**
+         * @brief Writes a human-readable configuration summary to a stream.
+         */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             std::vector<std::string> pd_paths{};
             for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
@@ -59,18 +154,51 @@ namespace UEMeta {
                 obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
         }
 
+        /**
+         * @brief Returns the process-wide configuration singleton.
+         */
         static Config& GetConfig();
 
+        /**
+         * @brief Copy construction is disabled because Config is a singleton.
+         */
         Config(const Config& Other) = delete;
+
+        /**
+         * @brief Move construction is disabled because Config is a singleton.
+         */
         Config(Config&& Other) noexcept = delete;
+
+        /**
+         * @brief Copy assignment is disabled because Config is a singleton.
+         */
         Config& operator=(const Config& Other) = delete;
+
+        /**
+         * @brief Move assignment is disabled because Config is a singleton.
+         */
         Config& operator=(Config&& Other) noexcept = delete;
 
     private:
         friend int ::main(int argc, char** argv);
+
+        /**
+         * @brief Constructs default configuration values before CLI parsing.
+         */
         Config() = default;
 
+        /**
+         * @brief Throws if configuration is read before initialization completes.
+         */
         void AssertInitialized() const;
+
+        /**
+         * @brief Parses CLI arguments and initializes the process-wide configuration.
+         *
+         * @param argc Argument count from main.
+         * @param argv Argument vector from main.
+         * @return 0 on success, otherwise a CLI or initialization error code.
+         */
         static int Initialize(int argc, char** argv);
 
         StablePath cpp_path{}, cc_path{}, out_path{};
@@ -88,38 +216,126 @@ namespace UEMeta {
         std::atomic_flag initialized{};
     };
 
+    /**
+     * @brief Process-wide logger facade used by logging macros and bootstrap code.
+     */
     class Logger {
     public:
+        /**
+         * @brief Returns the initialized Quill logger or a bootstrap fallback logger.
+         */
         [[nodiscard]] quill::Logger* GetQuill() const;
+
+        /**
+         * @brief Reports whether the main logger has been initialized.
+         */
         [[nodiscard]] bool IsInitialized() const;
 
+        /**
+         * @brief Returns the process-wide logger singleton.
+         */
         static Logger& GetLogger();
 
+        /**
+         * @brief Copy construction is disabled because Logger is a singleton.
+         */
         Logger(const Logger& Other) = delete;
+
+        /**
+         * @brief Move construction is disabled because Logger is a singleton.
+         */
         Logger(Logger&& Other) noexcept = delete;
+
+        /**
+         * @brief Copy assignment is disabled because Logger is a singleton.
+         */
         Logger& operator=(const Logger& Other) = delete;
+
+        /**
+         * @brief Move assignment is disabled because Logger is a singleton.
+         */
         Logger& operator=(Logger&& Other) noexcept = delete;
 
     private:
         friend int ::main(int argc, char** argv);
+
+        /**
+         * @brief Constructs an uninitialized logger facade.
+         */
         Logger() = default;
 
+        /**
+         * @brief Throws if the main logger is required before initialization.
+         */
         void AssertInitialized() const;
+
+        /**
+         * @brief Initializes Quill sinks, formatting, and the process-wide logger.
+         *
+         * @return 0 on success, otherwise -1.
+         */
         static int Initialize();
 
         quill::Logger* logger{};
     };
 }
 
+/**
+ * @brief Emits an informational log message through the UEMeta logger.
+ */
 #define UEM_INFO(fmt, ...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+
+/**
+ * @brief Emits a warning log message through the UEMeta logger.
+ */
 #define UEM_WARN(fmt, ...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+
+/**
+ * @brief Emits a debug log message through the UEMeta logger.
+ */
 #define UEM_DEBUG(fmt, ...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+
+/**
+ * @brief Emits an error log message through the UEMeta logger.
+ */
 #define UEM_ERROR(fmt, ...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+
+/**
+ * @brief Internal log tag used to start a console spinner.
+ */
 #define UEM_START_SPINNER_TAG "_uemspinner-start"
+
+/**
+ * @brief Internal log tag used to update console spinner text.
+ */
 #define UEM_UPDATE_SPINNER_TAG "_uemspinner-text"
+
+/**
+ * @brief Internal log tag used to tick the console spinner.
+ */
 #define UEM_TICK_SPINNER_TAG "_uemspinner-tick"
+
+/**
+ * @brief Internal log tag used to stop the console spinner.
+ */
 #define UEM_STOP_SPINNER_TAG "_uemspinner-stop"
+
+/**
+ * @brief Starts a console spinner with the provided message.
+ */
 #define UEM_SPINNER_START(start_msg)    LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_START_SPINNER_TAG), "{}", start_msg)
+
+/**
+ * @brief Updates the active console spinner message.
+ */
 #define UEM_SPINNER_UPDATE(update_msg)  LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_UPDATE_SPINNER_TAG), "{}", update_msg)
+
+/**
+ * @brief Advances the active console spinner.
+ */
 #define UEM_SPINNER_TICK                LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_TICK_SPINNER_TAG), "tick")
+
+/**
+ * @brief Stops the active console spinner with the provided message.
+ */
 #define UEM_SPINNER_STOP(stop_msg)      LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_STOP_SPINNER_TAG), "{}", stop_msg)

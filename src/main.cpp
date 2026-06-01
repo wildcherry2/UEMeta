@@ -2,6 +2,7 @@
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/MakeTool.hpp"
 
+/// @brief Initializes logging/configuration, builds the Clang tool, and runs the AST extraction pass.
 int main(int argc, char** argv) {
     try {
         if (const auto log_init_result = UEMeta::Logger::Initialize()) {

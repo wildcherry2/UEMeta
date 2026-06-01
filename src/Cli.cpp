@@ -12,6 +12,7 @@
 #include "quill/sinks/FileSink.h"
 #include "indicators/progress_spinner.hpp"
 
+/// @brief CLI11 transformer map from split strategy option text to enum values.
 static std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
     {"Default", UEMeta::FileSplitStrategy::Default},
     {"ByClass", UEMeta::FileSplitStrategy::ByClass},
@@ -20,10 +21,13 @@ static std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
     {"Monofile", UEMeta::FileSplitStrategy::Monofile},
 };
 
+/// @brief Console sink that interprets tagged trace messages as spinner controls.
 class ConsoleSinkWithSpinner : public quill::ConsoleSink {
 public:
+    /// @brief Constructs a console sink with Quill's console sink configuration.
     ConsoleSinkWithSpinner(quill::ConsoleSinkConfig const& config = quill::ConsoleSinkConfig{}) : ConsoleSink(config) {}
 
+    /// @brief Writes ordinary log records and handles spinner control records.
     void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
                    std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
                    quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
@@ -82,11 +86,14 @@ private:
     size_t tick_count = 0;
 };
 
+/// @brief File sink that records spinner start/stop messages but suppresses spinner tick noise.
 class FileSinkWithSpinner : public quill::FileSink {
 public:
+    /// @brief Constructs a file sink with Quill's file sink configuration.
     FileSinkWithSpinner(std::filesystem::path const &filename, quill::FileSinkConfig const& config = quill::FileSinkConfig{})
         : FileSink(filename, config) {}
 
+    /// @brief Writes regular log records and converts spinner control records to readable file log entries.
     void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
                    std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
                    quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
@@ -106,6 +113,7 @@ public:
     }
 };
 
+/// @brief Validates that a CLI path names an existing non-empty file, optionally with a required filename.
 static std::string ValidateFile(const std::string& path, const std::string& assertFileName = "") {
     std::error_code ec{};
     const UEMeta::StablePath temp{std::string_view{path}};
@@ -126,76 +134,91 @@ static std::string ValidateFile(const std::string& path, const std::string& asse
     return "";
 }
 
+/// @brief Returns the configured C++ translation unit path.
 const UEMeta::StablePath& UEMeta::Config::CppPath() const {
     AssertInitialized();
     return cpp_path;
 }
 
+/// @brief Returns the configured compile_commands.json path.
 const UEMeta::StablePath& UEMeta::Config::CcPath() const {
     AssertInitialized();
     return cc_path;
 }
 
+/// @brief Returns the configured output directory path.
 const UEMeta::StablePath& UEMeta::Config::OutPath() const {
     AssertInitialized();
     return out_path;
 }
 
+/// @brief Returns the configured JSON splitting strategy.
 const UEMeta::FileSplitStrategy& UEMeta::Config::SplitStrategy() const {
     AssertInitialized();
     return split_strategy;
 }
 
+/// @brief Returns parent directories used by the parent-directory split strategy.
 const std::vector<UEMeta::StablePath>& UEMeta::Config::PdPaths() const {
     AssertInitialized();
     return pd_paths;
 }
 
+/// @brief Returns the configured Clang executable path.
 const UEMeta::StablePath& UEMeta::Config::ClangPath() const {
     AssertInitialized();
     return clang_path;
 }
 
+/// @brief Returns arguments appended to the filtered compile command before invoking Clang.
 const std::vector<std::string>& UEMeta::Config::AdditionalClangArgs() const {
     AssertInitialized();
     return additional_clang_args;
 }
 
+/// @brief Returns compile command arguments stripped before invoking Clang.
 const std::vector<std::string>& UEMeta::Config::StripArgs() const {
     AssertInitialized();
     return strip_args;
 }
 
+/// @brief Returns delimiter tokens used to trim output file paths.
 const std::vector<std::string>& UEMeta::Config::PathDelimiters() const {
     AssertInitialized();
     return path_delimiters;
 }
 
+/// @brief Returns blacklist tokens replaced in output file paths.
 const std::vector<std::string>& UEMeta::Config::PathBlacklist() const {
     AssertInitialized();
     return path_blacklist;
 }
 
+/// @brief Returns blacklist tokens used to filter header paths.
 const std::vector<std::string> & UEMeta::Config::HeaderBlacklist() const {
     AssertInitialized();
     return header_blacklist;
 }
 
+/// @brief Returns whitelist tokens used to filter header paths.
 const std::vector<std::string> & UEMeta::Config::HeaderWhitelist() const {
     AssertInitialized();
     return header_whitelist;
 }
 
+/// @brief Returns the process-wide configuration singleton.
 UEMeta::Config& UEMeta::Config::GetConfig() {
     static Config config{};
     return config;
 }
 
+/// @brief Throws if configuration access happens before CLI initialization succeeds.
 void UEMeta::Config::AssertInitialized() const {
     if (initialized.test()) return;
     throw std::runtime_error("Tried to use Config before it was initialized!");
 }
 
+/// @brief Parses CLI arguments and commits validated values into the configuration singleton.
 int UEMeta::Config::Initialize(int argc, char **argv) {
     auto& cfg = GetConfig();
     if (cfg.initialized.test()) {
@@ -394,6 +417,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     return 0;
 }
 
+/// @brief Returns the initialized Quill logger, falling back to a bootstrap logger during early startup.
 quill::Logger* UEMeta::Logger::GetQuill() const {
     if (logger) return logger;
     std::cerr << "using fallback logger" << std::endl;
@@ -408,20 +432,24 @@ quill::Logger* UEMeta::Logger::GetQuill() const {
     return quill::Frontend::create_or_get_logger("uemeta_bootstrap", std::move(console_sink));
 }
 
+/// @brief Reports whether the main logger sink set has been installed.
 bool UEMeta::Logger::IsInitialized() const {
     return !!logger;
 }
 
+/// @brief Returns the process-wide logger singleton.
 UEMeta::Logger& UEMeta::Logger::GetLogger() {
     static Logger logger{};
     return logger;
 }
 
+/// @brief Throws if code requires the main logger before logger initialization succeeds.
 void UEMeta::Logger::AssertInitialized() const {
     if (logger) return;
     throw std::runtime_error{"Tried to use Logger before it was initialized!."};
 }
 
+/// @brief Initializes Quill backend, console/file sinks, spinner handling, and the main logger.
 int UEMeta::Logger::Initialize() {
     try {
         auto& logger = GetLogger();

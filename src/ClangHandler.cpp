@@ -39,8 +39,10 @@
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/StablePath.hpp"
 
+/// @brief Tracks whether any guarded Clang visitor or callback caught an exception.
 static std::atomic_bool GClangExceptionCaught{false};
 
+/// @brief Records a Clang processing exception and logs the failing step.
 static void LogClangException(const std::string_view step, const std::exception& ex) noexcept {
     GClangExceptionCaught.store(true, std::memory_order_relaxed);
     try {
@@ -49,6 +51,7 @@ static void LogClangException(const std::string_view step, const std::exception&
     }
 }
 
+/// @brief Records an unknown Clang processing exception and logs the failing step.
 static void LogClangUnknownException(const std::string_view step) noexcept {
     GClangExceptionCaught.store(true, std::memory_order_relaxed);
     try {
@@ -57,6 +60,7 @@ static void LogClangUnknownException(const std::string_view step) noexcept {
     }
 }
 
+/// @brief Runs a visitor callback with exception translation into Clang traversal failure.
 template <typename Func>
 static bool GuardClangVisitor(const std::string_view step, Func&& func) noexcept {
     try {
@@ -70,6 +74,7 @@ static bool GuardClangVisitor(const std::string_view step, Func&& func) noexcept
     return false;
 }
 
+/// @brief Runs a non-visitor Clang callback with exception logging and failure recording.
 template <typename Func>
 static void GuardClangCallback(const std::string_view step, Func&& func) noexcept {
     try {
@@ -81,6 +86,7 @@ static void GuardClangCallback(const std::string_view step, Func&& func) noexcep
     }
 }
 
+/// @brief Builds the type/declaration printing policy used for emitted C++ type strings.
 static clang::PrintingPolicy MakePrintingPolicy(const clang::ASTContext& ctx) {
     clang::PrintingPolicy policy{ctx.getLangOpts()};
     policy.adjustForCPlusPlus();
@@ -91,6 +97,7 @@ static clang::PrintingPolicy MakePrintingPolicy(const clang::ASTContext& ctx) {
     return policy;
 }
 
+/// @brief Pretty-prints a Clang type, optionally with a placeholder declarator name.
 static std::string PrintType(const clang::ASTContext& ctx, const clang::QualType type, const std::string& placeholder = {}) {
     if (type.isNull()) {
         return "";
@@ -102,6 +109,7 @@ static std::string PrintType(const clang::ASTContext& ctx, const clang::QualType
     return stream.str();
 }
 
+/// @brief Walks through transparent declaration contexts to the first semantic parent context.
 static const clang::DeclContext* NonTransparentContext(const clang::DeclContext* context) {
     while (context && context->isTransparentContext()) {
         context = context->getParent();
@@ -109,6 +117,7 @@ static const clang::DeclContext* NonTransparentContext(const clang::DeclContext*
     return context;
 }
 
+/// @brief Returns a fully qualified declaration name with a leading global scope qualifier.
 static inline std::string QualifiedName(const clang::NamedDecl* decl) {
     if (!decl || !decl->getDeclName()) {
         return "";
@@ -121,6 +130,7 @@ static inline std::string QualifiedName(const clang::NamedDecl* decl) {
     return "::" + value;
 }
 
+/// @brief Converts a Clang access specifier to the JSON access string.
 static std::string AccessToString(const clang::AccessSpecifier access) {
     switch (access) {
         case clang::AS_public:
@@ -136,6 +146,7 @@ static std::string AccessToString(const clang::AccessSpecifier access) {
     return "";
 }
 
+/// @brief Converts a Clang storage class to the JSON storage class string.
 static std::string StorageClassToString(const clang::StorageClass storage_class) {
     switch (storage_class) {
         case clang::SC_None:
@@ -155,6 +166,7 @@ static std::string StorageClassToString(const clang::StorageClass storage_class)
     return "";
 }
 
+/// @brief Computes a lowercase hexadecimal MD5 digest for a string.
 static std::string Md5Hex(const std::string_view value) {
     llvm::MD5 hash;
     hash.update(llvm::StringRef{value.data(), value.size()});
@@ -163,6 +175,7 @@ static std::string Md5Hex(const std::string_view value) {
     return digest.str().str();
 }
 
+/// @brief Converts a member function reference qualifier to its source spelling.
 static std::string RefQualifierToString(const clang::RefQualifierKind qualifier) {
     switch (qualifier) {
         case clang::RQ_None:
@@ -176,6 +189,7 @@ static std::string RefQualifierToString(const clang::RefQualifierKind qualifier)
     return "";
 }
 
+/// @brief Converts a Clang exception specification kind to the JSON exceptionSpec spelling.
 static std::string ExceptionSpecToString(const clang::ExceptionSpecificationType spec) {
     switch (spec) {
         case clang::EST_None:
@@ -207,10 +221,12 @@ static std::string ExceptionSpecToString(const clang::ExceptionSpecificationType
     return "";
 }
 
+/// @brief Returns true when a template specialization was produced implicitly by Clang.
 static inline bool IsImplicitInstantiation(const clang::TemplateSpecializationKind kind) {
     return kind == clang::TSK_ImplicitInstantiation;
 }
 
+/// @brief Determines whether a record declaration should be ignored during metadata extraction.
 static bool ShouldSkipRecord(const clang::RecordDecl* decl) {
     if (!decl) {
         return true;
@@ -230,6 +246,7 @@ static bool ShouldSkipRecord(const clang::RecordDecl* decl) {
     return decl->isImplicit() || decl->isInvalidDecl();
 }
 
+/// @brief Determines whether a function declaration should be ignored during metadata extraction.
 static bool ShouldSkipFunction(const clang::FunctionDecl* decl) {
     if (!decl || decl->isImplicit() || decl->isInvalidDecl()) {
         return true;
@@ -242,6 +259,7 @@ static bool ShouldSkipFunction(const clang::FunctionDecl* decl) {
     return false;
 }
 
+/// @brief Determines whether a variable declaration should be ignored during metadata extraction.
 static bool ShouldSkipVariable(const clang::VarDecl* decl) {
     if (!decl || decl->isImplicit() || decl->isInvalidDecl()) {
         return true;
@@ -254,11 +272,13 @@ static bool ShouldSkipVariable(const clang::VarDecl* decl) {
     return false;
 }
 
+/// @brief Determines whether an enum declaration should be ignored during metadata extraction.
 static bool ShouldSkipEnum(const clang::EnumDecl* decl) {
     return !decl || decl->isImplicit() || decl->isInvalidDecl() ||
            IsImplicitInstantiation(decl->getTemplateSpecializationKind());
 }
 
+/// @brief Returns true for non-local declarations in the translation unit or namespace scopes.
 static bool IsTopLevelNamedDecl(const clang::NamedDecl* decl) {
     if (!decl || decl->isImplicit() || decl->isInvalidDecl() || decl->getParentFunctionOrMethod()) {
         return false;
@@ -269,6 +289,7 @@ static bool IsTopLevelNamedDecl(const clang::NamedDecl* decl) {
            llvm::isa_and_nonnull<clang::NamespaceDecl>(context);
 }
 
+/// @brief Returns true when a declaration location is invalid or comes from a system header.
 static bool IsInSystemHeader(const clang::Decl* decl, const clang::ASTContext& ctx) {
     if (!decl) {
         return true;
@@ -279,10 +300,7 @@ static bool IsInSystemHeader(const clang::Decl* decl, const clang::ASTContext& c
     return location.isInvalid() || source_manager.isInSystemHeader(location);
 }
 
-static inline std::string StablePathString(const std::filesystem::path& path) {
-    return UEMeta::StablePath{path}.string();
-}
-
+/// @brief Resolves a source location to a stable source file path string.
 static std::string FilePathForLocation(const clang::SourceManager& source_manager,
                                        const clang::SourceLocation location) {
     const auto expansion_location = source_manager.getExpansionLoc(location);
@@ -291,16 +309,17 @@ static std::string FilePathForLocation(const clang::SourceManager& source_manage
     }
 
     if (const auto presumed = source_manager.getPresumedLoc(expansion_location); presumed.isValid()) {
-        return StablePathString(presumed.getFilename());
+        return UEMeta::JsonDetail::StablePathString(presumed.getFilename());
     }
 
     if (auto file_entry = source_manager.getFileEntryRefForID(source_manager.getFileID(expansion_location))) {
-        return StablePathString(file_entry->getName().str());
+        return UEMeta::JsonDetail::StablePathString(file_entry->getName().str());
     }
 
     return "";
 }
 
+/// @brief Trims leading and trailing whitespace from formatted documentation text.
 static std::string TrimDocumentation(std::string value) {
     const auto begin = std::ranges::find_if_not(value, [](const unsigned char character) {
         return std::isspace(character);
@@ -316,6 +335,7 @@ static std::string TrimDocumentation(std::string value) {
     return {begin, end};
 }
 
+/// @brief Extracts formatted Doxygen text attached directly to one declaration.
 static std::string DocumentationForSingleDecl(const clang::Decl* decl, const clang::ASTContext& ctx) {
     if (!decl) {
         return "";
@@ -329,6 +349,7 @@ static std::string DocumentationForSingleDecl(const clang::Decl* decl, const cla
     return TrimDocumentation(comment->getFormattedText(ctx.getSourceManager(), ctx.getDiagnostics()));
 }
 
+/// @brief Extracts formatted Doxygen text from a declaration or its described template declaration.
 static std::string DocumentationForDecl(const clang::Decl* decl, const clang::ASTContext& ctx) {
     if (auto documentation = DocumentationForSingleDecl(decl, ctx); !documentation.empty()) {
         return documentation;
@@ -359,6 +380,7 @@ static std::string DocumentationForDecl(const clang::Decl* decl, const clang::AS
     return "";
 }
 
+/// @brief Selects the declaration whose source range should be used for declaration hashing.
 static const clang::Decl* SourceDeclForHash(const clang::NamedDecl* decl) {
     if (const auto* cxx_record = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl)) {
         if (const auto* templ = cxx_record->getDescribedClassTemplate()) {
@@ -381,6 +403,7 @@ static const clang::Decl* SourceDeclForHash(const clang::NamedDecl* decl) {
     return decl;
 }
 
+/// @brief Reads the single-file source text range used as the stable declaration hash input.
 static std::optional<std::string> RawSourceTextForHash(const clang::NamedDecl* decl, const clang::ASTContext& ctx) {
     const auto* source_decl = SourceDeclForHash(decl);
     if (!source_decl) {
@@ -413,6 +436,7 @@ static std::optional<std::string> RawSourceTextForHash(const clang::NamedDecl* d
     return text.str();
 }
 
+/// @brief Computes the MD5 hash of a declaration's source text range when it is available.
 static std::string DeclarationSourceHash(const clang::NamedDecl* decl, const clang::ASTContext& ctx) {
     const auto text = RawSourceTextForHash(decl, ctx);
     if (!text) {
@@ -422,6 +446,7 @@ static std::string DeclarationSourceHash(const clang::NamedDecl* decl, const cla
     return Md5Hex(*text);
 }
 
+/// @brief Builds the lexical namespace and record scope for a named declaration.
 static std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
     std::vector<std::string> scope;
     const auto* context = NonTransparentContext(decl ? decl->getDeclContext() : nullptr);
@@ -444,6 +469,7 @@ static std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
     return scope;
 }
 
+/// @brief Populates fields shared by every top-level JSON declaration.
 static void FillCommonDeclaration(UEMeta::JsonDeclaration& out, const clang::NamedDecl* decl, const clang::ASTContext& ctx) {
     out.name = decl->getNameAsString();
     out.qualified_name = QualifiedName(decl);
@@ -453,8 +479,10 @@ static void FillCommonDeclaration(UEMeta::JsonDeclaration& out, const clang::Nam
     out.documentation = DocumentationForDecl(decl, ctx);
 }
 
+/// @brief Builds JSON metadata for one template parameter declaration.
 static UEMeta::JsonTemplateParameter BuildTemplateParameter(const clang::NamedDecl* param, const clang::ASTContext& ctx);
 
+/// @brief Builds JSON metadata for all parameters in a Clang template parameter list.
 static std::vector<UEMeta::JsonTemplateParameter> BuildTemplateParameters(const clang::TemplateParameterList* parameters,
                                                                           const clang::ASTContext& ctx) {
     std::vector<UEMeta::JsonTemplateParameter> out;
@@ -470,6 +498,7 @@ static std::vector<UEMeta::JsonTemplateParameter> BuildTemplateParameters(const 
     return out;
 }
 
+/// @brief Builds JSON metadata for a type, non-type, or template-template parameter.
 static UEMeta::JsonTemplateParameter BuildTemplateParameter(const clang::NamedDecl* param, const clang::ASTContext& ctx) {
     UEMeta::JsonTemplateParameter out;
     if (!param) {
@@ -495,6 +524,7 @@ static UEMeta::JsonTemplateParameter BuildTemplateParameter(const clang::NamedDe
     return out;
 }
 
+/// @brief Retrieves template parameters declared by a record's primary class template.
 static std::vector<UEMeta::JsonTemplateParameter> TemplateParametersForRecord(const clang::RecordDecl* decl,
                                                                               const clang::ASTContext& ctx) {
     if (const auto* cxx_record = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl)) {
@@ -506,12 +536,14 @@ static std::vector<UEMeta::JsonTemplateParameter> TemplateParametersForRecord(co
     return {};
 }
 
+/// @brief Converts an enum constant's evaluated value to a decimal string.
 static inline std::string EnumValueToString(const clang::EnumConstantDecl* enumerator) {
     llvm::SmallString<32> value;
     enumerator->getInitVal().toString(value, 10);
     return value.str().str();
 }
 
+/// @brief Determines the emitted record kind string for class, struct, and union declarations.
 static std::string RecordKind(const clang::RecordDecl* decl) {
     if (decl->isUnion()) {
         return "union";
@@ -524,6 +556,7 @@ static std::string RecordKind(const clang::RecordDecl* decl) {
     return "struct";
 }
 
+/// @brief Builds ABI vtable slot metadata for a virtual method when Clang exposes layout information.
 static std::optional<UEMeta::JsonVTableIndex> BuildVTableIndex(const clang::CXXMethodDecl* method, clang::ASTContext& ctx) {
     if (!method || !method->isVirtual() || !clang::VTableContextBase::hasVtableSlot(method)) {
         return std::nullopt;
@@ -565,6 +598,7 @@ static std::optional<UEMeta::JsonVTableIndex> BuildVTableIndex(const clang::CXXM
     return std::nullopt;
 }
 
+/// @brief Builds JSON metadata for a free function, method, constructor, destructor, or conversion function.
 static UEMeta::JsonFunction BuildFunction(const clang::FunctionDecl* decl, clang::ASTContext& ctx) {
     UEMeta::JsonFunction out;
     out.kind = "function";
@@ -623,6 +657,7 @@ static UEMeta::JsonFunction BuildFunction(const clang::FunctionDecl* decl, clang
     return out;
 }
 
+/// @brief Builds JSON metadata for a global variable or static data member.
 static UEMeta::JsonVariable BuildVariable(const clang::VarDecl* decl, const clang::ASTContext& ctx) {
     UEMeta::JsonVariable out;
     out.name = decl->getNameAsString();
@@ -641,6 +676,7 @@ static UEMeta::JsonVariable BuildVariable(const clang::VarDecl* decl, const clan
     return out;
 }
 
+/// @brief Builds JSON metadata for a complete enum declaration.
 static UEMeta::JsonDeclaration BuildEnumDeclaration(const clang::EnumDecl* input, const clang::ASTContext& ctx) {
     const auto* decl = input;
 
@@ -665,6 +701,7 @@ static UEMeta::JsonDeclaration BuildEnumDeclaration(const clang::EnumDecl* input
     return out;
 }
 
+/// @brief Builds JSON metadata for an enum forward declaration.
 static UEMeta::JsonDeclaration BuildEnumForwardDeclaration(const clang::EnumDecl* decl, const clang::ASTContext& ctx) {
     UEMeta::JsonDeclaration out;
     out.kind = "forwardDeclaration";
@@ -676,6 +713,7 @@ static UEMeta::JsonDeclaration BuildEnumForwardDeclaration(const clang::EnumDecl
     return out;
 }
 
+/// @brief Builds JSON metadata for a type alias declaration.
 static UEMeta::JsonDeclaration BuildAliasDeclaration(const clang::TypeAliasDecl* decl, const clang::ASTContext& ctx) {
     UEMeta::JsonDeclaration out;
     out.kind = "alias";
@@ -687,6 +725,7 @@ static UEMeta::JsonDeclaration BuildAliasDeclaration(const clang::TypeAliasDecl*
     return out;
 }
 
+/// @brief Builds top-level JSON metadata for a variable declaration.
 static UEMeta::JsonDeclaration BuildVariableDeclaration(const clang::VarDecl* decl, const clang::ASTContext& ctx) {
     UEMeta::JsonDeclaration out;
     out.kind = "variable";
@@ -698,6 +737,7 @@ static UEMeta::JsonDeclaration BuildVariableDeclaration(const clang::VarDecl* de
     return out;
 }
 
+/// @brief Builds top-level JSON metadata for a function declaration.
 static UEMeta::JsonDeclaration BuildFunctionDeclaration(const clang::FunctionDecl* decl, clang::ASTContext& ctx) {
     UEMeta::JsonDeclaration out;
     out.kind = "function";
@@ -706,11 +746,13 @@ static UEMeta::JsonDeclaration BuildFunctionDeclaration(const clang::FunctionDec
     return out;
 }
 
+/// @brief Adds a nested record declaration to a containing record's nested declaration list.
 static void AppendNestedRecord(const clang::RecordDecl* decl, clang::ASTContext& ctx,
                                llvm::DenseSet<const clang::Decl*>& seen,
                                llvm::DenseSet<const clang::Decl*>& seen_forwards,
                                std::vector<UEMeta::JsonDeclaration>& nested);
 
+/// @brief Adds a nested enum declaration to a containing record's nested declaration list.
 static void AppendNestedEnum(const clang::EnumDecl* decl, const clang::ASTContext& ctx,
                              llvm::DenseSet<const clang::Decl*>& seen,
                              llvm::DenseSet<const clang::Decl*>& seen_forwards,
@@ -741,6 +783,7 @@ static void AppendNestedEnum(const clang::EnumDecl* decl, const clang::ASTContex
     nested.push_back(std::move(declaration));
 }
 
+/// @brief Adds a nested type alias declaration to a containing record's nested declaration list.
 static void AppendNestedAlias(const clang::TypeAliasDecl* decl, const clang::ASTContext& ctx,
                               llvm::DenseSet<const clang::Decl*>& seen,
                               std::vector<UEMeta::JsonDeclaration>& nested) {
@@ -756,6 +799,7 @@ static void AppendNestedAlias(const clang::TypeAliasDecl* decl, const clang::AST
     nested.push_back(BuildAliasDeclaration(decl, ctx));
 }
 
+/// @brief Attempts to retrieve record layout and avoids querying layouts Clang cannot provide.
 static const clang::ASTRecordLayout* TryGetRecordLayout(const clang::RecordDecl* decl, const clang::ASTContext& ctx) {
     if (!decl->isCompleteDefinition() || decl->isDependentContext()) {
         return nullptr;
@@ -769,6 +813,7 @@ static const clang::ASTRecordLayout* TryGetRecordLayout(const clang::RecordDecl*
     return &ctx.getASTRecordLayout(decl);
 }
 
+/// @brief Builds JSON metadata for a record forward declaration.
 static UEMeta::JsonDeclaration BuildRecordForwardDeclaration(const clang::RecordDecl* decl, const clang::ASTContext& ctx) {
     UEMeta::JsonDeclaration out;
     out.kind = "forwardDeclaration";
@@ -778,6 +823,7 @@ static UEMeta::JsonDeclaration BuildRecordForwardDeclaration(const clang::Record
     return out;
 }
 
+/// @brief Builds JSON metadata for a complete class, struct, or union declaration.
 static UEMeta::JsonDeclaration BuildRecordDeclaration(const clang::RecordDecl* input, clang::ASTContext& ctx,
                                                       llvm::DenseSet<const clang::Decl*>& seen,
                                                       llvm::DenseSet<const clang::Decl*>& seen_forwards) {
@@ -911,6 +957,7 @@ static UEMeta::JsonDeclaration BuildRecordDeclaration(const clang::RecordDecl* i
     return out;
 }
 
+/// @brief Adds a nested record definition or forward declaration to a containing record.
 static void AppendNestedRecord(const clang::RecordDecl* decl, clang::ASTContext& ctx,
                                llvm::DenseSet<const clang::Decl*>& seen,
                                llvm::DenseSet<const clang::Decl*>& seen_forwards,
@@ -941,6 +988,7 @@ static void AppendNestedRecord(const clang::RecordDecl* decl, clang::ASTContext&
     nested.push_back(std::move(declaration));
 }
 
+/// @brief Converts an arbitrary declaration/file label into a bounded filesystem-safe stem.
 static std::string SanitizeFileStem(const std::string_view value) {
     std::string out;
     out.reserve(value.size());
@@ -979,6 +1027,7 @@ static std::string SanitizeFileStem(const std::string_view value) {
     return out;
 }
 
+/// @brief Builds an output JSON path from a display label and stable hash suffix.
 static UEMeta::StablePath OutputFileForHash(const std::string& label, const std::string& hash) {
     const auto stem = SanitizeFileStem(label);
     const auto suffix = hash.empty() ? Md5Hex(label) : hash;
@@ -987,10 +1036,12 @@ static UEMeta::StablePath OutputFileForHash(const std::string& label, const std:
         fmtquill::format("{}-{}.json", stem, suffix)};
 }
 
+/// @brief Returns the grouping key used for file-based output, including a fallback for unknown files.
 static inline std::string FileGroupKey(const std::string& file) {
     return file.empty() ? "unknown" : file;
 }
 
+/// @brief Reads a source file for file content hashing.
 static std::optional<std::string> ReadFileContents(const std::string& file) {
     if (file.empty() || file == "unknown") {
         return std::nullopt;
@@ -1006,6 +1057,7 @@ static std::optional<std::string> ReadFileContents(const std::string& file) {
     return std::string{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
 }
 
+/// @brief Hashes file contents, falling back to hashing the file path when contents are unavailable.
 static std::string FileContentHash(const std::string& file) {
     if (const auto contents = ReadFileContents(file)) {
         return Md5Hex(*contents);
@@ -1014,6 +1066,7 @@ static std::string FileContentHash(const std::string& file) {
     return Md5Hex(file);
 }
 
+/// @brief Builds the per-file content hash table for emitted declarations.
 static std::map<std::string, std::string> BuildFileHashes(const std::vector<UEMeta::JsonDeclaration>& declarations) {
     std::map<std::string, std::string> hashes;
     for (const auto& declaration : declarations) {
@@ -1026,6 +1079,7 @@ static std::map<std::string, std::string> BuildFileHashes(const std::vector<UEMe
     return hashes;
 }
 
+/// @brief Returns a cached file hash or computes one when the file was not present in the table.
 static std::string HashForFile(const std::map<std::string, std::string>& file_hashes, const std::string& file) {
     if (const auto it = file_hashes.find(file); it != file_hashes.end()) {
         return it->second;
@@ -1034,15 +1088,7 @@ static std::string HashForFile(const std::map<std::string, std::string>& file_ha
     return FileContentHash(file);
 }
 
-static std::map<std::string, std::string> ScrubFileHashes(const std::map<std::string, std::string>& file_hashes) {
-    std::map<std::string, std::string> out;
-    for (const auto& [file, hash] : file_hashes) {
-        out[UEMeta::JsonDetail::ScrubFilePath(file)] = hash;
-    }
-
-    return out;
-}
-
+/// @brief Finds the configured parent-directory group that contains a file path.
 static std::string ParentDirectoryGroup(const std::string& file) {
     const UEMeta::StablePath file_path{file};
     const auto file_string = file_path.string();
@@ -1069,6 +1115,7 @@ static std::string ParentDirectoryGroup(const std::string& file) {
     return file;
 }
 
+/// @brief Writes already-serialized JSON text to disk, creating parent directories as needed.
 static bool WriteJsonTextFile(const UEMeta::StablePath& path, const std::string& json) {
     std::error_code ec;
     std::filesystem::create_directories(path.UnderlyingPath().parent_path(), ec);
@@ -1088,6 +1135,7 @@ static bool WriteJsonTextFile(const UEMeta::StablePath& path, const std::string&
     return true;
 }
 
+/// @brief Serializes a value to JSON and writes it to disk.
 template <typename Value>
 static bool WriteJsonFile(const UEMeta::StablePath& path, const Value& value) {
     std::string json;
@@ -1100,15 +1148,7 @@ static bool WriteJsonFile(const UEMeta::StablePath& path, const Value& value) {
     return WriteJsonTextFile(path, json);
 }
 
-static std::vector<std::string> ScrubFilePaths(const std::vector<std::string>& paths) {
-    std::vector<std::string> out;
-    out.reserve(paths.size());
-    for (const auto& path : paths) {
-        out.push_back(UEMeta::JsonDetail::ScrubFilePath(path));
-    }
-    return out;
-}
-
+/// @brief Appends one include edge to the include-order table.
 static void AppendIncludeOrder(std::vector<UEMeta::JsonIncludeOrder>& include_order,
                                std::string file, std::string inclusion) {
     if (file.empty() || inclusion.empty()) {
@@ -1130,22 +1170,27 @@ static void AppendIncludeOrder(std::vector<UEMeta::JsonIncludeOrder>& include_or
     existing_entry->inclusions.push_back(std::move(inclusion));
 }
 
+/// @brief Scrubs all file paths in the include-order table before JSON output.
 static std::vector<UEMeta::JsonIncludeOrder> ScrubIncludeOrder(const std::vector<UEMeta::JsonIncludeOrder>& include_order) {
     std::vector<UEMeta::JsonIncludeOrder> out;
     out.reserve(include_order.size());
     for (const auto& entry : include_order) {
         out.push_back(UEMeta::JsonIncludeOrder{
             .file = UEMeta::JsonDetail::ScrubFilePath(entry.file),
-            .inclusions = ScrubFilePaths(entry.inclusions)
+            .inclusions = UEMeta::JsonDetail::ScrubFilePaths(entry.inclusions)
         });
     }
     return out;
 }
 
+/// @brief Requests traversal of template instantiations.
 bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; }
+/// @brief Skips implicit compiler-generated declarations.
 bool UEMeta::ClangHandler::shouldVisitImplicitCode() const { return false; }
+/// @brief Skips lambda body traversal.
 bool UEMeta::ClangHandler::shouldVisitLambdaBody() const { return false; }
 
+/// @brief Runs Clang with ClangHandler and converts guarded exceptions into a nonzero result.
 int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
     GClangExceptionCaught.store(false, std::memory_order_relaxed);
     try {
@@ -1160,6 +1205,7 @@ int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
     return 1;
 }
 
+/// @brief Clears per-translation-unit state and starts declaration traversal progress reporting.
 void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     GuardClangCallback("BeginTranslationUnit", [&] {
         context = &ctx;
@@ -1170,6 +1216,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     });
 }
 
+/// @brief Applies configured header whitelist and blacklist filters to a path string.
 static bool StringPassesHeaderFilters(const std::string& str) {
     const auto& cfg = UEMeta::Config::GetConfig();
     const auto& wl = cfg.HeaderWhitelist();
@@ -1192,6 +1239,7 @@ static bool StringPassesHeaderFilters(const std::string& str) {
     return true;
 }
 
+/// @brief Filters, groups, hashes, scrubs, and writes JSON after AST traversal completes.
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     GuardClangCallback("EndTranslationUnit", [&] {
         UEM_SPINNER_STOP("Finished parsing AST");
@@ -1200,7 +1248,8 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
         UEM_INFO("Filtering {} declarations...", declarations.size());
         std::erase_if(declarations, [](const JsonDeclaration& decl) { return !StringPassesHeaderFilters(decl.file); });
         const auto file_hashes = BuildFileHashes(declarations);
-        WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "FileHashes.json"}, ScrubFileHashes(file_hashes));
+        WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "FileHashes.json"},
+                      UEMeta::JsonDetail::ScrubFileHashes(file_hashes));
         UEM_INFO("Serializing {} declarations...", declarations.size());
         switch (Config::GetConfig().SplitStrategy()) {
             case FileSplitStrategy::Monofile: {
@@ -1252,6 +1301,7 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     });
 }
 
+/// @brief Visits a top-level class, struct, union, or record forward declaration.
 bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* decl) {
     return GuardClangVisitor("VisitRecordDecl", [&] {
         if (!context || ShouldSkipRecord(decl)) {
@@ -1284,12 +1334,14 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* decl) {
     });
 }
 
+/// @brief Visits a class template through its templated record declaration.
 bool UEMeta::ClangHandler::VisitClassTemplateDecl(clang::ClassTemplateDecl* decl) {
     return GuardClangVisitor("VisitClassTemplateDecl", [&] {
         return VisitRecordDecl(decl ? decl->getTemplatedDecl() : nullptr);
     });
 }
 
+/// @brief Visits a top-level enum definition or forward declaration.
 bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* decl) {
     return GuardClangVisitor("VisitEnumDecl", [&] {
         if (!context || ShouldSkipEnum(decl)) {
@@ -1322,6 +1374,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* decl) {
     });
 }
 
+/// @brief Visits a top-level free function declaration.
 bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* decl) {
     return GuardClangVisitor("VisitFunctionDecl", [&] {
         if (!context || ShouldSkipFunction(decl) || llvm::isa<clang::CXXMethodDecl>(decl)) {
@@ -1345,12 +1398,14 @@ bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* decl) {
     });
 }
 
+/// @brief Visits a function template through its templated function declaration.
 bool UEMeta::ClangHandler::VisitFunctionTemplateDecl(clang::FunctionTemplateDecl* decl) {
     return GuardClangVisitor("VisitFunctionTemplateDecl", [&] {
         return VisitFunctionDecl(decl ? decl->getTemplatedDecl() : nullptr);
     });
 }
 
+/// @brief Visits a top-level type alias declaration.
 bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* decl) {
     return GuardClangVisitor("VisitTypeAliasDecl", [&] {
         if (!context || !decl || decl->isImplicit() || decl->isInvalidDecl()) {
@@ -1374,12 +1429,14 @@ bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* decl) {
     });
 }
 
+/// @brief Visits a type alias template through its templated alias declaration.
 bool UEMeta::ClangHandler::VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* decl) {
     return GuardClangVisitor("VisitTypeAliasTemplateDecl", [&] {
         return VisitTypeAliasDecl(decl ? decl->getTemplatedDecl() : nullptr);
     });
 }
 
+/// @brief Visits a top-level global variable declaration.
 bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* decl) {
     return GuardClangVisitor("VisitVarDecl", [&] {
         if (!context || ShouldSkipVariable(decl) || decl->isStaticDataMember() || !decl->hasGlobalStorage()) {
@@ -1403,12 +1460,14 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* decl) {
     });
 }
 
+/// @brief Visits a variable template through its templated variable declaration.
 bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl* decl) {
     return GuardClangVisitor("VisitVarTemplateDecl", [&] {
         return VisitVarDecl(decl ? decl->getTemplatedDecl() : nullptr);
     });
 }
 
+/// @brief Creates the AST consumer and include-order callback for one translation unit.
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
                                                                             llvm::StringRef file) {
     try {
@@ -1429,10 +1488,13 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         });
         include_order.clear();
 
+        /// @brief AST consumer that drives traversal and output once Clang finishes parsing a translation unit.
         class Consumer : public clang::ASTConsumer {
         public:
+            /// @brief Creates a consumer tied to the owning ClangHandler.
             explicit Consumer(ClangHandler* owner) : owner(owner) {}
 
+            /// @brief Stops the TU spinner, traverses declarations, and emits output.
             void HandleTranslationUnit(clang::ASTContext& ctx) override {
                 GuardClangCallback("HandleTranslationUnit", [&] {
                     if (owner->ticker_thread.joinable()) {
@@ -1453,11 +1515,14 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
             ClangHandler* owner;
         };
 
+        /// @brief Preprocessor callback that records source-to-include edges in directive order.
         class IncludeOrderCallback : public clang::PPCallbacks {
         public:
+            /// @brief Creates a callback tied to the owning ClangHandler and source manager.
             IncludeOrderCallback(ClangHandler* owner, const clang::SourceManager& source_manager)
                 : owner(owner), source_manager(source_manager) {}
 
+            /// @brief Records an include edge after applying configured header filters.
             void InclusionDirective(clang::SourceLocation hash_location, const clang::Token&, llvm::StringRef,
                                     bool, clang::CharSourceRange, clang::OptionalFileEntryRef included_file,
                                     llvm::StringRef, llvm::StringRef, const clang::Module*,
@@ -1472,7 +1537,7 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
                     if (included_path.empty()) {
                         included_path = included_file->getName();
                     }
-                    auto included_stable_path = StablePathString(included_path.str());
+                    auto included_stable_path = UEMeta::JsonDetail::StablePathString(included_path.str());
                     if (!StringPassesHeaderFilters(src_file) || !StringPassesHeaderFilters(included_stable_path)) return;
                     AppendIncludeOrder(owner->include_order, src_file, included_stable_path);
                 });

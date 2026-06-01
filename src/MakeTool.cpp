@@ -15,6 +15,7 @@
 
 using namespace clang::tooling;
 
+/// @brief Minimal compile_commands.json entry shape needed to rebuild a one-file database.
 struct CompileCommandEntry {
     std::string file;
     std::optional<std::string> command;
@@ -22,6 +23,7 @@ struct CompileCommandEntry {
     std::optional<std::string> output;
 };
 
+/// @brief Glaze metadata for the compile command fields read from compile_commands.json.
 template <>
 struct glz::meta<CompileCommandEntry> {
     using T = CompileCommandEntry;
@@ -34,6 +36,7 @@ struct glz::meta<CompileCommandEntry> {
     );
 };
 
+/// @brief Removes configured Unreal build arguments before Clang parses the translation unit.
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
     CommandLineArguments out{};
     const auto& ignored_options = UEMeta::Config::GetConfig().StripArgs();
@@ -67,6 +70,7 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
     return out;
 }
 
+/// @brief Loads compile_commands.json and rewrites the configured source entry to use the configured Clang path.
 static std::string FixupCommand(const std::string& cc_path) {
     try {
         auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
@@ -160,6 +164,7 @@ static std::string FixupCommand(const std::string& cc_path) {
     return "";
 }
 
+/// @brief Creates the ClangTool and argument adjusters for the configured translation unit.
 std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
     try {
         std::string error{};

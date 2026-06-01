@@ -188,6 +188,7 @@ endif()
 
 add_executable(uemeta src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
+        src/JsonHelpers.cpp
         src/MakeTool.cpp
         src/StablePath.cpp)
 

@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -10,7 +9,7 @@
 
 #include <glaze/glaze.hpp>
 
-#include "Cli.hpp"
+#include "UEMeta/JsonHelpers.hpp"
 
 namespace UEMeta {
     /**
@@ -1011,100 +1010,11 @@ namespace UEMeta {
         std::string aliased_type;
     };
 
-    namespace JsonDetail {
-        template <typename T>
-        std::span<const T> SpanOf(const std::vector<T>& values) noexcept {
-            return {values.data(), values.size()};
-        }
-
-        template <typename T>
-        std::optional<std::span<const T>> NonEmptySpanOf(const std::vector<T>& values) noexcept {
-            if (values.empty()) {
-                return std::nullopt;
-            }
-            return SpanOf(values);
-        }
-
-        inline std::optional<std::string_view> NonEmptyString(const std::string& value) noexcept {
-            if (value.empty()) {
-                return std::nullopt;
-            }
-            return std::string_view{value};
-        }
-
-        inline std::optional<bool> TrueOnly(const bool value) noexcept {
-            if (!value) {
-                return std::nullopt;
-            }
-            return true;
-        }
-
-        inline std::string ScrubFilePath(const std::string_view file) noexcept {
-            std::string original_file;
-            try {
-                original_file = std::string{file};
-                std::string out_file = original_file;
-                const auto& delimiters = Config::GetConfig().PathDelimiters();
-                const auto& blacklist = Config::GetConfig().PathBlacklist();
-                bool changed = false;
-
-                if (!delimiters.empty()) {
-                    size_t highest_delim = std::string::npos;
-                    for (const auto& delimiter : delimiters) {
-                        if (delimiter.empty()) {
-                            continue;
-                        }
-
-                        const auto delim_loc = out_file.rfind(delimiter);
-                        if (delim_loc != std::string::npos &&
-                            (highest_delim == std::string::npos || delim_loc > highest_delim)) {
-                            highest_delim = delim_loc;
-                        }
-                    }
-                    if (highest_delim != std::string::npos) {
-                        out_file = out_file.substr(highest_delim);
-                        changed = true;
-                    }
-                }
-
-                if (!blacklist.empty()) {
-                    constexpr std::string_view replacement = "removed";
-
-                    for (const auto& token : blacklist) {
-                        if (token.empty()) {
-                            continue;
-                        }
-
-                        for (auto begin = out_file.find(token);
-                            begin != std::string::npos;
-                            begin = out_file.find(token, begin + replacement.size())) {
-                            out_file.replace(begin, token.size(), replacement);
-                            changed = true;
-                        }
-                    }
-                }
-
-                if (changed) {
-                    out_file = std::filesystem::path{out_file}.lexically_normal().string();
-                }
-
-                return out_file;
-            } catch (std::exception& ex) {
-                UEM_ERROR("Error scrubbing file {}: '{}', will replace with empty string!", original_file, ex.what());
-                return "";
-            } catch (...) {
-                UEM_ERROR("Unknown error scrubbing file {}, will replace with empty string!", original_file);
-                return "";
-            }
-        }
-
-        template<typename T>
-        std::string FileScrubber(const T& object) noexcept {
-            return ScrubFilePath(object.file);
-        }
-    }
 }
 
+/**
+ * @brief Glaze metadata that maps JsonTemplateParameter fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonTemplateParameter> {
     using T = UEMeta::JsonTemplateParameter;
@@ -1118,6 +1028,9 @@ struct glz::meta<UEMeta::JsonTemplateParameter> {
         "parameters", &T::parameters
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing template parameter metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1132,6 +1045,9 @@ struct glz::meta<UEMeta::JsonTemplateParameter> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonVTableIndex fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonVTableIndex> {
     using T = UEMeta::JsonVTableIndex;
@@ -1142,6 +1058,9 @@ struct glz::meta<UEMeta::JsonVTableIndex> {
     );
 };
 
+/**
+ * @brief Glaze metadata that maps JsonParameter fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonParameter> {
     using T = UEMeta::JsonParameter;
@@ -1153,6 +1072,9 @@ struct glz::meta<UEMeta::JsonParameter> {
         "documentation", &T::documentation
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing function parameter metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1163,6 +1085,9 @@ struct glz::meta<UEMeta::JsonParameter> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonFunction fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonFunction> {
     using T = UEMeta::JsonFunction;
@@ -1195,6 +1120,9 @@ struct glz::meta<UEMeta::JsonFunction> {
         "vtableIndex", &T::vtable_index
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing function metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1212,6 +1140,9 @@ struct glz::meta<UEMeta::JsonFunction> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonVariable fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonVariable> {
     using T = UEMeta::JsonVariable;
@@ -1232,6 +1163,9 @@ struct glz::meta<UEMeta::JsonVariable> {
         "isThreadLocal", &T::is_thread_local
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing variable metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1245,6 +1179,9 @@ struct glz::meta<UEMeta::JsonVariable> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonEnumerator fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonEnumerator> {
     using T = UEMeta::JsonEnumerator;
@@ -1257,6 +1194,9 @@ struct glz::meta<UEMeta::JsonEnumerator> {
         "documentation", &T::documentation
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing enumerator metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1267,6 +1207,9 @@ struct glz::meta<UEMeta::JsonEnumerator> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonField fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonField> {
     using T = UEMeta::JsonField;
@@ -1285,6 +1228,9 @@ struct glz::meta<UEMeta::JsonField> {
         "offsetBits", &T::offset_bits
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing field metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1297,6 +1243,9 @@ struct glz::meta<UEMeta::JsonField> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonBase fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonBase> {
     using T = UEMeta::JsonBase;
@@ -1309,6 +1258,9 @@ struct glz::meta<UEMeta::JsonBase> {
         "offset", &T::offset
     );
 
+    /**
+     * @brief Omits empty optional JSON fields while writing base-class metadata.
+     */
     template <typename Value>
     static constexpr bool skip_if(Value&& value, const std::string_view key, const meta_context&) {
         using V = std::decay_t<Value>;
@@ -1321,6 +1273,9 @@ struct glz::meta<UEMeta::JsonBase> {
     }
 };
 
+/**
+ * @brief Glaze metadata that maps JsonIncludeOrder fields to JSON object keys.
+ */
 template <>
 struct glz::meta<UEMeta::JsonIncludeOrder> {
     using T = UEMeta::JsonIncludeOrder;
@@ -1331,13 +1286,22 @@ struct glz::meta<UEMeta::JsonIncludeOrder> {
     );
 };
 
+/**
+ * @brief Enables custom Glaze serialization for JsonDeclaration.
+ */
 template <>
 struct glz::meta<UEMeta::JsonDeclaration> {
     static constexpr auto custom_write = true;
 };
 
+/**
+ * @brief Custom Glaze writer for top-level declarations with kind-specific payload shaping.
+ */
 template <>
 struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
+    /**
+     * @brief Serializes a JsonDeclaration into its public JSON representation.
+     */
     template <auto Opts>
     static void op(const UEMeta::JsonDeclaration& declaration, is_context auto&& ctx, auto&& b, auto&& ix) noexcept {
         using namespace UEMeta::JsonDetail;
