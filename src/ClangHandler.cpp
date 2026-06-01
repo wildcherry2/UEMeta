@@ -2,7 +2,9 @@
 #include "UEMeta/ClangHandler.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -27,6 +29,7 @@
 #include <clang/Lex/PPCallbacks.h>
 #include <clang/Lex/Lexer.h>
 #include <clang/Lex/Preprocessor.h>
+#include <clang/Tooling/Tooling.h>
 #include <llvm/ADT/APSInt.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/Support/Casting.h>
@@ -35,6 +38,48 @@
 
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/StablePath.hpp"
+
+static std::atomic_bool GClangExceptionCaught{false};
+
+static void LogClangException(const std::string_view step, const std::exception& ex) noexcept {
+    GClangExceptionCaught.store(true, std::memory_order_relaxed);
+    try {
+        UEM_ERROR("(clang) {} failed with exception: {}", step, ex.what());
+    } catch (...) {
+    }
+}
+
+static void LogClangUnknownException(const std::string_view step) noexcept {
+    GClangExceptionCaught.store(true, std::memory_order_relaxed);
+    try {
+        UEM_ERROR("(clang) {} failed with unknown exception", step);
+    } catch (...) {
+    }
+}
+
+template <typename Func>
+static bool GuardClangVisitor(const std::string_view step, Func&& func) noexcept {
+    try {
+        return std::forward<Func>(func)();
+    } catch (const std::exception& ex) {
+        LogClangException(step, ex);
+    } catch (...) {
+        LogClangUnknownException(step);
+    }
+
+    return false;
+}
+
+template <typename Func>
+static void GuardClangCallback(const std::string_view step, Func&& func) noexcept {
+    try {
+        std::forward<Func>(func)();
+    } catch (const std::exception& ex) {
+        LogClangException(step, ex);
+    } catch (...) {
+        LogClangUnknownException(step);
+    }
+}
 
 static clang::PrintingPolicy MakePrintingPolicy(const clang::ASTContext& ctx) {
     clang::PrintingPolicy policy{ctx.getLangOpts()};
@@ -1101,12 +1146,28 @@ bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return tr
 bool UEMeta::ClangHandler::shouldVisitImplicitCode() const { return false; }
 bool UEMeta::ClangHandler::shouldVisitLambdaBody() const { return false; }
 
+int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
+    GClangExceptionCaught.store(false, std::memory_order_relaxed);
+    try {
+        const auto result = tool.run(clang::tooling::newFrontendActionFactory<ClangHandler>().get());
+        return GClangExceptionCaught.load(std::memory_order_relaxed) ? 1 : result;
+    } catch (const std::exception& ex) {
+        LogClangException("ClangTool::run", ex);
+    } catch (...) {
+        LogClangUnknownException("ClangTool::run");
+    }
+
+    return 1;
+}
+
 void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
-    context = &ctx;
-    declarations.clear();
-    visited_decls.clear();
-    visited_forward_decls.clear();
-    UEM_SPINNER_START("Parsing AST for declarations (0)");
+    GuardClangCallback("BeginTranslationUnit", [&] {
+        context = &ctx;
+        declarations.clear();
+        visited_decls.clear();
+        visited_forward_decls.clear();
+        UEM_SPINNER_START("Parsing AST for declarations (0)");
+    });
 }
 
 static bool StringPassesHeaderFilters(const std::string& str) {
@@ -1132,264 +1193,303 @@ static bool StringPassesHeaderFilters(const std::string& str) {
 }
 
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
-    UEM_SPINNER_STOP("Finished parsing AST");
-    const auto scrubbed_include_order = ScrubIncludeOrder(include_order);
-    WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"}, scrubbed_include_order);
-    UEM_INFO("Filtering {} declarations...", declarations.size());
-    std::erase_if(declarations, [](const JsonDeclaration& decl){ return !StringPassesHeaderFilters(decl.file); });
-    const auto file_hashes = BuildFileHashes(declarations);
-    WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "FileHashes.json"}, ScrubFileHashes(file_hashes));
-    UEM_INFO("Serializing {} declarations...", declarations.size());
-    switch (Config::GetConfig().SplitStrategy()) {
-        case FileSplitStrategy::Monofile: {
-            WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"}, declarations);
-            break;
-        }
-        case FileSplitStrategy::ByClass: {
-            std::size_t anonymous_index = 0;
-            for (const auto& declaration : declarations) {
-                const auto key = declaration.qualified_name.empty()
-                    ? fmtquill::format("{}-anonymous-{}", declaration.kind, anonymous_index++)
-                    : declaration.qualified_name;
-                const auto label = declaration.qualified_name.empty() ? key : declaration.qualified_name;
-                const auto hash = declaration.hash.empty() ? Md5Hex(key) : declaration.hash;
-                WriteJsonFile(OutputFileForHash(label, hash), std::vector{declaration});
+    GuardClangCallback("EndTranslationUnit", [&] {
+        UEM_SPINNER_STOP("Finished parsing AST");
+        const auto scrubbed_include_order = ScrubIncludeOrder(include_order);
+        WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"}, scrubbed_include_order);
+        UEM_INFO("Filtering {} declarations...", declarations.size());
+        std::erase_if(declarations, [](const JsonDeclaration& decl) { return !StringPassesHeaderFilters(decl.file); });
+        const auto file_hashes = BuildFileHashes(declarations);
+        WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "FileHashes.json"}, ScrubFileHashes(file_hashes));
+        UEM_INFO("Serializing {} declarations...", declarations.size());
+        switch (Config::GetConfig().SplitStrategy()) {
+            case FileSplitStrategy::Monofile: {
+                WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"}, declarations);
+                break;
             }
-            break;
-        }
-        case FileSplitStrategy::ByParentDirectory: {
-            std::map<std::string, std::vector<JsonDeclaration>> groups;
-            for (const auto& declaration : declarations) {
-                const auto group_key = ParentDirectoryGroup(declaration.file);
-                groups[group_key].push_back(declaration);
+            case FileSplitStrategy::ByClass: {
+                std::size_t anonymous_index = 0;
+                for (const auto& declaration : declarations) {
+                    const auto key = declaration.qualified_name.empty()
+                        ? fmtquill::format("{}-anonymous-{}", declaration.kind, anonymous_index++)
+                        : declaration.qualified_name;
+                    const auto label = declaration.qualified_name.empty() ? key : declaration.qualified_name;
+                    const auto hash = declaration.hash.empty() ? Md5Hex(key) : declaration.hash;
+                    WriteJsonFile(OutputFileForHash(label, hash), std::vector{declaration});
+                }
+                break;
             }
+            case FileSplitStrategy::ByParentDirectory: {
+                std::map<std::string, std::vector<JsonDeclaration>> groups;
+                for (const auto& declaration : declarations) {
+                    const auto group_key = ParentDirectoryGroup(declaration.file);
+                    groups[group_key].push_back(declaration);
+                }
 
-            for (const auto& [group_key, group_declarations] : groups) {
-                const auto label = std::filesystem::path{group_key}.filename().string().empty()
-                    ? group_key
-                    : std::filesystem::path{group_key}.filename().string();
-                WriteJsonFile(OutputFileForHash(label, Md5Hex(group_key)), group_declarations);
+                for (const auto& [group_key, group_declarations] : groups) {
+                    const auto label = std::filesystem::path{group_key}.filename().string().empty()
+                        ? group_key
+                        : std::filesystem::path{group_key}.filename().string();
+                    WriteJsonFile(OutputFileForHash(label, Md5Hex(group_key)), group_declarations);
+                }
+                break;
             }
-            break;
-        }
-        case FileSplitStrategy::Default:
-        case FileSplitStrategy::ByFile: {
-            std::map<std::string, std::vector<JsonDeclaration>> groups;
-            for (const auto& declaration : declarations) {
-                groups[FileGroupKey(declaration.file)].push_back(declaration);
-            }
+            case FileSplitStrategy::Default:
+            case FileSplitStrategy::ByFile: {
+                std::map<std::string, std::vector<JsonDeclaration>> groups;
+                for (const auto& declaration : declarations) {
+                    groups[FileGroupKey(declaration.file)].push_back(declaration);
+                }
 
-            for (const auto& [file, file_declarations] : groups) {
-                const auto filename = std::filesystem::path{file}.filename().string();
-                WriteJsonFile(OutputFileForHash(filename.empty() ? file : filename, HashForFile(file_hashes, file)),
-                              file_declarations);
+                for (const auto& [file, file_declarations] : groups) {
+                    const auto filename = std::filesystem::path{file}.filename().string();
+                    WriteJsonFile(OutputFileForHash(filename.empty() ? file : filename, HashForFile(file_hashes, file)),
+                                  file_declarations);
+                }
+                break;
             }
-            break;
         }
-    }
+    });
 }
 
 bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* decl) {
-    if (!context || ShouldSkipRecord(decl)) {
-        return true;
-    }
-
-    const auto* target = decl;
-    if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
-        return true;
-    }
-
-    JsonDeclaration declaration;
-    if (target->isThisDeclarationADefinition()) {
-        const auto* key = target->getCanonicalDecl();
-        if (!visited_decls.insert(key).second) {
+    return GuardClangVisitor("VisitRecordDecl", [&] {
+        if (!context || ShouldSkipRecord(decl)) {
             return true;
         }
-        declaration = BuildRecordDeclaration(target, *context, visited_decls, visited_forward_decls);
-    } else {
-        if (!visited_forward_decls.insert(target).second) {
+
+        const auto* target = decl;
+        if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
             return true;
         }
-        declaration = BuildRecordForwardDeclaration(target, *context);
-    }
 
-    declaration.hash = DeclarationSourceHash(target, *context);
-    declarations.push_back(std::move(declaration));
-    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
-    return true;
+        JsonDeclaration declaration;
+        if (target->isThisDeclarationADefinition()) {
+            const auto* key = target->getCanonicalDecl();
+            if (!visited_decls.insert(key).second) {
+                return true;
+            }
+            declaration = BuildRecordDeclaration(target, *context, visited_decls, visited_forward_decls);
+        } else {
+            if (!visited_forward_decls.insert(target).second) {
+                return true;
+            }
+            declaration = BuildRecordForwardDeclaration(target, *context);
+        }
+
+        declaration.hash = DeclarationSourceHash(target, *context);
+        declarations.push_back(std::move(declaration));
+        UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
+        return true;
+    });
 }
 
 bool UEMeta::ClangHandler::VisitClassTemplateDecl(clang::ClassTemplateDecl* decl) {
-    return VisitRecordDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    return GuardClangVisitor("VisitClassTemplateDecl", [&] {
+        return VisitRecordDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    });
 }
 
 bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* decl) {
-    if (!context || ShouldSkipEnum(decl)) {
-        return true;
-    }
-
-    const auto* target = decl;
-    if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
-        return true;
-    }
-
-    JsonDeclaration declaration;
-    if (target->isThisDeclarationADefinition()) {
-        const auto* key = target->getCanonicalDecl();
-        if (!visited_decls.insert(key).second) {
+    return GuardClangVisitor("VisitEnumDecl", [&] {
+        if (!context || ShouldSkipEnum(decl)) {
             return true;
         }
-        declaration = BuildEnumDeclaration(target, *context);
-    } else {
-        if (!visited_forward_decls.insert(target).second) {
+
+        const auto* target = decl;
+        if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
             return true;
         }
-        declaration = BuildEnumForwardDeclaration(target, *context);
-    }
 
-    declaration.hash = DeclarationSourceHash(target, *context);
-    declarations.push_back(std::move(declaration));
-    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
-    return true;
+        JsonDeclaration declaration;
+        if (target->isThisDeclarationADefinition()) {
+            const auto* key = target->getCanonicalDecl();
+            if (!visited_decls.insert(key).second) {
+                return true;
+            }
+            declaration = BuildEnumDeclaration(target, *context);
+        } else {
+            if (!visited_forward_decls.insert(target).second) {
+                return true;
+            }
+            declaration = BuildEnumForwardDeclaration(target, *context);
+        }
+
+        declaration.hash = DeclarationSourceHash(target, *context);
+        declarations.push_back(std::move(declaration));
+        UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
+        return true;
+    });
 }
 
 bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* decl) {
-    if (!context || ShouldSkipFunction(decl) || llvm::isa<clang::CXXMethodDecl>(decl)) {
-        return true;
-    }
+    return GuardClangVisitor("VisitFunctionDecl", [&] {
+        if (!context || ShouldSkipFunction(decl) || llvm::isa<clang::CXXMethodDecl>(decl)) {
+            return true;
+        }
 
-    const auto* target = decl->getCanonicalDecl();
-    if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
-        return true;
-    }
+        const auto* target = decl->getCanonicalDecl();
+        if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
+            return true;
+        }
 
-    if (!visited_decls.insert(target).second) {
-        return true;
-    }
+        if (!visited_decls.insert(target).second) {
+            return true;
+        }
 
-    auto declaration = BuildFunctionDeclaration(target, *context);
-    declaration.hash = DeclarationSourceHash(target, *context);
-    declarations.push_back(std::move(declaration));
-    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
-    return true;
+        auto declaration = BuildFunctionDeclaration(target, *context);
+        declaration.hash = DeclarationSourceHash(target, *context);
+        declarations.push_back(std::move(declaration));
+        UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
+        return true;
+    });
 }
 
 bool UEMeta::ClangHandler::VisitFunctionTemplateDecl(clang::FunctionTemplateDecl* decl) {
-    return VisitFunctionDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    return GuardClangVisitor("VisitFunctionTemplateDecl", [&] {
+        return VisitFunctionDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    });
 }
 
 bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* decl) {
-    if (!context || !decl || decl->isImplicit() || decl->isInvalidDecl()) {
-        return true;
-    }
+    return GuardClangVisitor("VisitTypeAliasDecl", [&] {
+        if (!context || !decl || decl->isImplicit() || decl->isInvalidDecl()) {
+            return true;
+        }
 
-    if (!IsTopLevelNamedDecl(decl) || IsInSystemHeader(decl, *context)) {
-        return true;
-    }
+        if (!IsTopLevelNamedDecl(decl) || IsInSystemHeader(decl, *context)) {
+            return true;
+        }
 
-    const auto* key = decl->getCanonicalDecl();
-    if (!visited_decls.insert(key).second) {
-        return true;
-    }
+        const auto* key = decl->getCanonicalDecl();
+        if (!visited_decls.insert(key).second) {
+            return true;
+        }
 
-    auto declaration = BuildAliasDeclaration(decl, *context);
-    declaration.hash = DeclarationSourceHash(decl, *context);
-    declarations.push_back(std::move(declaration));
-    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
-    return true;
+        auto declaration = BuildAliasDeclaration(decl, *context);
+        declaration.hash = DeclarationSourceHash(decl, *context);
+        declarations.push_back(std::move(declaration));
+        UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
+        return true;
+    });
 }
 
 bool UEMeta::ClangHandler::VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* decl) {
-    return VisitTypeAliasDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    return GuardClangVisitor("VisitTypeAliasTemplateDecl", [&] {
+        return VisitTypeAliasDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    });
 }
 
 bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* decl) {
-    if (!context || ShouldSkipVariable(decl) || decl->isStaticDataMember() || !decl->hasGlobalStorage()) {
-        return true;
-    }
+    return GuardClangVisitor("VisitVarDecl", [&] {
+        if (!context || ShouldSkipVariable(decl) || decl->isStaticDataMember() || !decl->hasGlobalStorage()) {
+            return true;
+        }
 
-    const auto* target = decl->getCanonicalDecl();
-    if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
-        return true;
-    }
+        const auto* target = decl->getCanonicalDecl();
+        if (!IsTopLevelNamedDecl(target) || IsInSystemHeader(target, *context)) {
+            return true;
+        }
 
-    if (!visited_decls.insert(target).second) {
-        return true;
-    }
+        if (!visited_decls.insert(target).second) {
+            return true;
+        }
 
-    auto declaration = BuildVariableDeclaration(target, *context);
-    declaration.hash = DeclarationSourceHash(target, *context);
-    declarations.push_back(std::move(declaration));
-    UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
-    return true;
+        auto declaration = BuildVariableDeclaration(target, *context);
+        declaration.hash = DeclarationSourceHash(target, *context);
+        declarations.push_back(std::move(declaration));
+        UEM_SPINNER_UPDATE(fmtquill::format("Parsing AST for declarations ({})", declarations.size()));
+        return true;
+    });
 }
 
 bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl* decl) {
-    return VisitVarDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    return GuardClangVisitor("VisitVarTemplateDecl", [&] {
+        return VisitVarDecl(decl ? decl->getTemplatedDecl() : nullptr);
+    });
 }
 
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
                                                                             llvm::StringRef file) {
-    const auto tu_name = std::filesystem::path(file.str()).filename().string();
-    UEM_SPINNER_START(fmtquill::format("Parsing TU '{}' (this may take a moment)",
-                                       tu_name.empty() ? file.str() : tu_name));
-    ticker_thread = std::jthread([tu_name](std::stop_token token) {
-        while (true) {
-            if (token.stop_requested()) {
-                UEM_SPINNER_STOP(fmtquill::format("TU '{}' parsed!", tu_name)); // NOLINT(*-lambda-function-name)
-                return;
-            }
-            UEM_SPINNER_TICK; // NOLINT(*-lambda-function-name)
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    });
-    include_order.clear();
+    try {
+        const auto tu_name = std::filesystem::path(file.str()).filename().string();
+        UEM_SPINNER_START(fmtquill::format("Parsing TU '{}' (this may take a moment)",
+                                           tu_name.empty() ? file.str() : tu_name));
+        ticker_thread = std::jthread([tu_name](std::stop_token token) {
+            GuardClangCallback("translation unit spinner", [&] {
+                while (true) {
+                    if (token.stop_requested()) {
+                        UEM_SPINNER_STOP(fmtquill::format("TU '{}' parsed!", tu_name)); // NOLINT(*-lambda-function-name)
+                        return;
+                    }
+                    UEM_SPINNER_TICK; // NOLINT(*-lambda-function-name)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+            });
+        });
+        include_order.clear();
 
-    class Consumer : public clang::ASTConsumer {
-    public:
-        explicit Consumer(ClangHandler* owner) : owner(owner) {}
+        class Consumer : public clang::ASTConsumer {
+        public:
+            explicit Consumer(ClangHandler* owner) : owner(owner) {}
 
-        void HandleTranslationUnit(clang::ASTContext& ctx) override {
-            owner->ticker_thread.request_stop();
-            owner->ticker_thread.join();
-            UEM_INFO("Starting AST traversal...");
-            owner->BeginTranslationUnit(ctx);
-            owner->TraverseDecl(ctx.getTranslationUnitDecl());
-            owner->EndTranslationUnit(ctx);
-        }
-
-    private:
-        ClangHandler* owner;
-    };
-
-    class IncludeOrderCallback : public clang::PPCallbacks {
-    public:
-        IncludeOrderCallback(ClangHandler* owner, const clang::SourceManager& source_manager)
-            : owner(owner), source_manager(source_manager) {}
-
-        void InclusionDirective(clang::SourceLocation hash_location, const clang::Token&, llvm::StringRef,
-                                bool, clang::CharSourceRange, clang::OptionalFileEntryRef included_file,
-                                llvm::StringRef, llvm::StringRef, const clang::Module*,
-                                bool, clang::SrcMgr::CharacteristicKind) override {
-            if (!included_file) {
-                return;
+            void HandleTranslationUnit(clang::ASTContext& ctx) override {
+                GuardClangCallback("HandleTranslationUnit", [&] {
+                    if (owner->ticker_thread.joinable()) {
+                        owner->ticker_thread.request_stop();
+                        owner->ticker_thread.join();
+                    }
+                    UEM_INFO("Starting AST traversal...");
+                    owner->BeginTranslationUnit(ctx);
+                    if (!owner->TraverseDecl(ctx.getTranslationUnitDecl())) {
+                        UEM_ERROR("(clang) AST traversal aborted due to an earlier exception.");
+                        return;
+                    }
+                    owner->EndTranslationUnit(ctx);
+                });
             }
 
-            const auto src_file = FilePathForLocation(source_manager, hash_location);
-            auto included_path = included_file->getFileEntry().tryGetRealPathName();
-            if (included_path.empty()) {
-                included_path = included_file->getName();
+        private:
+            ClangHandler* owner;
+        };
+
+        class IncludeOrderCallback : public clang::PPCallbacks {
+        public:
+            IncludeOrderCallback(ClangHandler* owner, const clang::SourceManager& source_manager)
+                : owner(owner), source_manager(source_manager) {}
+
+            void InclusionDirective(clang::SourceLocation hash_location, const clang::Token&, llvm::StringRef,
+                                    bool, clang::CharSourceRange, clang::OptionalFileEntryRef included_file,
+                                    llvm::StringRef, llvm::StringRef, const clang::Module*,
+                                    bool, clang::SrcMgr::CharacteristicKind) override {
+                GuardClangCallback("InclusionDirective", [&] {
+                    if (!included_file) {
+                        return;
+                    }
+
+                    const auto src_file = FilePathForLocation(source_manager, hash_location);
+                    auto included_path = included_file->getFileEntry().tryGetRealPathName();
+                    if (included_path.empty()) {
+                        included_path = included_file->getName();
+                    }
+                    auto included_stable_path = StablePathString(included_path.str());
+                    if (!StringPassesHeaderFilters(src_file) || !StringPassesHeaderFilters(included_stable_path)) return;
+                    AppendIncludeOrder(owner->include_order, src_file, included_stable_path);
+                });
             }
-            auto included_stable_path = StablePathString(included_path.str());
-            if (!StringPassesHeaderFilters(src_file) || !StringPassesHeaderFilters(included_stable_path)) return;
-            AppendIncludeOrder(owner->include_order, src_file, included_stable_path);
-        }
 
-    private:
-        ClangHandler* owner;
-        const clang::SourceManager& source_manager;
-    };
+        private:
+            ClangHandler* owner;
+            const clang::SourceManager& source_manager;
+        };
 
-    compiler.getPreprocessor().addPPCallbacks(std::make_unique<IncludeOrderCallback>(this, compiler.getSourceManager()));
-    return std::make_unique<Consumer>(this);
+        compiler.getPreprocessor().addPPCallbacks(std::make_unique<IncludeOrderCallback>(this, compiler.getSourceManager()));
+        return std::make_unique<Consumer>(this);
+    } catch (const std::exception& ex) {
+        LogClangException("CreateASTConsumer", ex);
+    } catch (...) {
+        LogClangUnknownException("CreateASTConsumer");
+    }
+
+    return std::make_unique<clang::ASTConsumer>();
 }

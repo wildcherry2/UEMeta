@@ -69,7 +69,7 @@ public:
             spinner->set_progress(tick_count);
         }
         else if (tag.contains(UEM_STOP_SPINNER_TAG)) {
-            if (!spinner) return ooo_msg(tag);
+            if (!spinner) return;
             spinner->set_option(indicators::option::PostfixText(log_message));
             std::cout << "\r\33[2K\r" << std::flush;
             spinner->mark_as_completed();
@@ -320,69 +320,77 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return -1;
     }
 
-    cfg.cpp_path.Assign(std::string_view{cpp_path});
-    cfg.cc_path.Assign(std::string_view{cc_path});
-    cfg.out_path.Assign(std::string_view{out_path});
+    try {
+        cfg.cpp_path.Assign(std::string_view{cpp_path});
+        cfg.cc_path.Assign(std::string_view{cc_path});
+        cfg.out_path.Assign(std::string_view{out_path});
 
-    cfg.pd_paths.clear();
-    cfg.pd_paths.reserve(pd_paths.size());
-    for (const auto& pd_path : pd_paths) {
-        cfg.pd_paths.emplace_back(std::string_view{pd_path});
-    }
+        cfg.pd_paths.clear();
+        cfg.pd_paths.reserve(pd_paths.size());
+        for (const auto& pd_path : pd_paths) {
+            cfg.pd_paths.emplace_back(std::string_view{pd_path});
+        }
 
-    if (clang_path.empty()) {
-        cfg.clang_path.Assign(cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH);
-    } else {
-        cfg.clang_path.Assign(std::string_view{clang_path});
-    }
+        if (clang_path.empty()) {
+            cfg.clang_path.Assign(cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH);
+        } else {
+            cfg.clang_path.Assign(std::string_view{clang_path});
+        }
 
-    if (cfg.split_strategy == FileSplitStrategy::ByParentDirectory) {
-        bool found_non_empty_file = false;
-        for (const auto& parent_path : cfg.pd_paths) {
-            std::error_code iterator_ec;
-            for (std::filesystem::recursive_directory_iterator it{parent_path.UnderlyingPath(), iterator_ec}, end{};
-                 it != end;
-                 it.increment(iterator_ec)) {
-                if (iterator_ec) {
-                    iterator_ec.clear();
-                    continue;
+        if (cfg.split_strategy == FileSplitStrategy::ByParentDirectory) {
+            bool found_non_empty_file = false;
+            for (const auto& parent_path : cfg.pd_paths) {
+                std::error_code iterator_ec;
+                for (std::filesystem::recursive_directory_iterator it{parent_path.UnderlyingPath(), iterator_ec}, end{};
+                     it != end;
+                     it.increment(iterator_ec)) {
+                    if (iterator_ec) {
+                        iterator_ec.clear();
+                        continue;
+                    }
+
+                    std::error_code file_ec;
+                    if (!it->is_regular_file(file_ec)) {
+                        continue;
+                    }
+
+                    const auto size = it->file_size(file_ec);
+                    if (!file_ec && size) {
+                        found_non_empty_file = true;
+                        break;
+                    }
                 }
-
-                std::error_code file_ec;
-                if (!it->is_regular_file(file_ec)) {
-                    continue;
-                }
-
-                const auto size = it->file_size(file_ec);
-                if (!file_ec && size) {
-                    found_non_empty_file = true;
-                    break;
-                }
+                if (found_non_empty_file) break;
             }
-            if (found_non_empty_file) break;
+            if (!found_non_empty_file) {
+                async_error = "Failed to find any non-empty files in the file trees of given --parent-directories!";
+            }
         }
-        if (!found_non_empty_file) {
-            async_error = "Failed to find any non-empty files in the file trees of given --parent-directories!";
+
+        if (!async_error.empty()) {
+            return app.exit({"NoContentInParentDirectories", async_error, CLI::ExitCodes::FileError});
         }
+
+        if (const auto clang_error = ValidateFile(cfg.clang_path.string()); !clang_error.empty()) {
+            return app.exit({"MissingClang",
+                fmtquill::format("Resolved clang path '{}' is not a file!", cfg.clang_path.string()),
+                CLI::ExitCodes::FileError});
+        }
+
+        cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
+        cfg.path_delimiters.emplace_back("MetadataHarness");
+        cfg.initialized.test_and_set();
+
+        std::ostringstream config_stream;
+        config_stream << cfg;
+        UEM_INFO("Using config:\n{}", config_stream.str());
+    } catch (const std::exception& ex) {
+        UEM_ERROR("Config initialization failed after CLI parse: {}", ex.what());
+        return -1;
+    } catch (...) {
+        UEM_ERROR("Config initialization failed after CLI parse with unknown exception");
+        return -1;
     }
-
-    if (!async_error.empty()) {
-        return app.exit({"NoContentInParentDirectories", async_error, CLI::ExitCodes::FileError});
-    }
-
-    if (const auto clang_error = ValidateFile(cfg.clang_path.string()); !clang_error.empty()) {
-        return app.exit({"MissingClang",
-            fmtquill::format("Resolved clang path '{}' is not a file!", cfg.clang_path.string()),
-            CLI::ExitCodes::FileError});
-    }
-
-    cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
-    cfg.path_delimiters.emplace_back("MetadataHarness");
-    cfg.initialized.test_and_set();
-
-    std::ostringstream config_stream;
-    config_stream << cfg;
-    UEM_INFO("Using config:\n{}", config_stream.str());
     return 0;
 }
 

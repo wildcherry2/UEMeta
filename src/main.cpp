@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
         const auto tool = UEMeta::MakeTool();
         if (!tool) return 0;
 
-        switch (tool->clang_tool.run(clang::tooling::newFrontendActionFactory<UEMeta::ClangHandler>().get())) {
+        switch (UEMeta::RunClangTool(tool->clang_tool)) {
             case 0: {
                 UEM_INFO("Successfully ran tool!");
                 return 0;

@@ -9,10 +9,14 @@
 
 #include "UEMeta/JsonBuilders.hpp"
 
-// todo more exception handling
-// todo inline single-use helpers, remove anon namespaces
-// todo simplify var usage
+namespace clang::tooling {
+    class ClangTool;
+}
+
+// todo deeper doc pass, splitting json dso
 namespace UEMeta {
+    int RunClangTool(clang::tooling::ClangTool& tool) noexcept;
+
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:
         bool shouldVisitTemplateInstantiations() const;
