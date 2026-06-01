@@ -1,14 +1,15 @@
 import argparse
 import os
 from pathlib import Path
+from typing import AnyStr
 
-def directory_contains_json(directory: Path) -> bool:
+def directory_contains_json(directory: AnyStr | os.PathLike[AnyStr]) -> bool:
     for root, dirs, files in os.walk(directory):
         for file in files:
             if file.endswith('.json'):
                 return True
         for directory in dirs:
-            if directory_contains_json(Path(os.path.join(root, directory))):
+            if directory_contains_json(os.path.join(root, directory)):
                 return True
     return False
 
