@@ -1,6 +1,6 @@
 build/
-out/
-/parser/
+intermediate/
+/out/
 cmake-build-*/
 CMakeUserPresets.json
 .idea/

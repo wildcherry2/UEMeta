@@ -9,7 +9,7 @@
     {
       "name": "base",
       "hidden": true,
-      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "binaryDir": "${sourceDir}/intermediate/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
@@ -20,7 +20,7 @@
       "inherits": "base",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
-      "binaryDir": "${sourceDir}/out/build/vs2026-x64",
+      "binaryDir": "${sourceDir}/intermediate/build/vs2026-x64",
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
       }
@@ -30,7 +30,7 @@
       "displayName": "Ninja Debug",
       "inherits": "base",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/ninja-debug",
+      "binaryDir": "${sourceDir}/intermediate/build/ninja-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -40,7 +40,7 @@
       "displayName": "Ninja Release",
       "inherits": "base",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/ninja-release",
+      "binaryDir": "${sourceDir}/intermediate/build/ninja-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }

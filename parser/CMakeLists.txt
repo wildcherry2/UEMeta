@@ -15,15 +15,15 @@ set(FETCHCONTENT_QUIET OFF CACHE BOOL "Show FetchContent population progress" FO
 # FetchContent still uses each preset's binary dir for subbuild/build artifacts, but the
 # downloaded/extracted sources are shared by Ninja Debug, Ninja Release, and VS builds.
 set(UEMETA_DEPENDENCY_SOURCE_ROOT
-    "${PROJECT_SOURCE_DIR}/out/deps/src"
+    "${PROJECT_SOURCE_DIR}/intermediate/deps/src"
     CACHE PATH "Shared source directory for fetched dependencies"
 )
 set(UEMETA_DEPENDENCY_DOWNLOAD_ROOT
-    "${PROJECT_SOURCE_DIR}/out/deps/downloads"
+    "${PROJECT_SOURCE_DIR}/intermediate/deps/downloads"
     CACHE PATH "Shared download directory for fetched dependency archives"
 )
 set(UEMETA_DEPENDENCY_LOCK_ROOT
-    "${PROJECT_SOURCE_DIR}/out/deps/locks"
+    "${PROJECT_SOURCE_DIR}/intermediate/deps/locks"
     CACHE PATH "Shared lock directory for fetched dependencies"
 )
 file(MAKE_DIRECTORY
@@ -247,7 +247,7 @@ target_link_libraries(parser PRIVATE
     indicators::indicators
 )
 
-set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/parser")
+set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
 set(PARSER_BUNDLE_CLANG_DIR "${PARSER_BUNDLE_DIR}/Clang")
 set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
 target_compile_definitions(parser PRIVATE
