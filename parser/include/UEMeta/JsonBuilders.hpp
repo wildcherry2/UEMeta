@@ -1010,6 +1010,31 @@ namespace UEMeta {
         std::string aliased_type;
     };
 
+    /**
+     * @brief Root JSON object emitted for one source file.
+     */
+    struct JsonFileOutput {
+        /**
+         * @brief Source file path represented by this output file.
+         */
+        std::string path;
+
+        /**
+         * @brief File content hash for the source file represented by this output.
+         */
+        std::string hash;
+
+        /**
+         * @brief Direct includes recorded for this source file.
+         */
+        std::vector<std::string> includes;
+
+        /**
+         * @brief Declarations found in this source file.
+         */
+        std::vector<JsonDeclaration> declarations;
+    };
+
 }
 
 /**
@@ -1274,19 +1299,6 @@ struct glz::meta<UEMeta::JsonBase> {
 };
 
 /**
- * @brief Glaze metadata that maps JsonIncludeOrder fields to JSON object keys.
- */
-template <>
-struct glz::meta<UEMeta::JsonIncludeOrder> {
-    using T = UEMeta::JsonIncludeOrder;
-
-    static constexpr auto value = object(
-        "file", &T::file,
-        "inclusions", &T::inclusions
-    );
-};
-
-/**
  * @brief Enables custom Glaze serialization for JsonDeclaration.
  */
 template <>
@@ -1444,4 +1456,19 @@ struct glz::to<glz::JSON, UEMeta::JsonDeclaration> {
             serialize<JSON>::op<Opts>(common, ctx, b, ix);
         }
     }
+};
+
+/**
+ * @brief Glaze metadata that maps JsonFileOutput fields to root JSON object keys.
+ */
+template <>
+struct glz::meta<UEMeta::JsonFileOutput> {
+    using T = UEMeta::JsonFileOutput;
+
+    static constexpr auto value = object(
+        "path", &T::path,
+        "hash", &T::hash,
+        "includes", &T::includes,
+        "declarations", &T::declarations
+    );
 };

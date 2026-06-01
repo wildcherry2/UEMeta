@@ -1088,33 +1088,6 @@ static std::string HashForFile(const std::map<std::string, std::string>& file_ha
     return FileContentHash(file);
 }
 
-/// @brief Finds the configured parent-directory group that contains a file path.
-static std::string ParentDirectoryGroup(const std::string& file) {
-    const UEMeta::StablePath file_path{file};
-    const auto file_string = file_path.string();
-    auto lowercase_file = file_string;
-    std::ranges::transform(lowercase_file, lowercase_file.begin(), [](const unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-
-    for (const auto& configured_parent : UEMeta::Config::GetConfig().PdPaths()) {
-        auto parent_string = configured_parent.string();
-        std::ranges::transform(parent_string, parent_string.begin(), [](const unsigned char character) {
-            return static_cast<char>(std::tolower(character));
-        });
-
-        if (!parent_string.ends_with(std::filesystem::path::preferred_separator)) {
-            parent_string.push_back(std::filesystem::path::preferred_separator);
-        }
-
-        if (lowercase_file.starts_with(parent_string)) {
-            return configured_parent.string();
-        }
-    }
-
-    return file;
-}
-
 /// @brief Writes already-serialized JSON text to disk, creating parent directories as needed.
 static bool WriteJsonTextFile(const UEMeta::StablePath& path, const std::string& json) {
     std::error_code ec;
@@ -1170,17 +1143,32 @@ static void AppendIncludeOrder(std::vector<UEMeta::JsonIncludeOrder>& include_or
     existing_entry->inclusions.push_back(std::move(inclusion));
 }
 
-/// @brief Scrubs all file paths in the include-order table before JSON output.
-static std::vector<UEMeta::JsonIncludeOrder> ScrubIncludeOrder(const std::vector<UEMeta::JsonIncludeOrder>& include_order) {
-    std::vector<UEMeta::JsonIncludeOrder> out;
-    out.reserve(include_order.size());
-    for (const auto& entry : include_order) {
-        out.push_back(UEMeta::JsonIncludeOrder{
-            .file = UEMeta::JsonDetail::ScrubFilePath(entry.file),
-            .inclusions = UEMeta::JsonDetail::ScrubFilePaths(entry.inclusions)
-        });
+/// @brief Returns the direct include list recorded for one source file.
+static std::vector<std::string> IncludesForFile(const std::vector<UEMeta::JsonIncludeOrder>& include_order,
+                                                const std::string& file) {
+    const auto entry = std::ranges::find_if(include_order, [&file](const auto& candidate) {
+        return candidate.file == file;
+    });
+
+    if (entry == include_order.end()) {
+        return {};
     }
-    return out;
+
+    return entry->inclusions;
+}
+
+/// @brief Builds the root JSON object for one file-based output.
+static UEMeta::JsonFileOutput BuildFileOutput(
+    const std::string& file,
+    const std::string& hash,
+    const std::vector<std::string>& includes,
+    const std::vector<UEMeta::JsonDeclaration>& declarations) {
+    return UEMeta::JsonFileOutput{
+        .path = UEMeta::JsonDetail::ScrubFilePath(file),
+        .hash = hash,
+        .includes = UEMeta::JsonDetail::ScrubFilePaths(includes),
+        .declarations = declarations
+    };
 }
 
 /// @brief Requests traversal of template instantiations.
@@ -1243,60 +1231,21 @@ static bool StringPassesHeaderFilters(const std::string& str) {
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     GuardClangCallback("EndTranslationUnit", [&] {
         UEM_SPINNER_STOP("Finished parsing AST");
-        const auto scrubbed_include_order = ScrubIncludeOrder(include_order);
-        WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "IncludeOrder.json"}, scrubbed_include_order);
         UEM_INFO("Filtering {} declarations...", declarations.size());
         std::erase_if(declarations, [](const JsonDeclaration& decl) { return !StringPassesHeaderFilters(decl.file); });
         const auto file_hashes = BuildFileHashes(declarations);
-        WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "FileHashes.json"},
-                      UEMeta::JsonDetail::ScrubFileHashes(file_hashes));
         UEM_INFO("Serializing {} declarations...", declarations.size());
-        switch (Config::GetConfig().SplitStrategy()) {
-            case FileSplitStrategy::Monofile: {
-                WriteJsonFile(StablePath{Config::GetConfig().OutPath().UnderlyingPath() / "uemeta.json"}, declarations);
-                break;
-            }
-            case FileSplitStrategy::ByClass: {
-                std::size_t anonymous_index = 0;
-                for (const auto& declaration : declarations) {
-                    const auto key = declaration.qualified_name.empty()
-                        ? fmtquill::format("{}-anonymous-{}", declaration.kind, anonymous_index++)
-                        : declaration.qualified_name;
-                    const auto label = declaration.qualified_name.empty() ? key : declaration.qualified_name;
-                    const auto hash = declaration.hash.empty() ? Md5Hex(key) : declaration.hash;
-                    WriteJsonFile(OutputFileForHash(label, hash), std::vector{declaration});
-                }
-                break;
-            }
-            case FileSplitStrategy::ByParentDirectory: {
-                std::map<std::string, std::vector<JsonDeclaration>> groups;
-                for (const auto& declaration : declarations) {
-                    const auto group_key = ParentDirectoryGroup(declaration.file);
-                    groups[group_key].push_back(declaration);
-                }
+        std::map<std::string, std::vector<JsonDeclaration>> groups;
+        for (const auto& declaration : declarations) {
+            groups[FileGroupKey(declaration.file)].push_back(declaration);
+        }
 
-                for (const auto& [group_key, group_declarations] : groups) {
-                    const auto label = std::filesystem::path{group_key}.filename().string().empty()
-                        ? group_key
-                        : std::filesystem::path{group_key}.filename().string();
-                    WriteJsonFile(OutputFileForHash(label, Md5Hex(group_key)), group_declarations);
-                }
-                break;
-            }
-            case FileSplitStrategy::Default:
-            case FileSplitStrategy::ByFile: {
-                std::map<std::string, std::vector<JsonDeclaration>> groups;
-                for (const auto& declaration : declarations) {
-                    groups[FileGroupKey(declaration.file)].push_back(declaration);
-                }
-
-                for (const auto& [file, file_declarations] : groups) {
-                    const auto filename = std::filesystem::path{file}.filename().string();
-                    WriteJsonFile(OutputFileForHash(filename.empty() ? file : filename, HashForFile(file_hashes, file)),
-                                  file_declarations);
-                }
-                break;
-            }
+        for (const auto& [file, file_declarations] : groups) {
+            const auto filename = std::filesystem::path{file}.filename().string();
+            const auto hash = HashForFile(file_hashes, file);
+            const auto includes = IncludesForFile(include_order, file);
+            const auto output = BuildFileOutput(file, hash, includes, file_declarations);
+            WriteJsonFile(OutputFileForHash(filename.empty() ? file : filename, hash), output);
         }
     });
 }

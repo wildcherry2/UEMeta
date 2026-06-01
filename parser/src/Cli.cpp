@@ -1,4 +1,3 @@
-#include <map>
 #include <sstream>
 #include <string_view>
 #include <utility>
@@ -11,15 +10,6 @@
 #include "quill/sinks/ConsoleSink.h"
 #include "quill/sinks/FileSink.h"
 #include "indicators/progress_spinner.hpp"
-
-/// @brief CLI11 transformer map from split strategy option text to enum values.
-static std::map<std::string, UEMeta::FileSplitStrategy> SSMap {
-    {"Default", UEMeta::FileSplitStrategy::Default},
-    {"ByClass", UEMeta::FileSplitStrategy::ByClass},
-    {"ByParentDirectory", UEMeta::FileSplitStrategy::ByParentDirectory},
-    {"ByFile", UEMeta::FileSplitStrategy::ByFile},
-    {"Monofile", UEMeta::FileSplitStrategy::Monofile},
-};
 
 /// @brief Console sink that interprets tagged trace messages as spinner controls.
 class ConsoleSinkWithSpinner : public quill::ConsoleSink {
@@ -152,18 +142,6 @@ const UEMeta::StablePath& UEMeta::Config::OutPath() const {
     return out_path;
 }
 
-/// @brief Returns the configured JSON splitting strategy.
-const UEMeta::FileSplitStrategy& UEMeta::Config::SplitStrategy() const {
-    AssertInitialized();
-    return split_strategy;
-}
-
-/// @brief Returns parent directories used by the parent-directory split strategy.
-const std::vector<UEMeta::StablePath>& UEMeta::Config::PdPaths() const {
-    AssertInitialized();
-    return pd_paths;
-}
-
 /// @brief Returns the configured Clang executable path.
 const UEMeta::StablePath& UEMeta::Config::ClangPath() const {
     AssertInitialized();
@@ -230,12 +208,10 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.allow_windows_style_options();
     argv = app.ensure_utf8(argv);
 
-    std::string async_error{};
     std::string cpp_path{};
     std::string cc_path{};
     std::string out_path{};
     std::string clang_path{};
-    std::vector<std::string> pd_paths{};
 
     app.add_option("-f,--file", cpp_path, "Path of the cpp file that drives the translation unit to dump.")
         ->required()->check([](const auto& opt) -> std::string {
@@ -246,23 +222,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         ->required()->check([](const auto& opt) -> std::string {
             return ValidateFile(opt, "compile_commands.json");
         });
-
-    auto opt_ss = app.add_option("--split-strategy", cfg.split_strategy,
-        "How output JSONs should be generated:"
-        "\n\t\t(Default) ByFile: Generates an AST JSON for every file."
-        "\n\t\tByClass: Generates an AST JSON for every significant node (class, enum, struct, constants, free functions, etc)"
-        "\n\t\tMonofile: Puts everything in a single JSON file."
-        "\n\t\tByParentDirectory: All ASTs generated within directories given in the --parent-directories command go in the same file.")
-            ->transform(CLI::CheckedTransformer(SSMap, CLI::ignore_case));
-
-    auto opt_parent_dir = app.add_option("--parent-directories", pd_paths, "Space-separated list of directories to use as groups for ASTs within a JSON.")
-        ->check(CLI::ExistingDirectory);
-
-    app.preparse_callback([&](...) {
-        if (opt_ss->as<std::string>() == "ByParentDirectory") {
-            opt_parent_dir->required();
-        }
-    });
 
     app.add_option("-o,--out", out_path, "Directory to output JSON files to.")
         ->required()->check([](const auto& opt) -> std::string {
@@ -348,50 +307,10 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         cfg.cc_path.Assign(std::string_view{cc_path});
         cfg.out_path.Assign(std::string_view{out_path});
 
-        cfg.pd_paths.clear();
-        cfg.pd_paths.reserve(pd_paths.size());
-        for (const auto& pd_path : pd_paths) {
-            cfg.pd_paths.emplace_back(std::string_view{pd_path});
-        }
-
         if (clang_path.empty()) {
             cfg.clang_path.Assign(cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH);
         } else {
             cfg.clang_path.Assign(std::string_view{clang_path});
-        }
-
-        if (cfg.split_strategy == FileSplitStrategy::ByParentDirectory) {
-            bool found_non_empty_file = false;
-            for (const auto& parent_path : cfg.pd_paths) {
-                std::error_code iterator_ec;
-                for (std::filesystem::recursive_directory_iterator it{parent_path.UnderlyingPath(), iterator_ec}, end{};
-                     it != end;
-                     it.increment(iterator_ec)) {
-                    if (iterator_ec) {
-                        iterator_ec.clear();
-                        continue;
-                    }
-
-                    std::error_code file_ec;
-                    if (!it->is_regular_file(file_ec)) {
-                        continue;
-                    }
-
-                    const auto size = it->file_size(file_ec);
-                    if (!file_ec && size) {
-                        found_non_empty_file = true;
-                        break;
-                    }
-                }
-                if (found_non_empty_file) break;
-            }
-            if (!found_non_empty_file) {
-                async_error = "Failed to find any non-empty files in the file trees of given --parent-directories!";
-            }
-        }
-
-        if (!async_error.empty()) {
-            return app.exit({"NoContentInParentDirectories", async_error, CLI::ExitCodes::FileError});
         }
 
         if (const auto clang_error = ValidateFile(cfg.clang_path.string()); !clang_error.empty()) {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <filesystem>
-#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -92,15 +91,6 @@ namespace UEMeta::JsonDetail {
      * @return Vector containing the scrubbed form of each input path.
      */
     [[nodiscard]] std::vector<std::string> ScrubFilePaths(const std::vector<std::string>& paths);
-
-    /**
-     * @brief Scrubs file path keys in a hash map while preserving hash values.
-     *
-     * @param file_hashes Map from file path to content hash.
-     * @return Map keyed by scrubbed file paths.
-     */
-    [[nodiscard]] std::map<std::string, std::string> ScrubFileHashes(
-        const std::map<std::string, std::string>& file_hashes);
 
     /**
      * @brief Glaze custom writer that serializes an object's `file` member after path scrubbing.

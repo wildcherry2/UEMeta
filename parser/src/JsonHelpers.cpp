@@ -79,14 +79,3 @@ std::vector<std::string> UEMeta::JsonDetail::ScrubFilePaths(const std::vector<st
     }
     return out;
 }
-
-/// @brief Applies ScrubFilePath to each file key in a hash map while preserving hash values.
-std::map<std::string, std::string> UEMeta::JsonDetail::ScrubFileHashes(
-    const std::map<std::string, std::string>& file_hashes) {
-    std::map<std::string, std::string> out;
-    for (const auto& [file, hash] : file_hashes) {
-        out[ScrubFilePath(file)] = hash;
-    }
-
-    return out;
-}

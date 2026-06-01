@@ -45,36 +45,6 @@ int main(int argc, char** argv);
 
 namespace UEMeta {
     /**
-     * @brief Strategy used to partition generated declaration JSON files.
-     */
-    enum class FileSplitStrategy {
-        /**
-         * @brief Uses the default file split behavior.
-         */
-        Default,
-
-        /**
-         * @brief Writes each significant declaration to its own JSON file.
-         */
-        ByClass,
-
-        /**
-         * @brief Groups output by configured parent directories.
-         */
-        ByParentDirectory,
-
-        /**
-         * @brief Groups declarations by their source file.
-         */
-        ByFile,
-
-        /**
-         * @brief Writes all declarations into one JSON file.
-         */
-        Monofile
-    };
-
-    /**
      * @brief Process-wide CLI configuration used by tool setup, path scrubbing, and JSON emission.
      */
     class Config {
@@ -93,16 +63,6 @@ namespace UEMeta {
          * @brief Returns the output directory path.
          */
         [[nodiscard]] const StablePath& OutPath() const;
-
-        /**
-         * @brief Returns the configured JSON file split strategy.
-         */
-        [[nodiscard]] const FileSplitStrategy& SplitStrategy() const;
-
-        /**
-         * @brief Returns parent directories used by the parent-directory split strategy.
-         */
-        [[nodiscard]] const std::vector<StablePath>& PdPaths() const;
 
         /**
          * @brief Returns the clang or clang-cl executable path.
@@ -143,14 +103,12 @@ namespace UEMeta {
          * @brief Writes a human-readable configuration summary to a stream.
          */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
-            std::vector<std::string> pd_paths{};
-            for (const auto& path : obj.pd_paths) pd_paths.push_back(path.string());
-            return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}\nsplit_strategy={}"
-                                     "\nclang_path={}\nno_cl={}\npd_paths={}\nadditional_clang_args={}\n"
+            return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}"
+                                     "\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
                                      "strip_args={}\npath_delimiters={}\npath_blacklist={}\n"
                                      "header_blacklist={}\nheader_whitelist={}",
-                obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(), static_cast<int>(obj.split_strategy),
-                obj.ClangPath().string(), obj.no_cl, pd_paths, obj.additional_clang_args, obj.strip_args, obj.path_delimiters,
+                obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(),
+                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args, obj.path_delimiters,
                 obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
         }
 
@@ -204,11 +162,9 @@ namespace UEMeta {
         StablePath cpp_path{}, cc_path{}, out_path{};
         StablePath clang_path{};
         bool no_cl = false;
-        FileSplitStrategy split_strategy{FileSplitStrategy::Default};
-        std::vector<StablePath> pd_paths{}; //replace with set?
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
-        std::vector<std::string> path_delimiters{"Unreal", "UnrealEngine"}; //replace with set?
+        std::vector<std::string> path_delimiters{"UnrealEngine"}; //replace with set?
         std::vector<std::string> path_blacklist{}; //replace with set?
         std::vector<std::string> header_whitelist{};
         std::vector<std::string> header_blacklist{};
