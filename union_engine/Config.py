@@ -26,9 +26,14 @@ def validate_json_dir(json_dir: str) -> str:
 
 class Config:
     def __init__(self):
+        self.__json_dirs = []
+
+    # initialize explicitly in main() so pools don't try to parse args
+    def initialize(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('--json-dirs', type=validate_json_dir, nargs='+', help='Directories containing version-specific json files. Each directory should correspond to a single version.')
-        self.__json_dirs = parser.parse_args().json_dirs
+        parser.add_argument('--json-dirs', type=validate_json_dir, nargs='+',
+                            help='Directories containing version-specific json files. Each directory should correspond to a single version.')
+        self.__json_dirs: list[str] = parser.parse_args().json_dirs
 
     def get_json_dirs(self):
         return self.__json_dirs
