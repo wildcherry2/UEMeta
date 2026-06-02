@@ -1023,20 +1023,21 @@ static void AppendNestedRecord(const clang::RecordDecl* decl, clang::ASTContext&
     nested.push_back(std::move(declaration));
 }
 
-/// @brief Converts an arbitrary declaration/file label into a bounded filesystem-safe stem.
-static std::string SanitizeFileStem(const std::string_view value) {
+/// @brief Converts a header path into a bounded filesystem-safe stem.
+static std::string SanitizeFilePathStem(const std::string_view value) {
     std::string out;
     out.reserve(value.size());
 
-    bool previous_was_separator = false;
     for (const auto character : value) {
         const auto byte = static_cast<unsigned char>(character);
-        if (std::isalnum(byte) || character == '_' || character == '-' || character == '.') {
+        if (character == '/' || character == '\\') {
+            if (!out.empty() && out.back() != '.') {
+                out.push_back('.');
+            }
+        } else if (std::isalnum(byte) || character == '_' || character == '-' || character == '.') {
             out.push_back(character);
-            previous_was_separator = false;
-        } else if (!previous_was_separator) {
+        } else if (out.empty() || out.back() != '_') {
             out.push_back('_');
-            previous_was_separator = true;
         }
     }
 
@@ -1044,7 +1045,7 @@ static std::string SanitizeFileStem(const std::string_view value) {
         out.erase(out.begin());
     }
 
-    while (!out.empty() && out.back() == '_') {
+    while (!out.empty() && (out.back() == '_' || out.back() == '.')) {
         out.pop_back();
     }
 
@@ -1062,10 +1063,15 @@ static std::string SanitizeFileStem(const std::string_view value) {
     return out;
 }
 
-/// @brief Builds an output JSON path from a display label and stable hash suffix.
-static UEMeta::StablePath OutputFileForHash(const std::string& label, const std::string& hash) {
-    const auto stem = SanitizeFileStem(label);
-    const auto suffix = hash.empty() ? Md5Hex(label) : hash;
+/// @brief Builds an output JSON path from a header path and stable hash suffix.
+static UEMeta::StablePath OutputFileForHash(const std::string& file, const std::string& hash) {
+    auto filename_path = UEMeta::JsonDetail::ScrubFilePath(file);
+    if (filename_path.empty()) {
+        filename_path = file;
+    }
+
+    const auto stem = SanitizeFilePathStem(filename_path);
+    const auto suffix = hash.empty() ? Md5Hex(file) : hash;
     return UEMeta::StablePath{
         UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
         fmtquill::format("{}-{}.json", stem, suffix)};
@@ -1276,11 +1282,10 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
         }
 
         for (const auto& [file, file_declarations] : groups) {
-            const auto filename = std::filesystem::path{file}.filename().string();
             const auto hash = HashForFile(file_hashes, file);
             const auto includes = IncludesForFile(include_order, file);
             const auto output = BuildFileOutput(file, hash, includes, file_declarations);
-            WriteJsonFile(OutputFileForHash(filename.empty() ? file : filename, hash), output);
+            WriteJsonFile(OutputFileForHash(file, hash), output);
         }
     });
 }
