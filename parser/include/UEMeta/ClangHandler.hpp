@@ -153,7 +153,7 @@ namespace UEMeta {
         void EndTranslationUnit(clang::ASTContext& ctx);
 
         clang::ASTContext* context{};
-        std::vector<JsonDeclaration> declarations{};
+        JsonTopLevelDeclarations declarations{};
         std::vector<JsonIncludeOrder> include_order{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
         llvm::DenseSet<const clang::Decl*> visited_forward_decls{};

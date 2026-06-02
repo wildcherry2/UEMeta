@@ -2,7 +2,7 @@
 
 Generated metadata is written as one JSON file per source file group. Optional
 properties below are omitted by the serializers when their source value is empty,
-false, or unset; required arrays may still serialize as `[]`.
+false, or unset. Required arrays may still serialize as `[]`.
 
 ```ts
 type FilePath = string;
@@ -18,6 +18,11 @@ type ForwardDeclarationKind = RecordKind | "enum";
 type DeclarationKind = RecordKind | "enum" | "forwardDeclaration" | "alias" | "function" | "variable";
 type FunctionKind = "function" | "constructor" | "method" | "destructor" | "conversion";
 type TemplateParameterKind = "typename" | "class" | "nonType" | "typenameTemplate" | "classTemplate" | string;
+type TemplateSpecializationKind =
+  | "partialSpecialization"
+  | "explicitSpecialization"
+  | "explicitInstantiationDeclaration"
+  | "explicitInstantiationDefinition";
 type ExceptionSpec =
   | "throw()"
   | "throw(...)"
@@ -46,33 +51,55 @@ interface DeclarationCommon {
   scope: string[];
   documentation?: string;
   isAnonymous?: true;
-  templateParameters?: TemplateParameter[];
 }
 
 type Declaration =
-  | RecordDeclaration
+  | ClassDeclaration
+  | StructDeclaration
+  | UnionDeclaration
   | EnumDeclaration
   | ForwardDeclaration
   | AliasDeclaration
-  | FunctionDeclaration
-  | VariableDeclaration;
+  | FreeFunctionDeclaration
+  | GlobalDeclaration;
 
 type NestedDeclaration =
-  | RecordDeclaration
+  | ClassDeclaration
+  | StructDeclaration
+  | UnionDeclaration
   | EnumDeclaration
   | ForwardDeclaration
   | AliasDeclaration;
 
-interface RecordDeclaration extends DeclarationCommon {
-  kind: RecordKind;
+interface RecordLayoutDetails {
+  templateParameters?: TemplateParameter[];
+  isTemplateSpecialization?: true;
+  templateSpecializationKind?: TemplateSpecializationKind;
+  primaryTemplateQualifiedName?: string;
+  templateArguments?: string[];
   isCompleteDefinition?: true;
   sizeBytes?: number;
   alignBytes?: number;
-  bases: BaseSpecifier[];
   fields: Field[];
+  nested: NestedDeclaration[];
+}
+
+interface ClassDeclaration extends DeclarationCommon, RecordLayoutDetails {
+  kind: "class";
+  bases: BaseSpecifier[];
   staticVariables: VariableMetadata[];
   methods: FunctionMetadata[];
-  nested: NestedDeclaration[];
+}
+
+interface StructDeclaration extends DeclarationCommon, RecordLayoutDetails {
+  kind: "struct";
+  bases: BaseSpecifier[];
+  staticVariables: VariableMetadata[];
+  methods: FunctionMetadata[];
+}
+
+interface UnionDeclaration extends DeclarationCommon, RecordLayoutDetails {
+  kind: "union";
 }
 
 interface EnumDeclaration extends DeclarationCommon {
@@ -86,6 +113,11 @@ interface EnumDeclaration extends DeclarationCommon {
 interface ForwardDeclaration extends DeclarationCommon {
   kind: "forwardDeclaration";
   forwardDeclarationKind: ForwardDeclarationKind;
+  templateParameters?: TemplateParameter[];
+  isTemplateSpecialization?: true;
+  templateSpecializationKind?: TemplateSpecializationKind;
+  primaryTemplateQualifiedName?: string;
+  templateArguments?: string[];
   underlyingType?: string;
   isScoped?: true;
   scopedKind?: ScopedKind;
@@ -93,16 +125,17 @@ interface ForwardDeclaration extends DeclarationCommon {
 
 interface AliasDeclaration extends DeclarationCommon {
   kind: "alias";
+  templateParameters?: TemplateParameter[];
   aliasedType: string;
 }
 
 // Top-level function and variable payloads are flattened into the declaration.
-interface FunctionDeclaration extends DeclarationCommon, FunctionDetails {
+interface FreeFunctionDeclaration extends DeclarationCommon, FunctionDetails {
   kind: "function";
   functionKind: "function";
 }
 
-interface VariableDeclaration extends DeclarationCommon, VariableDetails {
+interface GlobalDeclaration extends DeclarationCommon, VariableDetails {
   kind: "variable";
 }
 
@@ -146,6 +179,10 @@ interface FunctionDetails {
   refQualifier?: RefQualifier;
   exceptionSpec?: ExceptionSpec;
   templateParameters?: TemplateParameter[];
+  isTemplateSpecialization?: true;
+  templateSpecializationKind?: TemplateSpecializationKind;
+  primaryTemplateQualifiedName?: string;
+  templateArguments?: string[];
   parameters: Parameter[];
   vtableIndex?: VTableIndex;
 }
@@ -159,6 +196,11 @@ interface FunctionMetadata extends FunctionDetails {
 }
 
 interface VariableDetails {
+  templateParameters?: TemplateParameter[];
+  isTemplateSpecialization?: true;
+  templateSpecializationKind?: TemplateSpecializationKind;
+  primaryTemplateQualifiedName?: string;
+  templateArguments?: string[];
   type: string;
   declaration: string;
   access?: AccessSpecifier;
