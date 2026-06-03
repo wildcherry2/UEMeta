@@ -2,16 +2,20 @@ from pathlib import Path
 import os
 import re
 
+from DSO import ParserMetadataJson
+
 # Individual file information with the module (header) path and hash
 class File:
-    pattern = re.compile(r"(?P<module>.+)-(?P<hash>.+).json")
-    def __init__(self, path: Path):
+    pattern = re.compile(r"\.(?P<module>.+)-(?P<hash>.+).json")
+    def __init__(self, path: Path, version: str):
         self.path: Path = path
-        match = File.pattern.match(path.name)
+        match = File.pattern.search(path.name)
         if match:
             match_dict = match.groupdict()
             self.module = match_dict["module"]
             self.hash = match_dict["hash"]
+            self.json: ParserMetadataJson | None = None
+            self.version = version
         else:
             raise Exception(f"File {path} does not have the correct naming format!")
 
@@ -25,7 +29,7 @@ class FileGroup:
             for root, dirs, files in os.walk(directory):
                 for file in files:
                     if file.endswith('.json'):
-                        arr.append(File(Path(os.path.join(root, file))))
+                        arr.append(File(Path(os.path.join(root, file)), in_directory.name))
                 for directory in dirs:
                     get_jsons(Path(os.path.join(root, directory)), arr)
         get_jsons(self.directory, _files)

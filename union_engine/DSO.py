@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field as PydanticField
 
 
 FilePath = str
@@ -244,15 +244,19 @@ class GlobalDeclaration(DeclarationCommon, VariableDetails):
     kind: Literal["variable"]
 
 
-NestedDeclaration = (
+NestedDeclaration = Annotated[
     ClassDeclaration
     | StructDeclaration
     | UnionDeclaration
     | EnumDeclaration
     | ForwardDeclaration
-    | AliasDeclaration
-)
-Declaration = NestedDeclaration | FreeFunctionDeclaration | GlobalDeclaration
+    | AliasDeclaration,
+    PydanticField(discriminator="kind"),
+]
+Declaration = Annotated[
+    NestedDeclaration | FreeFunctionDeclaration | GlobalDeclaration,
+    PydanticField(discriminator="kind"),
+]
 
 
 class ParserMetadataJson(BaseModel):
