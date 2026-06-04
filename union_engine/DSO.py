@@ -62,7 +62,7 @@ class VersionedFieldInstance[T](BaseModel):
 class VersionedField[T](BaseModel):
     versions: list[VersionedFieldInstance[T]]
 
-class _DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MDeclarationCommon with overrode types
+class DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MDeclarationCommon with overrode types
     kind: DeclarationKind
     name: str | None = None
     qualifiedName: str | None = None
@@ -70,14 +70,8 @@ class _DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make M
     occurrenceIndex: int | None = None
     scope: list[str]
     isAnonymous: Literal[True] | None = None
-
-class JDeclarationCommon(_DeclarationCommon):
     hash: Md5Hex | None = None
     documentation: str | None = None
-
-class UDeclarationCommon(_DeclarationCommon):
-    hash: VersionedField[Md5Hex | None]
-    documentation: VersionedField[str | None]
 
 
 class TemplateParameter(BaseModel):
@@ -203,25 +197,25 @@ class RecordLayoutDetails(BaseModel):
     nested: list[NestedDeclaration]
 
 
-class ClassDeclaration(JDeclarationCommon, RecordLayoutDetails):
+class ClassDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["class"]
     bases: list[BaseSpecifier]
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
 
-class StructDeclaration(JDeclarationCommon, RecordLayoutDetails):
+class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["struct"]
     bases: list[BaseSpecifier]
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
 
-class UnionDeclaration(JDeclarationCommon, RecordLayoutDetails):
+class UnionDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["union"]
 
 
-class EnumDeclaration(JDeclarationCommon):
+class EnumDeclaration(DeclarationCommon):
     kind: Literal["enum"]
     underlyingType: str | None = None
     isScoped: Literal[True] | None = None
@@ -229,7 +223,7 @@ class EnumDeclaration(JDeclarationCommon):
     enumerators: list[Enumerator]
 
 
-class ForwardDeclaration(JDeclarationCommon):
+class ForwardDeclaration(DeclarationCommon):
     kind: Literal["forwardDeclaration"]
     forwardDeclarationKind: ForwardDeclarationKind
     templateParameters: list[TemplateParameter] | None = None
@@ -242,18 +236,18 @@ class ForwardDeclaration(JDeclarationCommon):
     scopedKind: ScopedKind | None = None
 
 
-class AliasDeclaration(JDeclarationCommon):
+class AliasDeclaration(DeclarationCommon):
     kind: Literal["alias"]
     templateParameters: list[TemplateParameter] | None = None
     aliasedType: str
 
 
-class FreeFunctionDeclaration(JDeclarationCommon, FunctionDetails):
+class FreeFunctionDeclaration(DeclarationCommon, FunctionDetails):
     kind: Literal["function"]
     functionKind: Literal["function"]
 
 
-class GlobalDeclaration(JDeclarationCommon, VariableDetails):
+class GlobalDeclaration(DeclarationCommon, VariableDetails):
     kind: Literal["variable"]
 
 
