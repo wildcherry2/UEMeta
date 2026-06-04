@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from DSO import EnumDeclaration
-from Group import VersionGroup
+from Group import NameGroup
 
 @dataclass
 class VersionedEntry[T]:
@@ -20,5 +20,5 @@ def union_enum(left_decl: EnumDeclaration, left_vers: str, right_decl: EnumDecla
     pass
 
 
-def union(left: VersionGroup, right: VersionGroup) -> object:
+def union(left: NameGroup, right: NameGroup) -> object:
     pass

@@ -7,7 +7,9 @@ from types import MappingProxyType
 from DSO import Declaration, ParserFileMetadataJson, ClassDeclaration, StructDeclaration, UnionDeclaration, \
     FreeFunctionDeclaration, AliasDeclaration, EnumDeclaration, ForwardDeclaration, GlobalDeclaration
 
-FILE_PATTERN = re.compile(r"(?P<qualified_name>.+)-(?P<hash>.+).(?P<type>file|class|struct|union|function|alias|enum|forwardDeclaration|variable)")
+FILE_PATTERN = re.compile(
+    r"(?P<qualified_name>.+)-(?P<hash>.+).(?P<type>file|class|struct|union|function|alias|enum|forwardDeclaration|variable)")
+
 
 # Individual file information with the qualified name, path, hash, version, and loaded pydantic object.
 class File:
@@ -20,7 +22,9 @@ class File:
             self.hash: Final[str] = match_dict["hash"]
             self.__json: Declaration | ParserFileMetadataJson | None = None
             self.version: Final[str] = version
-            self.type = cast(Final[Literal["file","class","struct","union","function","alias", "enum","forwardDeclaration","variable"]], match_dict["type"])
+            self.type = cast(Final[Literal[
+                "file", "class", "struct", "union", "function", "alias", "enum", "forwardDeclaration", "variable"]],
+                             match_dict["type"])
         else:
             raise Exception(f"File {path} does not have the correct naming format!")
 
@@ -52,25 +56,34 @@ class File:
     def get_json(self):
         return self.__json
 
+
 # Flat map of a file directory with only .json files whose name is the version it represents.
 # Precondition: in_directory is already validated to be a directory with jsons
 class VersionGroup:
     def __init__(self, in_directory: Path):
         self.directory: Final[Path] = in_directory
         _files: list[File] = []
+
         def get_jsons(directory: Path, arr: list[File]):
             for root, dirs, files in os.walk(directory):
                 for file in files:
-                    if file.endswith(("file","class","struct","union","function","alias", "enum","forwardDeclaration","variable")):
+                    if file.endswith(
+                            ("file", "class", "struct", "union", "function", "alias", "enum", "forwardDeclaration",
+                             "variable")):
                         obj = File(Path(os.path.join(root, file)), in_directory.name)
                         arr.append(obj)
                 for directory in dirs:
                     get_jsons(Path(os.path.join(root, directory)), arr)
+
         get_jsons(self.directory, _files)
         self.files = frozenset(_files)
         self.version: Final[str] = in_directory.name
 
-def group_by_name(groups: list[VersionGroup]) -> dict[str, list[File]]:
+
+type NameGroup = dict[str, list[File]]
+
+
+def group_by_name(groups: list[VersionGroup]) -> NameGroup:
     out: dict[str, list[File]] = {}
     for group in groups:
         for file in group.files:
