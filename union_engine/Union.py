@@ -20,5 +20,5 @@ def union_enum(left_decl: EnumDeclaration, left_vers: str, right_decl: EnumDecla
     pass
 
 
-def union(left: NameGroup, right: NameGroup) -> object:
+def union(group: NameGroup) -> object:
     pass

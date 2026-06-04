@@ -13,6 +13,7 @@ def main():
 
     with Pool() as pool:
         while(len(groups) > 1):
+            unioned_groups = pool.map(union, decls.values())
             pass
     return 0
 

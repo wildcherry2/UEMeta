@@ -55,17 +55,29 @@ ExceptionSpec = Literal[
     "unparsed",
 ]
 
+class VersionedFieldInstance[T](BaseModel):
+    version: str
+    instance: T
 
-class DeclarationCommon(BaseModel):
+class VersionedField[T](BaseModel):
+    versions: list[VersionedFieldInstance[T]]
+
+class _DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MDeclarationCommon with overrode types
     kind: DeclarationKind
     name: str | None = None
     qualifiedName: str | None = None
     file: FilePath
-    hash: Md5Hex | None = None
     occurrenceIndex: int | None = None
     scope: list[str]
-    documentation: str | None = None
     isAnonymous: Literal[True] | None = None
+
+class JDeclarationCommon(_DeclarationCommon):
+    hash: Md5Hex | None = None
+    documentation: str | None = None
+
+class UDeclarationCommon(_DeclarationCommon):
+    hash: VersionedField[Md5Hex | None]
+    documentation: VersionedField[str | None]
 
 
 class TemplateParameter(BaseModel):
@@ -191,25 +203,25 @@ class RecordLayoutDetails(BaseModel):
     nested: list[NestedDeclaration]
 
 
-class ClassDeclaration(DeclarationCommon, RecordLayoutDetails):
+class ClassDeclaration(JDeclarationCommon, RecordLayoutDetails):
     kind: Literal["class"]
     bases: list[BaseSpecifier]
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
 
-class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
+class StructDeclaration(JDeclarationCommon, RecordLayoutDetails):
     kind: Literal["struct"]
     bases: list[BaseSpecifier]
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
 
-class UnionDeclaration(DeclarationCommon, RecordLayoutDetails):
+class UnionDeclaration(JDeclarationCommon, RecordLayoutDetails):
     kind: Literal["union"]
 
 
-class EnumDeclaration(DeclarationCommon):
+class EnumDeclaration(JDeclarationCommon):
     kind: Literal["enum"]
     underlyingType: str | None = None
     isScoped: Literal[True] | None = None
@@ -217,7 +229,7 @@ class EnumDeclaration(DeclarationCommon):
     enumerators: list[Enumerator]
 
 
-class ForwardDeclaration(DeclarationCommon):
+class ForwardDeclaration(JDeclarationCommon):
     kind: Literal["forwardDeclaration"]
     forwardDeclarationKind: ForwardDeclarationKind
     templateParameters: list[TemplateParameter] | None = None
@@ -230,18 +242,18 @@ class ForwardDeclaration(DeclarationCommon):
     scopedKind: ScopedKind | None = None
 
 
-class AliasDeclaration(DeclarationCommon):
+class AliasDeclaration(JDeclarationCommon):
     kind: Literal["alias"]
     templateParameters: list[TemplateParameter] | None = None
     aliasedType: str
 
 
-class FreeFunctionDeclaration(DeclarationCommon, FunctionDetails):
+class FreeFunctionDeclaration(JDeclarationCommon, FunctionDetails):
     kind: Literal["function"]
     functionKind: Literal["function"]
 
 
-class GlobalDeclaration(DeclarationCommon, VariableDetails):
+class GlobalDeclaration(JDeclarationCommon, VariableDetails):
     kind: Literal["variable"]
 
 
@@ -260,34 +272,7 @@ Declaration = Annotated[
 ]
 
 
-class ParserMetadataJson(BaseModel):
-    path: FilePath
-    hash: Md5Hex
-    includes: list[FilePath]
-    declarations: list[Declaration]
-
-
 class ParserFileMetadataJson(BaseModel):
     path: FilePath
     hash: Md5Hex
     includes: list[FilePath]
-
-
-class CompileCommandEntry(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    file: FilePath
-    command: str | None = None
-    directory: FilePath | None = None
-    output: str | None = None
-
-
-class FilteredCompileCommandEntry(BaseModel):
-    file: FilePath
-    command: str
-    directory: FilePath
-    output: str
-
-
-CompileCommandsJson = list[CompileCommandEntry]
-FilteredCompileCommandsJson = tuple[FilteredCompileCommandEntry,]
