@@ -276,3 +276,24 @@ add_custom_command(TARGET parser POST_BUILD
     COMMENT "Bundling parser executable and LLVM/Clang binaries"
     VERBATIM
 )
+
+enable_testing()
+find_program(UEMETA_POWERSHELL NAMES pwsh powershell)
+if(UEMETA_POWERSHELL)
+    if(WIN32)
+        set(UEMETA_SMOKE_CLANG "${PARSER_LLVM_BIN_DIR}/clang++.exe")
+        set(UEMETA_POWERSHELL_POLICY -ExecutionPolicy Bypass)
+    else()
+        set(UEMETA_SMOKE_CLANG "${PARSER_LLVM_BIN_DIR}/clang++")
+        set(UEMETA_POWERSHELL_POLICY)
+    endif()
+
+    add_test(NAME split_strategy_smoke
+        COMMAND "${UEMETA_POWERSHELL}" -NoProfile ${UEMETA_POWERSHELL_POLICY}
+            -File "${PROJECT_SOURCE_DIR}/tests/smoke_split_strategy.ps1"
+            -ParserExe "$<TARGET_FILE:parser>"
+            -ClangExe "${UEMETA_SMOKE_CLANG}"
+            -WorkingRoot "${CMAKE_CURRENT_BINARY_DIR}/smoke/split_strategy"
+    )
+    set_tests_properties(split_strategy_smoke PROPERTIES DEPENDS parser)
+endif()

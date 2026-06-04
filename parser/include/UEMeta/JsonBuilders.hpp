@@ -868,6 +868,10 @@ namespace UEMeta {
         std::string qualified_name;
         std::string file;
         std::string hash;
+        /**
+         * @brief Zero-based order of this top-level declaration within its source file.
+         */
+        std::optional<std::uint64_t> occurrence_index;
         std::vector<std::string> scope;
         std::string documentation;
         bool is_anonymous{};
@@ -1064,6 +1068,26 @@ namespace UEMeta {
          */
         std::vector<std::string> includes;
 
+    };
+
+    /**
+     * @brief File metadata emitted alongside declaration-split output.
+     */
+    struct JsonFileMetadataOutput {
+        /**
+         * @brief Source file path represented by this metadata file.
+         */
+        std::string path;
+
+        /**
+         * @brief File content hash for the represented source file.
+         */
+        std::string hash;
+
+        /**
+         * @brief Direct includes recorded for this source file.
+         */
+        std::vector<std::string> includes;
     };
 
 }
@@ -1498,6 +1522,7 @@ namespace UEMeta::JsonDetail {
         auto docs = NonEmptyString(declaration.common.documentation);
         auto is_anonymous = TrueOnly(declaration.common.is_anonymous);
         auto hash = NonEmptyString(declaration.common.hash);
+        auto occurrence_index = declaration.common.occurrence_index;
         // glz::obj stores string-like values as string_view, so keep the scrubbed string alive through serialization.
         auto file = FileScrubber(declaration.common);
         auto common = glz::obj{
@@ -1506,6 +1531,7 @@ namespace UEMeta::JsonDetail {
             "qualifiedName", qualified_name,
             "file", file,
             "hash", hash,
+            "occurrenceIndex", occurrence_index,
             "scope", scope,
             "documentation", docs,
             "isAnonymous", is_anonymous
@@ -1833,6 +1859,17 @@ struct glz::to<glz::JSON, UEMeta::JsonNestedDeclarations> {
 template <>
 struct glz::meta<UEMeta::JsonFileOutput> {
     static constexpr auto custom_write = true;
+};
+
+template <>
+struct glz::meta<UEMeta::JsonFileMetadataOutput> {
+    using T = UEMeta::JsonFileMetadataOutput;
+
+    static constexpr auto value = object(
+        "path", &T::path,
+        "hash", &T::hash,
+        "includes", &T::includes
+    );
 };
 
 template <>

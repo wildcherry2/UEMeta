@@ -45,6 +45,21 @@ int main(int argc, char** argv);
 
 namespace UEMeta {
     /**
+     * @brief Strategy used to partition generated declaration JSON files.
+     */
+    enum class SplitStrategy {
+        /**
+         * @brief Groups emitted declarations by their source file.
+         */
+        ByFile,
+
+        /**
+         * @brief Writes each emitted top-level declaration to its own JSON file.
+         */
+        ByDecl
+    };
+
+    /**
      * @brief Process-wide CLI configuration used by tool setup, path scrubbing, and JSON emission.
      */
     class Config {
@@ -63,6 +78,11 @@ namespace UEMeta {
          * @brief Returns the output directory path.
          */
         [[nodiscard]] const StablePath& OutPath() const;
+
+        /**
+         * @brief Returns the configured JSON file split strategy.
+         */
+        [[nodiscard]] SplitStrategy GetSplitStrategy() const;
 
         /**
          * @brief Returns the clang or clang-cl executable path.
@@ -104,12 +124,13 @@ namespace UEMeta {
          */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}"
-                                     "\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
+                                     "\nsplit_strategy={}\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
                                      "strip_args={}\npath_delimiters={}\npath_blacklist={}\n"
                                      "header_blacklist={}\nheader_whitelist={}",
                 obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(),
-                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args, obj.path_delimiters,
-                obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
+                obj.split_strategy == SplitStrategy::ByFile ? "file" : "decl",
+                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args,
+                obj.path_delimiters, obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
         }
 
         /**
@@ -162,6 +183,7 @@ namespace UEMeta {
         StablePath cpp_path{}, cc_path{}, out_path{};
         StablePath clang_path{};
         bool no_cl = false;
+        SplitStrategy split_strategy{SplitStrategy::ByFile};
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
         std::vector<std::string> path_delimiters{"UnrealEngine"}; //replace with set?

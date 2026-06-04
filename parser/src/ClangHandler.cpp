@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -1453,7 +1454,9 @@ static std::string SanitizeFilePathStem(const std::string_view value) {
 }
 
 /// @brief Builds an output JSON path from a header path and stable hash suffix.
-static UEMeta::StablePath OutputFileForHash(const std::string& file, const std::string& hash) {
+static UEMeta::StablePath OutputFileForHash(const std::string& file,
+                                            const std::string& hash,
+                                            const std::string_view extension = "json") {
     auto filename_path = UEMeta::JsonDetail::ScrubFilePath(file);
     if (filename_path.empty()) {
         filename_path = file;
@@ -1463,7 +1466,7 @@ static UEMeta::StablePath OutputFileForHash(const std::string& file, const std::
     const auto suffix = hash.empty() ? Md5Hex(file) : hash;
     return UEMeta::StablePath{
         UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
-        fmtquill::format("{}-{}.json", stem, suffix)};
+        fmtquill::format("{}-{}.{}", stem, suffix, extension)};
 }
 
 /// @brief Applies configured header whitelist and blacklist filters to a path string.
@@ -1590,6 +1593,64 @@ static std::string FileContentHash(const std::string& file) {
     return Md5Hex(file);
 }
 
+/// @brief Assigns per-source-file declaration order indices used by top-level JSON declarations.
+static void AssignOccurrenceIndices(UEMeta::JsonTopLevelDeclarations& declarations) {
+    std::map<std::string, std::uint64_t> next_indices;
+
+    for (const auto& slot : declarations.declaration_order) {
+        switch (slot.bucket) {
+            case UEMeta::JsonDeclarationBucket::Class:
+                if (slot.index < declarations.classes.size()) {
+                    auto& common = declarations.classes[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::Struct:
+                if (slot.index < declarations.structs.size()) {
+                    auto& common = declarations.structs[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::Union:
+                if (slot.index < declarations.unions.size()) {
+                    auto& common = declarations.unions[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::Enum:
+                if (slot.index < declarations.enums.size()) {
+                    auto& common = declarations.enums[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::ForwardDeclaration:
+                if (slot.index < declarations.forward_declarations.size()) {
+                    auto& common = declarations.forward_declarations[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::Alias:
+                if (slot.index < declarations.aliases.size()) {
+                    auto& common = declarations.aliases[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::FreeFunction:
+                if (slot.index < declarations.free_functions.size()) {
+                    auto& common = declarations.free_functions[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+            case UEMeta::JsonDeclarationBucket::Global:
+                if (slot.index < declarations.globals.size()) {
+                    auto& common = declarations.globals[slot.index].common;
+                    common.occurrence_index = next_indices[FileGroupKey(common.file)]++;
+                }
+                break;
+        }
+    }
+}
+
 /// @brief Adds source file hashes for one declaration bucket.
 template <typename Declaration>
 static void AddFileHashes(const std::vector<Declaration>& declarations, std::map<std::string, std::string>& hashes) {
@@ -1693,6 +1754,48 @@ static std::string HashForFile(const std::map<std::string, std::string>& file_ha
     }
 
     return FileContentHash(file);
+}
+
+/// @brief Builds an output JSON path for a single declaration split file.
+static UEMeta::StablePath OutputFileForDeclaration(const UEMeta::JsonDeclarationCommon& common,
+                                                   const std::string_view extension) {
+    auto stem = common.qualified_name.empty() ? common.name : common.qualified_name;
+    for (std::size_t index = 0; (index = stem.find("::", index)) != std::string::npos; index += 1) {
+        stem.replace(index, 2, "@");
+    }
+
+    if (stem.empty()) {
+        stem = common.occurrence_index
+            ? fmtquill::format("_anonymous_{}", *common.occurrence_index)
+            : "_anonymous";
+    }
+
+    std::string safe_stem;
+    safe_stem.reserve(stem.size());
+    bool previous_was_separator = false;
+    for (const auto character : stem) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (std::isalnum(byte) || character == '_' || character == '-' || character == '.' || character == '@') {
+            safe_stem.push_back(character);
+            previous_was_separator = false;
+        } else if (!previous_was_separator) {
+            safe_stem.push_back('_');
+            previous_was_separator = true;
+        }
+    }
+
+    while (!safe_stem.empty() && (safe_stem.back() == '_' || safe_stem.back() == '.')) {
+        safe_stem.pop_back();
+    }
+
+    if (safe_stem.empty()) {
+        safe_stem = "_anonymous";
+    }
+
+    const auto suffix = common.hash.empty() ? Md5Hex(safe_stem) : common.hash;
+    return UEMeta::StablePath{
+        UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
+        fmtquill::format("{}-{}.{}", safe_stem, suffix, extension)};
 }
 
 /// @brief Writes already-serialized JSON text to disk, creating parent directories as needed.
@@ -1840,15 +1943,88 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
         UEM_SPINNER_STOP("Finished parsing AST");
         UEM_INFO("Filtering {} declarations...", DeclarationCount(declarations));
         FilterDeclarations(declarations);
-        const auto file_hashes = BuildFileHashes(declarations);
+        AssignOccurrenceIndices(declarations);
         UEM_INFO("Serializing {} declarations...", DeclarationCount(declarations));
-        const auto groups = GroupDeclarations(declarations);
 
-        for (const auto& [file, file_declarations] : groups) {
-            const auto hash = HashForFile(file_hashes, file);
-            const auto includes = IncludesForFile(include_order, file);
-            const auto output = BuildFileOutput(file, hash, includes, file_declarations);
-            WriteJsonFile(OutputFileForHash(file, hash), output);
+        switch (UEMeta::Config::GetConfig().GetSplitStrategy()) {
+            case UEMeta::SplitStrategy::ByFile: {
+                const auto file_hashes = BuildFileHashes(declarations);
+                const auto groups = GroupDeclarations(declarations);
+                for (const auto& [file, file_declarations] : groups) {
+                    const auto hash = HashForFile(file_hashes, file);
+                    const auto includes = IncludesForFile(include_order, file);
+                    const auto output = BuildFileOutput(file, hash, includes, file_declarations);
+                    WriteJsonFile(OutputFileForHash(file, hash), output);
+                }
+                break;
+            }
+            case UEMeta::SplitStrategy::ByDecl:
+                {
+                    const auto file_hashes = BuildFileHashes(declarations);
+                    const auto groups = GroupDeclarations(declarations);
+                    for (const auto& [file, file_declarations] : groups) {
+                        (void)file_declarations;
+                        const auto hash = HashForFile(file_hashes, file);
+                        WriteJsonFile(OutputFileForHash(file, hash, "file"), UEMeta::JsonFileMetadataOutput{
+                            .path = UEMeta::JsonDetail::ScrubFilePath(file),
+                            .hash = hash,
+                            .includes = UEMeta::JsonDetail::ScrubFilePaths(IncludesForFile(include_order, file))
+                        });
+                    }
+                }
+                for (const auto& slot : declarations.declaration_order) {
+                    switch (slot.bucket) {
+                        case UEMeta::JsonDeclarationBucket::Class:
+                            if (slot.index < declarations.classes.size()) {
+                                const auto& declaration = declarations.classes[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "class"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::Struct:
+                            if (slot.index < declarations.structs.size()) {
+                                const auto& declaration = declarations.structs[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "struct"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::Union:
+                            if (slot.index < declarations.unions.size()) {
+                                const auto& declaration = declarations.unions[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "union"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::Enum:
+                            if (slot.index < declarations.enums.size()) {
+                                const auto& declaration = declarations.enums[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "enum"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::ForwardDeclaration:
+                            if (slot.index < declarations.forward_declarations.size()) {
+                                const auto& declaration = declarations.forward_declarations[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "forwardDeclaration"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::Alias:
+                            if (slot.index < declarations.aliases.size()) {
+                                const auto& declaration = declarations.aliases[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "alias"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::FreeFunction:
+                            if (slot.index < declarations.free_functions.size()) {
+                                const auto& declaration = declarations.free_functions[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "function"), declaration);
+                            }
+                            break;
+                        case UEMeta::JsonDeclarationBucket::Global:
+                            if (slot.index < declarations.globals.size()) {
+                                const auto& declaration = declarations.globals[slot.index];
+                                WriteJsonFile(OutputFileForDeclaration(declaration.common, "variable"), declaration);
+                            }
+                            break;
+                    }
+                }
+                break;
         }
     });
 }

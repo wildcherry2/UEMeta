@@ -2,6 +2,7 @@
 #include <string_view>
 #include <utility>
 #include <atomic>
+#include <map>
 
 #include "UEMeta/Cli.hpp"
 #include "CLI/CLI.hpp"
@@ -10,6 +11,12 @@
 #include "quill/sinks/ConsoleSink.h"
 #include "quill/sinks/FileSink.h"
 #include "indicators/progress_spinner.hpp"
+
+/// @brief CLI11 transformer map from split strategy option text to enum values.
+static const std::map<std::string, UEMeta::SplitStrategy> SplitStrategyMap{
+    {"file", UEMeta::SplitStrategy::ByFile},
+    {"decl", UEMeta::SplitStrategy::ByDecl}
+};
 
 /// @brief Console sink that interprets tagged trace messages as spinner controls.
 class ConsoleSinkWithSpinner : public quill::ConsoleSink {
@@ -142,6 +149,12 @@ const UEMeta::StablePath& UEMeta::Config::OutPath() const {
     return out_path;
 }
 
+/// @brief Returns the configured JSON file split strategy.
+UEMeta::SplitStrategy UEMeta::Config::GetSplitStrategy() const {
+    AssertInitialized();
+    return split_strategy;
+}
+
 /// @brief Returns the configured Clang executable path.
 const UEMeta::StablePath& UEMeta::Config::ClangPath() const {
     AssertInitialized();
@@ -245,6 +258,12 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
             return "";
         });
+
+    app.add_option("--split-strategy", cfg.split_strategy,
+        "Required output split strategy. Use 'file' to keep one JSON file per source file, "
+        "or 'decl' to write one JSON file per top-level declaration.")
+        ->required()
+        ->transform(CLI::CheckedTransformer(SplitStrategyMap, CLI::ignore_case));
 
     auto opt_parse_as_linux = app.add_flag("-p,--parse-as-linux", cfg.no_cl,
         "Uses clang instead of clang-cl. Assumes that the --compile-commands is appropriate "

@@ -1,8 +1,12 @@
 # Parser JSON Shapes
 
-Generated metadata is written as one JSON file per source file group. Optional
-properties below are omitted by the serializers when their source value is empty,
-false, or unset. Required arrays may still serialize as `[]`.
+Generated metadata is written according to the required `--split-strategy`
+option. `--split-strategy file` writes one JSON file per source file group.
+`--split-strategy decl` writes one top-level declaration object per file, using
+the declaration kind as the file extension, plus one `.file` metadata object per
+source file. Optional properties below are omitted by the serializers when their
+source value is empty, false, or unset. Required arrays may still serialize as
+`[]`.
 
 ```ts
 type FilePath = string;
@@ -42,12 +46,19 @@ interface ParserMetadataJson {
   declarations: Declaration[];
 }
 
+interface ParserFileMetadataJson {
+  path: FilePath;
+  hash: Md5Hex;
+  includes: FilePath[];
+}
+
 interface DeclarationCommon {
   kind: DeclarationKind;
   name?: string;
   qualifiedName?: string;
   file: FilePath;
   hash?: Md5Hex;
+  occurrenceIndex?: number;
   scope: string[];
   documentation?: string;
   isAnonymous?: true;
