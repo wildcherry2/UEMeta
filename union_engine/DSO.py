@@ -62,6 +62,7 @@ class DeclarationCommon(BaseModel):
     qualifiedName: str | None = None
     file: FilePath
     hash: Md5Hex | None = None
+    occurrenceIndex: int | None = None
     scope: list[str]
     documentation: str | None = None
     isAnonymous: Literal[True] | None = None
@@ -266,6 +267,12 @@ class ParserMetadataJson(BaseModel):
     declarations: list[Declaration]
 
 
+class ParserFileMetadataJson(BaseModel):
+    path: FilePath
+    hash: Md5Hex
+    includes: list[FilePath]
+
+
 class CompileCommandEntry(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -283,4 +290,4 @@ class FilteredCompileCommandEntry(BaseModel):
 
 
 CompileCommandsJson = list[CompileCommandEntry]
-FilteredCompileCommandsJson = tuple[FilteredCompileCommandEntry]
+FilteredCompileCommandsJson = tuple[FilteredCompileCommandEntry,]
