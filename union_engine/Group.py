@@ -52,22 +52,30 @@ class File:
     def get_json(self):
         return self.__json
 
-
-
 # Flat map of a file directory with only .json files whose name is the version it represents.
 # Precondition: in_directory is already validated to be a directory with jsons
 class VersionGroup:
     def __init__(self, in_directory: Path):
         self.directory: Final[Path] = in_directory
-        _files: dict[str, File] = {}
-        def get_jsons(directory: Path, arr: dict[str, File]):
+        _files: list[File] = []
+        def get_jsons(directory: Path, arr: list[File]):
             for root, dirs, files in os.walk(directory):
                 for file in files:
                     if file.endswith(("file","class","struct","union","function","alias", "enum","forwardDeclaration","variable")):
                         obj = File(Path(os.path.join(root, file)), in_directory.name)
-                        arr[obj.qualified_name] = obj
+                        arr.append(obj)
                 for directory in dirs:
                     get_jsons(Path(os.path.join(root, directory)), arr)
         get_jsons(self.directory, _files)
-        self.files = MappingProxyType(_files)
+        self.files = frozenset(_files)
         self.version: Final[str] = in_directory.name
+
+def group_by_name(groups: list[VersionGroup]) -> dict[str, list[File]]:
+    out: dict[str, list[File]] = {}
+    for group in groups:
+        for file in group.files:
+            if not out[file.qualified_name]:
+                out[file.qualified_name] = [file]
+            else:
+                out[file.qualified_name].append(file)
+    return out
