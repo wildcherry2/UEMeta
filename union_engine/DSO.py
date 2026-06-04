@@ -55,13 +55,6 @@ ExceptionSpec = Literal[
     "unparsed",
 ]
 
-class VersionedFieldInstance[T](BaseModel):
-    version: str
-    instance: T
-
-class VersionedField[T](BaseModel):
-    versions: list[VersionedFieldInstance[T]]
-
 class DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MDeclarationCommon with overrode types
     kind: DeclarationKind
     name: str | None = None
@@ -73,6 +66,7 @@ class DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MD
     hash: Md5Hex | None = None
     documentation: str | None = None
 
+DeclarationCommon_VF = frozenset(['file', 'occurrenceIndex', 'hash', 'documentation'])
 
 class TemplateParameter(BaseModel):
     kind: TemplateParameterKind
@@ -82,12 +76,16 @@ class TemplateParameter(BaseModel):
     isParameterPack: Literal[True] | None = None
     parameters: list[TemplateParameter] | None = None
 
+TemplateParameter_VF = frozenset(['documentation', 'name', 'type', 'isParameterPack', 'parameters', 'kind'])
+
 
 class Parameter(BaseModel):
     name: str | None = None
     type: str
     declaration: str
     documentation: str | None = None
+
+Parameter_VF = frozenset(['name', 'declaration', 'documentation'])
 
 
 class VTableIndex(BaseModel):
@@ -120,6 +118,13 @@ class FunctionDetails(BaseModel):
     templateArguments: list[str] | None = None
     parameters: list[Parameter]
     vtableIndex: VTableIndex | None = None
+
+FunctionDetails_VF = frozenset(['access', 'returnType', 'storageClass', 'isStatic',
+                                'isVirtual', 'isPure', 'isConstexpr', 'isConsteval',
+                                'isInline', 'isDeleted', 'isDefaulted', 'isExplicit',
+                                'exceptionSpec', 'templateParameters', 'isTemplateSpecialization',
+                                'templateSpecializationKind', 'primaryTemplateQualifiedName',
+                                'templateArguments', 'parameters', 'vtableIndex'])
 
 
 class FunctionMetadata(FunctionDetails):
