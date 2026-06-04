@@ -11,6 +11,12 @@ attached to the DSO structs. Optional properties are omitted by the serializers
 when their source value is empty, false, or unset. Required arrays may still
 serialize as `[]`.
 
+Optional `true` flags are presence-only: they are emitted as `true` when the
+condition applies and omitted otherwise, rather than emitted as `false`. Optional
+template specialization fields are emitted only for specializations or explicit
+instantiations. Optional layout fields are emitted only when Clang exposes the
+corresponding ABI layout.
+
 `documentation` fields contain formatted Doxygen documentation extracted from
 the C++ declaration. For templates, the parser also checks the described template
 declaration when the instantiated declaration itself does not carry docs.
@@ -94,7 +100,7 @@ interface DeclarationCommon {
   file: FilePath;
   /** Content hash for the declaration source range, when available. Example: "9e107d9d372bb6826bd81d3542a419d6". */
   hash?: Md5Hex;
-  /** Zero-based order of this top-level declaration within its source file. */
+  /** Zero-based order of this top-level declaration within its source file; omitted for nested declarations. */
   occurrenceIndex?: number;
   /** Lexical namespace and record scope containing the declaration. Example: ["ns", "Alpha"]. */
   scope: string[];
@@ -128,11 +134,11 @@ interface RecordLayoutDetails {
   templateParameters?: TemplateParameter[];
   /** True when the record is an explicit template specialization or instantiation. */
   isTemplateSpecialization?: true;
-  /** Clang template specialization category for the record specialization. Example: "explicitSpecialization". */
+  /** Clang template specialization category for the record specialization; omitted when not specialized. Example: "explicitSpecialization". */
   templateSpecializationKind?: TemplateSpecializationKind;
-  /** Fully qualified primary template name for a record specialization. Example: "::ns::Box". */
+  /** Fully qualified primary template name for a record specialization; omitted when not specialized. Example: "::ns::Box". */
   primaryTemplateQualifiedName?: string;
-  /** Template arguments used by a record specialization. Example: ["int"]. */
+  /** Template arguments used by a record specialization; omitted when not specialized or unavailable. Example: ["int"]. */
   templateArguments?: string[];
   /** True when Clang has a complete record definition. */
   isCompleteDefinition?: true;
@@ -191,15 +197,15 @@ interface ForwardDeclaration extends DeclarationCommon {
   kind: "forwardDeclaration";
   /** C++ declaration category being forward-declared. Example: "class". */
   forwardDeclarationKind: ForwardDeclarationKind;
-  /** Template parameters declared on a forward-declared record template. */
+  /** Template parameters declared on a forward-declared record template; omitted for non-templates. */
   templateParameters?: TemplateParameter[];
   /** True when the forward declaration is an explicit template specialization or instantiation. */
   isTemplateSpecialization?: true;
-  /** Clang template specialization category for the forward declaration. Example: "explicitSpecialization". */
+  /** Clang template specialization category for the forward declaration; omitted when not specialized. Example: "explicitSpecialization". */
   templateSpecializationKind?: TemplateSpecializationKind;
-  /** Fully qualified primary template name for a forward-declaration specialization. Example: "::ns::Box". */
+  /** Fully qualified primary template name for a forward-declaration specialization; omitted when not specialized. Example: "::ns::Box". */
   primaryTemplateQualifiedName?: string;
-  /** Template arguments used by a forward-declaration specialization. Example: ["int"]. */
+  /** Template arguments used by a forward-declaration specialization; omitted when not specialized or unavailable. Example: ["int"]. */
   templateArguments?: string[];
   /** Enum underlying integer type, when this is an enum forward declaration. Example: "uint8_t". */
   underlyingType?: string;
@@ -212,7 +218,7 @@ interface ForwardDeclaration extends DeclarationCommon {
 /** Type alias declaration payload. */
 interface AliasDeclaration extends DeclarationCommon {
   kind: "alias";
-  /** Template parameters declared on an alias template. */
+  /** Template parameters declared on an alias template; omitted for non-template aliases. */
   templateParameters?: TemplateParameter[];
   /** Type named by the alias declaration. Example: "std::vector<int>". */
   aliasedType: string;
@@ -233,21 +239,21 @@ interface GlobalDeclaration extends DeclarationCommon, VariableDetails {
 interface TemplateParameter {
   /** Template parameter category, such as `typename`, `class`, `nonType`, or `classTemplate`. Example: "typename". */
   kind: TemplateParameterKind;
-  /** Identifier introduced by the template parameter. Example: "T". */
+  /** Identifier introduced by the template parameter; for `template <int Count>`, this is "Count". Example: "T". */
   name?: string;
   /** Formatted Doxygen documentation attached to the template parameter declaration. Example: "Element type.". */
   documentation?: string;
-  /** Declared type of a non-type template parameter, including the parameter name. Example: "int Count". */
+  /** Declared type of a non-type template parameter, including the parameter name; omitted for type parameters. Example: "int Count". */
   type?: string;
   /** True when the parameter is a template parameter pack. */
   isParameterPack?: true;
-  /** Inner template parameters for a template-template parameter. */
+  /** Inner template parameters for a template-template parameter; omitted for ordinary type and non-type parameters. */
   parameters?: TemplateParameter[];
 }
 
 /** JSON representation of one function parameter declaration. */
 interface Parameter {
-  /** Parameter identifier. Example: "count". */
+  /** Parameter identifier; omitted for unnamed parameters. Example: "count". */
   name?: string;
   /** Parameter type without the parameter identifier. Example: "ns::Alpha *". */
   type: string;
@@ -301,15 +307,15 @@ interface FunctionDetails {
   refQualifier?: RefQualifier;
   /** Exception specification attached to the function type. Example: "noexcept". */
   exceptionSpec?: ExceptionSpec;
-  /** Template parameters declared on a function template. */
+  /** Template parameters declared on a function template; omitted for non-template functions. */
   templateParameters?: TemplateParameter[];
   /** True when the function is an explicit function template specialization or instantiation. */
   isTemplateSpecialization?: true;
-  /** Clang template specialization category for a function template specialization. Example: "explicitSpecialization". */
+  /** Clang template specialization category for a function template specialization; omitted when not specialized. Example: "explicitSpecialization". */
   templateSpecializationKind?: TemplateSpecializationKind;
-  /** Fully qualified primary function template name for a function template specialization. Example: "::ns::Identity". */
+  /** Fully qualified primary function template name for a function template specialization; omitted when not specialized. Example: "::ns::Identity". */
   primaryTemplateQualifiedName?: string;
-  /** Template arguments used by a function template specialization. Example: ["int"]. */
+  /** Template arguments used by a function template specialization; omitted when not specialized or unavailable. Example: ["int"]. */
   templateArguments?: string[];
   /** Ordered function parameter list. */
   parameters: Parameter[];
@@ -333,15 +339,15 @@ interface FunctionMetadata extends FunctionDetails {
 
 /** JSON representation of a global variable or static data member. */
 interface VariableDetails {
-  /** Template parameters declared on a variable template. */
+  /** Template parameters declared on a variable template; omitted for non-template variables. */
   templateParameters?: TemplateParameter[];
   /** True when the variable is an explicit variable template specialization or instantiation. */
   isTemplateSpecialization?: true;
-  /** Clang template specialization category for a variable template specialization. Example: "explicitSpecialization". */
+  /** Clang template specialization category for a variable template specialization; omitted when not specialized. Example: "explicitSpecialization". */
   templateSpecializationKind?: TemplateSpecializationKind;
-  /** Fully qualified primary variable template name for a variable template specialization. Example: "::ns::Value". */
+  /** Fully qualified primary variable template name for a variable template specialization; omitted when not specialized. Example: "::ns::Value". */
   primaryTemplateQualifiedName?: string;
-  /** Template arguments used by a variable template specialization. Example: ["int"]. */
+  /** Template arguments used by a variable template specialization; omitted when not specialized or unavailable. Example: ["int"]. */
   templateArguments?: string[];
   /** Variable type without the variable identifier. Example: "const int". */
   type: string;
