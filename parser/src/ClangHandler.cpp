@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdint>
 #include <exception>
+#include <execution>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -1950,19 +1951,21 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
             case UEMeta::SplitStrategy::ByFile: {
                 const auto file_hashes = BuildFileHashes(declarations);
                 const auto groups = GroupDeclarations(declarations);
-                for (const auto& [file, file_declarations] : groups) {
+                std::for_each(std::execution::par_unseq, groups.begin(), groups.end(), [&](const auto& entry) {
+                    const auto& [file, file_declarations] = entry;
                     const auto hash = HashForFile(file_hashes, file);
                     const auto includes = IncludesForFile(include_order, file);
                     const auto output = BuildFileOutput(file, hash, includes, file_declarations);
                     WriteJsonFile(OutputFileForHash(file, hash), output);
-                }
+                });
                 break;
             }
             case UEMeta::SplitStrategy::ByDecl:
                 {
                     const auto file_hashes = BuildFileHashes(declarations);
                     const auto groups = GroupDeclarations(declarations);
-                    for (const auto& [file, file_declarations] : groups) {
+                    std::for_each(std::execution::par_unseq, groups.begin(), groups.end(), [&](const auto& entry) {
+                        const auto& [file, file_declarations] = entry;
                         (void)file_declarations;
                         const auto hash = HashForFile(file_hashes, file);
                         WriteJsonFile(OutputFileForHash(file, hash, "file"), UEMeta::JsonFileMetadataOutput{
@@ -1970,9 +1973,12 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
                             .hash = hash,
                             .includes = UEMeta::JsonDetail::ScrubFilePaths(IncludesForFile(include_order, file))
                         });
-                    }
+                    });
                 }
-                for (const auto& slot : declarations.declaration_order) {
+                std::for_each(std::execution::par_unseq,
+                              declarations.declaration_order.begin(),
+                              declarations.declaration_order.end(),
+                              [&](const auto& slot) {
                     switch (slot.bucket) {
                         case UEMeta::JsonDeclarationBucket::Class:
                             if (slot.index < declarations.classes.size()) {
@@ -2023,7 +2029,7 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
                             }
                             break;
                     }
-                }
+                });
                 break;
         }
     });
