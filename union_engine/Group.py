@@ -1,7 +1,7 @@
 from pathlib import Path
 import os
 import re
-from typing import Literal, cast, Final
+from typing import Literal, cast, Final, Any
 from types import MappingProxyType
 
 from DSO import Declaration, ParserFileMetadataJson, ClassDeclaration, StructDeclaration, UnionDeclaration, \
@@ -20,7 +20,7 @@ class File:
             match_dict = match.groupdict()
             self.qualified_name: Final[str] = match_dict["qualified_name"]
             self.hash: Final[str] = match_dict["hash"]
-            self.__json: Declaration | ParserFileMetadataJson | None = None
+            self.__json: dict[str, Any] | ParserFileMetadataJson | None = None
             self.version: Final[str] = version
             self.type = cast(Final[Literal[
                 "file", "class", "struct", "union", "function", "alias", "enum", "forwardDeclaration", "variable"]],
@@ -33,23 +33,23 @@ class File:
             return
         match self.type:
             case "file":
-                self.__json = ParserFileMetadataJson.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = ParserFileMetadataJson.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "class":
-                self.__json = ClassDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = ClassDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "struct":
-                self.__json = StructDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = StructDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "union":
-                self.__json = UnionDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = UnionDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "function":
-                self.__json = FreeFunctionDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = FreeFunctionDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "alias":
-                self.__json = AliasDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = AliasDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "enum":
-                self.__json = EnumDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = EnumDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "forwardDeclaration":
-                self.__json = ForwardDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = ForwardDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case "variable":
-                self.__json = GlobalDeclaration.model_validate_json(self.path.read_text("utf-8"))
+                self.__json = GlobalDeclaration.model_validate_json(self.path.read_text("utf-8")).model_dump()
             case _:
                 raise Exception(f"File {self.path} does not have the correct naming format!")
 

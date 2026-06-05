@@ -96,6 +96,7 @@ class VTableIndex(BaseModel):
 class FunctionDetails(BaseModel):
     functionKind: FunctionKind
     returnType: str | None = None
+    type: str
     access: AccessSpecifier | None = None
     storageClass: StorageClass | None = None
     isConst: Literal[True] | None = None
@@ -124,7 +125,7 @@ FunctionDetails_VF = frozenset(['access', 'returnType', 'storageClass', 'isStati
                                 'isInline', 'isDeleted', 'isDefaulted', 'isExplicit',
                                 'exceptionSpec', 'templateParameters', 'isTemplateSpecialization',
                                 'templateSpecializationKind', 'primaryTemplateQualifiedName',
-                                'templateArguments', 'parameters', 'vtableIndex'])
+                                'templateArguments', 'parameters', 'vtableIndex', 'type'])
 
 
 class FunctionMetadata(FunctionDetails):
@@ -133,6 +134,8 @@ class FunctionMetadata(FunctionDetails):
     file: FilePath
     scope: list[str]
     documentation: str | None = None
+
+FunctionMetadata_VF = frozenset(['file', 'documentation']).union(FunctionDetails_VF)
 
 
 class VariableDetails(BaseModel):
@@ -150,6 +153,10 @@ class VariableDetails(BaseModel):
     isStaticDataMember: Literal[True] | None = None
     isThreadLocal: Literal[True] | None = None
 
+VariableDetails_VF = frozenset(['templateParameters', 'isTemplateSpecialization', 'templateSpecializationKind',
+                                'primaryTemplateQualifiedName', 'templateArguments', 'type', 'declaration', 'access',
+                                'storageClass', 'isConstexpr', 'isInline', 'isStaticDataMember', 'isThreadLocal'])
+
 
 class VariableMetadata(VariableDetails):
     name: str
@@ -158,6 +165,8 @@ class VariableMetadata(VariableDetails):
     scope: list[str]
     documentation: str | None = None
 
+VariableMetadata_VF = frozenset(['file', 'documentation']).union(VariableDetails_VF)
+
 
 class Enumerator(BaseModel):
     name: str
@@ -165,6 +174,8 @@ class Enumerator(BaseModel):
     file: FilePath
     scope: list[str]
     documentation: str | None = None
+
+Enumerator_VF = frozenset(['file', 'documentation', 'value'])
 
 
 class Field(BaseModel):
@@ -180,6 +191,8 @@ class Field(BaseModel):
     bitWidth: int | None = None
     offsetBits: int | None = None
 
+Field_VF = frozenset(['file', 'documentation', 'type', 'declaration', 'access', 'isMutable', 'isBitfield', 'bitWidth', 'offsetBits'])
+
 
 class BaseSpecifier(BaseModel):
     type: str
@@ -188,6 +201,7 @@ class BaseSpecifier(BaseModel):
     isVirtual: Literal[True] | None = None
     offset: int | None = None
 
+BaseSpecifier_VF = frozenset(['type', 'access', 'isVirtual', 'offset'])
 
 class RecordLayoutDetails(BaseModel):
     templateParameters: list[TemplateParameter] | None = None
@@ -201,12 +215,18 @@ class RecordLayoutDetails(BaseModel):
     fields: list[Field]
     nested: list[NestedDeclaration]
 
+RecordLayoutDetails_VF = frozenset(['templateParameters', 'isTemplateSpecialization', 'templateSpecializationKind',
+                                    'primaryTemplateQualifiedName', 'templateArguments', 'sizeBytes', 'alignBytes',
+                                    'fields', 'nested' ])
+
 
 class ClassDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["class"]
     bases: list[BaseSpecifier]
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
+
+ClassDeclaration_VF = frozenset(['bases', 'staticVariables', 'methods']).union(DeclarationCommon_VF).union(RecordLayoutDetails_VF)
 
 
 class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
@@ -215,9 +235,13 @@ class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
+StructDeclaration_VF = frozenset(['bases', 'staticVariables', 'methods']).union(DeclarationCommon_VF).union(RecordLayoutDetails_VF)
+
 
 class UnionDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["union"]
+
+UnionDeclaration_VF = DeclarationCommon_VF.union(RecordLayoutDetails_VF)
 
 
 class EnumDeclaration(DeclarationCommon):
@@ -226,6 +250,8 @@ class EnumDeclaration(DeclarationCommon):
     isScoped: Literal[True] | None = None
     scopedKind: ScopedKind | None = None
     enumerators: list[Enumerator]
+
+EnumDeclaration_VF = frozenset(['scopedKind', 'isScoped', 'underlyingType']).union(DeclarationCommon_VF)
 
 
 class ForwardDeclaration(DeclarationCommon):
@@ -240,21 +266,28 @@ class ForwardDeclaration(DeclarationCommon):
     isScoped: Literal[True] | None = None
     scopedKind: ScopedKind | None = None
 
+ForwardDeclaration_VF = frozenset(['templateParameters', 'isTemplateSpecialization', 'templateSpecializationKind',
+                                   'primaryTemplateQualifiedName', 'templateArguments', 'underlyingType',
+                                   'isScoped', 'scopedKind']).union(DeclarationCommon_VF)
+
 
 class AliasDeclaration(DeclarationCommon):
     kind: Literal["alias"]
     templateParameters: list[TemplateParameter] | None = None
     aliasedType: str
 
+AliasDeclaration_VF = frozenset(['templateParameters, aliasedType']).union(DeclarationCommon_VF)
 
 class FreeFunctionDeclaration(DeclarationCommon, FunctionDetails):
     kind: Literal["function"]
     functionKind: Literal["function"]
 
+FreeFunctionDeclaration_VF = DeclarationCommon_VF.union(FunctionDetails_VF)
 
 class GlobalDeclaration(DeclarationCommon, VariableDetails):
     kind: Literal["variable"]
 
+GlobalDeclaration_VF = DeclarationCommon_VF.union(VariableDetails_VF)
 
 NestedDeclaration = Annotated[
     ClassDeclaration
@@ -269,7 +302,6 @@ Declaration = Annotated[
     NestedDeclaration | FreeFunctionDeclaration | GlobalDeclaration,
     PydanticField(discriminator="kind"),
 ]
-
 
 class ParserFileMetadataJson(BaseModel):
     path: FilePath
