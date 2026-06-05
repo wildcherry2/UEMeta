@@ -76,7 +76,7 @@ class TemplateParameter(BaseModel):
     isParameterPack: Literal[True] | None = None
     parameters: list[TemplateParameter] | None = None
 
-TemplateParameter_VF = frozenset(['documentation', 'name', 'type', 'isParameterPack', 'parameters', 'kind'])
+TemplateParameter_VF = frozenset(['documentation', 'name', 'type', 'isParameterPack', 'kind'])
 
 
 class Parameter(BaseModel):
@@ -123,7 +123,7 @@ class FunctionDetails(BaseModel):
 FunctionDetails_VF = frozenset(['access', 'returnType', 'storageClass', 'isStatic',
                                 'isVirtual', 'isPure', 'isConstexpr', 'isConsteval',
                                 'isInline', 'isDeleted', 'isDefaulted', 'isExplicit',
-                                'exceptionSpec', 'templateParameters', 'isTemplateSpecialization',
+                                'exceptionSpec', 'isTemplateSpecialization',
                                 'templateSpecializationKind', 'primaryTemplateQualifiedName',
                                 'templateArguments', 'parameters', 'vtableIndex', 'type'])
 
@@ -153,7 +153,7 @@ class VariableDetails(BaseModel):
     isStaticDataMember: Literal[True] | None = None
     isThreadLocal: Literal[True] | None = None
 
-VariableDetails_VF = frozenset(['templateParameters', 'isTemplateSpecialization', 'templateSpecializationKind',
+VariableDetails_VF = frozenset(['isTemplateSpecialization', 'templateSpecializationKind',
                                 'primaryTemplateQualifiedName', 'templateArguments', 'type', 'declaration', 'access',
                                 'storageClass', 'isConstexpr', 'isInline', 'isStaticDataMember', 'isThreadLocal'])
 
@@ -215,9 +215,8 @@ class RecordLayoutDetails(BaseModel):
     fields: list[Field]
     nested: list[NestedDeclaration]
 
-RecordLayoutDetails_VF = frozenset(['templateParameters', 'isTemplateSpecialization', 'templateSpecializationKind',
-                                    'primaryTemplateQualifiedName', 'templateArguments', 'sizeBytes', 'alignBytes',
-                                    'fields', 'nested' ])
+RecordLayoutDetails_VF = frozenset(['isTemplateSpecialization', 'templateSpecializationKind',
+                                    'primaryTemplateQualifiedName', 'templateArguments', 'sizeBytes', 'alignBytes'])
 
 
 class ClassDeclaration(DeclarationCommon, RecordLayoutDetails):
@@ -226,7 +225,7 @@ class ClassDeclaration(DeclarationCommon, RecordLayoutDetails):
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
-ClassDeclaration_VF = frozenset(['bases', 'staticVariables', 'methods']).union(DeclarationCommon_VF).union(RecordLayoutDetails_VF)
+ClassDeclaration_VF = DeclarationCommon_VF.union(RecordLayoutDetails_VF)
 
 
 class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
@@ -235,7 +234,7 @@ class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
-StructDeclaration_VF = frozenset(['bases', 'staticVariables', 'methods']).union(DeclarationCommon_VF).union(RecordLayoutDetails_VF)
+StructDeclaration_VF = DeclarationCommon_VF.union(RecordLayoutDetails_VF)
 
 
 class UnionDeclaration(DeclarationCommon, RecordLayoutDetails):
@@ -266,7 +265,7 @@ class ForwardDeclaration(DeclarationCommon):
     isScoped: Literal[True] | None = None
     scopedKind: ScopedKind | None = None
 
-ForwardDeclaration_VF = frozenset(['templateParameters', 'isTemplateSpecialization', 'templateSpecializationKind',
+ForwardDeclaration_VF = frozenset(['isTemplateSpecialization', 'templateSpecializationKind',
                                    'primaryTemplateQualifiedName', 'templateArguments', 'underlyingType',
                                    'isScoped', 'scopedKind']).union(DeclarationCommon_VF)
 
@@ -276,7 +275,7 @@ class AliasDeclaration(DeclarationCommon):
     templateParameters: list[TemplateParameter] | None = None
     aliasedType: str
 
-AliasDeclaration_VF = frozenset(['templateParameters, aliasedType']).union(DeclarationCommon_VF)
+AliasDeclaration_VF = frozenset(['aliasedType']).union(DeclarationCommon_VF)
 
 class FreeFunctionDeclaration(DeclarationCommon, FunctionDetails):
     kind: Literal["function"]
