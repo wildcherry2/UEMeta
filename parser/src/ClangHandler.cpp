@@ -879,6 +879,7 @@ static UEMeta::JsonFunction BuildFunction(const clang::FunctionDecl* decl, clang
     out.file = FilePathForFunction(decl, ctx);
     out.scope = BuildScope(decl);
     out.documentation = DocumentationForDecl(decl, ctx);
+    out.type = PrintType(ctx, decl->getType());
     out.return_type = PrintType(ctx, decl->getReturnType());
     out.storage_class = StorageClassToString(decl->getStorageClass());
     out.is_constexpr = decl->isConstexpr();
@@ -963,6 +964,7 @@ static UEMeta::JsonVariable BuildVariable(const clang::VarDecl* decl, const clan
 template <typename FunctionDetails>
 static void FillFunctionDetails(FunctionDetails& out, UEMeta::JsonFunction function) {
     out.function_kind = std::move(function.function_kind);
+    out.type = std::move(function.type);
     out.return_type = std::move(function.return_type);
     out.access = std::move(function.access);
     out.storage_class = std::move(function.storage_class);

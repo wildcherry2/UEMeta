@@ -275,6 +275,8 @@ interface VTableIndex {
 interface FunctionDetails {
   /** Function declaration category emitted as `functionKind`. Example: "method". */
   functionKind: FunctionKind;
+  /** Function type/signature without the function identifier. Example: "int (float) const". */
+  type: string;
   /** Return type for ordinary functions and methods; omitted for constructors and destructors. Example: "int". */
   returnType?: string;
   /** C++ access specifier for a class member function. Example: "private". */

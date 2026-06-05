@@ -156,6 +156,16 @@ namespace UEMeta {
         std::string function_kind;
 
         /**
+         * @brief Function type/signature without the function identifier.
+         *
+         * @code{.cpp}
+         * struct Alpha { int Count(float value) const; };
+         * // type == "int (float) const"
+         * @endcode
+         */
+        std::string type;
+
+        /**
          * @brief Unqualified function or method name.
          *
          * @code{.cpp}
@@ -989,6 +999,7 @@ namespace UEMeta {
     struct JsonFreeFunctionDeclaration {
         JsonDeclarationCommon common;
         std::string function_kind;
+        std::string type;
         std::string return_type;
         std::string access;
         std::string storage_class;
@@ -1174,6 +1185,7 @@ struct glz::meta<UEMeta::JsonFunction> {
 
     static constexpr auto value = object(
         "functionKind", &T::function_kind,
+        "type", &T::type,
         "name", &T::name,
         "qualifiedName", &T::qualified_name,
         "file", glz::custom<nullptr, UEMeta::JsonDetail::FileScrubber<UEMeta::JsonFunction>>,
@@ -1631,6 +1643,7 @@ namespace UEMeta::JsonDetail {
         auto parameters = SpanOf(declaration.parameters);
         auto payload = glz::obj{
             "functionKind", declaration.function_kind,
+            "type", declaration.type,
             "returnType", return_type,
             "access", access,
             "storageClass", storage_class,
