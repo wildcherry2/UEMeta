@@ -1795,10 +1795,12 @@ static UEMeta::StablePath OutputFileForDeclaration(const UEMeta::JsonDeclaration
         safe_stem = "_anonymous";
     }
 
-    const auto suffix = common.hash.empty() ? Md5Hex(safe_stem) : common.hash;
+    const auto source_text_hash = common.hash.empty() ? Md5Hex(safe_stem) : common.hash;
+    const auto file_hash = Md5Hex(FileGroupKey(common.file));
+    const auto occurrence_index = common.occurrence_index.value_or(0);
     return UEMeta::StablePath{
         UEMeta::Config::GetConfig().OutPath().UnderlyingPath() /
-        fmtquill::format("{}-{}.{}", safe_stem, suffix, extension)};
+        fmtquill::format("{}-{}-{}-{}.{}", safe_stem, source_text_hash, file_hash, occurrence_index, extension)};
 }
 
 /// @brief Writes already-serialized JSON text to disk, creating parent directories as needed.
