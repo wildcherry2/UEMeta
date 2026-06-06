@@ -1,4 +1,5 @@
 import argparse
+import logging
 from enum import StrEnum
 from pathlib import Path
 
@@ -14,21 +15,21 @@ def validate_repo_url(repo_url: str):
         GIT.ls_remote(repo_url)
         return repo_url
     except git.exc.GitCommandNotFound as e:
-        print("`git` command not found, is git installed?")
+        logging.error("`git` command not found, is git installed?")
         raise e
     except git.exc.GitCommandError as e:
-        print(f"Failed to find accessible repo at \"{repo_url}\", does the repo exist and is SSH configured if needed?\n"
+        logging.error(f"Failed to find accessible repo at \"{repo_url}\", does the repo exist and is SSH configured if needed?\n"
               f"Error: {e}")
         raise e
     except Exception as e:
-        print(f"Failed to validate repo url: {repo_url}!\nError: {e}")
+        logging.error(f"Failed to validate repo url: {repo_url}!\nError: {e}")
         raise e
 
 def validate_branches(repo_url: str, branches: set[str]):
     try:
         raw_output = GIT.ls_remote("--heads", repo_url)
     except Exception as e:
-        print(f"Failed to validate branches because of git error: {e}")
+        logging.error(f"Failed to validate branches because of git error: {e}")
         raise e
     output = set()
     for line in raw_output.splitlines():
@@ -87,7 +88,7 @@ class Config:
         try:
             self.intermediate_path.mkdir(exist_ok=True, parents=True)
         except Exception as e:
-            print(f"Failed to create intermediate directory \"{self.intermediate_path}\": {e}")
+            logging.error(f"Failed to create intermediate directory \"{self.intermediate_path}\": {e}")
             raise e
 
         validate_branches(self.repo_url, self.branches)
