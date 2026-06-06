@@ -92,9 +92,9 @@ interface ParserFileMetadataJson {
 interface DeclarationCommon {
   /** Declaration category emitted as the `kind` discriminator. Example: "class". */
   kind: DeclarationKind;
-  /** Unqualified declaration identifier, omitted for unnamed declarations. Example: "Alpha". */
+  /** Unqualified declaration identifier, typedef name for an anonymous tag, or nearest scope name for an unnamed anonymous tag. Example: "Alpha". */
   name?: string;
-  /** Fully qualified declaration name with a leading global scope qualifier. Example: "::ns::Alpha". */
+  /** Fully qualified declaration name, typedef name for an anonymous tag, or full scope name for an unnamed anonymous tag. Example: "::ns::Alpha". */
   qualifiedName?: string;
   /** Source file that contains the declaration location. Example: "Source/Types.h". */
   file: FilePath;
@@ -106,7 +106,7 @@ interface DeclarationCommon {
   scope: string[];
   /** Formatted Doxygen documentation attached to the declaration. Example: "Owns player inventory state.". */
   documentation?: string;
-  /** True when the declaration has no source-level identifier. */
+  /** True when the original declaration has no tag-level identifier. Anonymous tags may still emit a typedef or scope-derived name. */
   isAnonymous?: true;
 }
 

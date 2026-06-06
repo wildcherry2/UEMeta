@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/Decl.h>
 #include <clang/AST/DeclCXX.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/AST/GlobalDecl.h>
@@ -132,6 +133,52 @@ static inline std::string QualifiedName(const clang::NamedDecl* decl) {
         return value;
     }
     return "::" + value;
+}
+
+/// @brief Returns the typedef name Clang attaches to an anonymous tag declaration, when one exists.
+static const clang::TypedefNameDecl* TypedefNameForAnonymousTag(const clang::NamedDecl* decl) {
+    const auto* tag = llvm::dyn_cast_or_null<clang::TagDecl>(decl);
+    if (!tag || tag->getDeclName()) {
+        return nullptr;
+    }
+
+    const auto* typedef_name = tag->getTypedefNameForAnonDecl();
+    if (!typedef_name || typedef_name->isInvalidDecl() || !typedef_name->getDeclName()) {
+        return nullptr;
+    }
+
+    return typedef_name;
+}
+
+/// @brief Returns the emitted declaration name, including typedef names for anonymous tags.
+static std::string EmittedDeclarationName(const clang::NamedDecl* decl) {
+    if (const auto* typedef_name = TypedefNameForAnonymousTag(decl)) {
+        return typedef_name->getNameAsString();
+    }
+
+    return decl ? decl->getNameAsString() : "";
+}
+
+/// @brief Returns the emitted qualified name, including typedef names for anonymous tags.
+static std::string EmittedQualifiedName(const clang::NamedDecl* decl) {
+    if (const auto* typedef_name = TypedefNameForAnonymousTag(decl)) {
+        return QualifiedName(typedef_name);
+    }
+
+    return QualifiedName(decl);
+}
+
+/// @brief Returns a record scope component, including typedef names for anonymous records.
+static std::string RecordScopeName(const clang::RecordDecl* decl) {
+    if (!decl) {
+        return "";
+    }
+
+    if (decl->getDeclName()) {
+        return decl->getNameAsString();
+    }
+
+    return EmittedDeclarationName(decl);
 }
 
 /// @brief Converts a Clang access specifier to the JSON access string.
@@ -270,7 +317,15 @@ static bool ShouldSkipRecord(const clang::RecordDecl* decl) {
 
 /// @brief Determines whether a function declaration should be ignored during metadata extraction.
 static bool ShouldSkipFunction(const clang::FunctionDecl* decl) {
-    if (!decl || decl->isImplicit() || decl->isInvalidDecl()) {
+    if (!decl) {
+        return true;
+    }
+
+    if (llvm::isa<clang::CXXDeductionGuideDecl>(decl)) {
+        return true;
+    }
+
+    if (decl->isImplicit() || decl->isInvalidDecl()) {
         return true;
     }
 
@@ -533,8 +588,9 @@ static std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
                 scope.push_back(namespace_decl->getNameAsString());
             }
         } else if (const auto* record_decl = llvm::dyn_cast<clang::RecordDecl>(context)) {
-            if (record_decl->getDeclName()) {
-                scope.push_back(record_decl->getNameAsString());
+            const auto name = RecordScopeName(record_decl);
+            if (!name.empty()) {
+                scope.push_back(name);
             }
         }
 
@@ -545,14 +601,36 @@ static std::vector<std::string> BuildScope(const clang::NamedDecl* decl) {
     return scope;
 }
 
+/// @brief Builds a qualified name from a declaration's lexical scope.
+static std::string QualifiedScopeName(const std::vector<std::string>& scope) {
+    if (scope.empty()) {
+        return "";
+    }
+
+    std::string out{"::"};
+    for (std::size_t index = 0; index < scope.size(); ++index) {
+        if (index != 0) {
+            out += "::";
+        }
+        out += scope[index];
+    }
+
+    return out;
+}
+
 /// @brief Populates fields shared by every top-level JSON declaration.
 template <typename Declaration>
 static void FillCommonDeclaration(Declaration& out, const clang::NamedDecl* decl, const clang::ASTContext& ctx) {
-    out.common.name = decl->getNameAsString();
-    out.common.qualified_name = QualifiedName(decl);
+    const auto original_name = decl->getNameAsString();
+    out.common.name = EmittedDeclarationName(decl);
+    out.common.qualified_name = EmittedQualifiedName(decl);
     out.common.file = FilePathForLocation(ctx.getSourceManager(), decl->getLocation());
     out.common.scope = BuildScope(decl);
-    out.common.is_anonymous = out.common.name.empty();
+    out.common.is_anonymous = original_name.empty();
+    if (out.common.is_anonymous && out.common.name.empty() && !out.common.scope.empty()) {
+        out.common.name = out.common.scope.back();
+        out.common.qualified_name = QualifiedScopeName(out.common.scope);
+    }
     out.common.documentation = DocumentationForDecl(decl, ctx);
 }
 
