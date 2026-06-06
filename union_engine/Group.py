@@ -8,7 +8,7 @@ from DSO import Declaration, ParserFileMetadataJson, ClassDeclaration, StructDec
     FreeFunctionDeclaration, AliasDeclaration, EnumDeclaration, ForwardDeclaration, GlobalDeclaration
 
 FILE_PATTERN = re.compile(
-    r"(?P<qualified_name>.+)-(?P<hash>.+).(?P<type>file|class|struct|union|function|alias|enum|forwardDeclaration|variable)")
+    r"(?P<qualified_name>.+)-(?P<src_hash>.+)-(?P<file_hash>.+)-(?P<occ_idx>.+).(?P<type>file|class|struct|union|function|alias|enum|forwardDeclaration|variable)")
 
 
 # Individual file information with the qualified name, path, hash, version, and loaded pydantic object.
@@ -19,7 +19,9 @@ class File:
         if match:
             match_dict = match.groupdict()
             self.qualified_name: Final[str] = match_dict["qualified_name"]
-            self.hash: Final[str] = match_dict["hash"]
+            self.src_hash: Final[str] = match_dict["src_hash"]
+            self.file_hash: Final[str] = match_dict["file_hash"]
+            self.occ_idx: Final[int] = int(match_dict["occ_idx"])
             self.__json: dict[str, Any] | ParserFileMetadataJson | None = None
             self.version: Final[str] = version
             self.type = cast(Final[Literal[
