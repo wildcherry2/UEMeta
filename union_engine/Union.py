@@ -1,9 +1,8 @@
-from dataclasses import dataclass
+import json
 from itertools import islice
-from typing import Literal, Any, cast
-
-from DSO import EnumDeclaration, EnumDeclaration_VF, Enumerator_VF, Enumerator, DeclarationCommon_VF
-from Group import NameGroup, File
+from pathlib import Path
+from typing import Any
+from Group import File
 
 class VersionSet:
     def __init__(self, initial: tuple[str, Any] | None = None):
@@ -58,18 +57,28 @@ def collapse(out: FullUnionDict):
             if collapsed is not None:
                 out[k] = collapsed
 
-def union(files: list[File]) -> UnionDict:
+def union(files: list[File], out_dir: Path):
     num_entries = len(files)
     if num_entries == 0:
-        return {}
-    elif num_entries == 1:
-        return files[0].get_json()
+        return True
 
-    out = to_full_union_dict(files[0].get_json(), files[0].version)
+    try:
+        if num_entries == 1:
+            with open(out_dir / f"{files[0].qualified_name}-union.{files[0].type}", "w") as out_file:
+                json.dump(files[0].get_json(), out_file)
+                return True
 
-    for file in islice(files, 1, None):
-        append_version(out, file.get_json(), file.version)
+        out = to_full_union_dict(files[0].get_json(), files[0].version)
 
-    collapse(out)
+        for file in islice(files, 1, None):
+            append_version(out, file.get_json(), file.version)
 
-    return out
+        collapse(out)
+
+        with open(out_dir / f"{files[0].qualified_name}-union.{files[0].type}", "w") as out_file:
+            json.dump(out, out_file)
+    except Exception as err:
+        print(f"Failed to union {files[0].qualified_name}: {err}")
+        return False
+
+    return True
