@@ -31,7 +31,7 @@ class Config:
     # initialize explicitly in main() so pools don't try to parse args
     def initialize(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument('--json-dirs', type=validate_json_dir, nargs='+',
+        parser.add_argument('--json-dirs', type=validate_json_dir, nargs='+', required=True,
                             help='Directories containing version-specific json files. Each directory should correspond to a single version.')
         self.__json_dirs: list[str] = parser.parse_args().json_dirs
 
