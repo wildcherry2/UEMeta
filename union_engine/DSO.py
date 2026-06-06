@@ -55,7 +55,7 @@ ExceptionSpec = Literal[
     "unparsed",
 ]
 
-class DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MDeclarationCommon with overrode types
+class DeclarationCommon(BaseModel):
     kind: DeclarationKind
     name: str | None = None
     qualifiedName: str | None = None
@@ -66,8 +66,6 @@ class DeclarationCommon(BaseModel): # rename to JDeclarationCommon, then make MD
     hash: Md5Hex | None = None
     documentation: str | None = None
 
-DeclarationCommon_VF = frozenset(['file', 'occurrenceIndex', 'hash', 'documentation'])
-
 class TemplateParameter(BaseModel):
     kind: TemplateParameterKind
     name: str | None = None
@@ -76,8 +74,6 @@ class TemplateParameter(BaseModel):
     isParameterPack: Literal[True] | None = None
     parameters: list[TemplateParameter] | None = None
 
-TemplateParameter_VF = frozenset(['documentation', 'name', 'type', 'isParameterPack', 'kind'])
-
 
 class Parameter(BaseModel):
     name: str | None = None
@@ -85,7 +81,6 @@ class Parameter(BaseModel):
     declaration: str
     documentation: str | None = None
 
-Parameter_VF = frozenset(['name', 'declaration', 'documentation'])
 
 
 class VTableIndex(BaseModel):
@@ -120,12 +115,6 @@ class FunctionDetails(BaseModel):
     parameters: list[Parameter]
     vtableIndex: VTableIndex | None = None
 
-FunctionDetails_VF = frozenset(['access', 'returnType', 'storageClass', 'isStatic',
-                                'isVirtual', 'isPure', 'isConstexpr', 'isConsteval',
-                                'isInline', 'isDeleted', 'isDefaulted', 'isExplicit',
-                                'exceptionSpec', 'isTemplateSpecialization',
-                                'templateSpecializationKind', 'primaryTemplateQualifiedName',
-                                'templateArguments', 'parameters', 'vtableIndex', 'type'])
 
 
 class FunctionMetadata(FunctionDetails):
@@ -135,7 +124,6 @@ class FunctionMetadata(FunctionDetails):
     scope: list[str]
     documentation: str | None = None
 
-FunctionMetadata_VF = frozenset(['file', 'documentation']).union(FunctionDetails_VF)
 
 
 class VariableDetails(BaseModel):
@@ -153,9 +141,6 @@ class VariableDetails(BaseModel):
     isStaticDataMember: Literal[True] | None = None
     isThreadLocal: Literal[True] | None = None
 
-VariableDetails_VF = frozenset(['isTemplateSpecialization', 'templateSpecializationKind',
-                                'primaryTemplateQualifiedName', 'templateArguments', 'type', 'declaration', 'access',
-                                'storageClass', 'isConstexpr', 'isInline', 'isStaticDataMember', 'isThreadLocal'])
 
 
 class VariableMetadata(VariableDetails):
@@ -165,7 +150,6 @@ class VariableMetadata(VariableDetails):
     scope: list[str]
     documentation: str | None = None
 
-VariableMetadata_VF = frozenset(['file', 'documentation']).union(VariableDetails_VF)
 
 
 class Enumerator(BaseModel):
@@ -175,7 +159,6 @@ class Enumerator(BaseModel):
     scope: list[str]
     documentation: str | None = None
 
-Enumerator_VF = frozenset(['file', 'documentation', 'value'])
 
 
 class Field(BaseModel):
@@ -191,7 +174,6 @@ class Field(BaseModel):
     bitWidth: int | None = None
     offsetBits: int | None = None
 
-Field_VF = frozenset(['file', 'documentation', 'type', 'declaration', 'access', 'isMutable', 'isBitfield', 'bitWidth', 'offsetBits'])
 
 
 class BaseSpecifier(BaseModel):
@@ -201,7 +183,6 @@ class BaseSpecifier(BaseModel):
     isVirtual: Literal[True] | None = None
     offset: int | None = None
 
-BaseSpecifier_VF = frozenset(['type', 'access', 'isVirtual', 'offset'])
 
 class RecordLayoutDetails(BaseModel):
     templateParameters: list[TemplateParameter] | None = None
@@ -215,17 +196,12 @@ class RecordLayoutDetails(BaseModel):
     fields: list[Field]
     nested: list[NestedDeclaration]
 
-RecordLayoutDetails_VF = frozenset(['isTemplateSpecialization', 'templateSpecializationKind',
-                                    'primaryTemplateQualifiedName', 'templateArguments', 'sizeBytes', 'alignBytes'])
-
 
 class ClassDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["class"]
     bases: list[BaseSpecifier]
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
-
-ClassDeclaration_VF = DeclarationCommon_VF.union(RecordLayoutDetails_VF)
 
 
 class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
@@ -234,13 +210,9 @@ class StructDeclaration(DeclarationCommon, RecordLayoutDetails):
     staticVariables: list[VariableMetadata]
     methods: list[FunctionMetadata]
 
-StructDeclaration_VF = DeclarationCommon_VF.union(RecordLayoutDetails_VF)
-
 
 class UnionDeclaration(DeclarationCommon, RecordLayoutDetails):
     kind: Literal["union"]
-
-UnionDeclaration_VF = DeclarationCommon_VF.union(RecordLayoutDetails_VF)
 
 
 class EnumDeclaration(DeclarationCommon):
@@ -250,7 +222,6 @@ class EnumDeclaration(DeclarationCommon):
     scopedKind: ScopedKind | None = None
     enumerators: list[Enumerator]
 
-EnumDeclaration_VF = frozenset(['scopedKind', 'isScoped', 'underlyingType']).union(DeclarationCommon_VF)
 
 
 class ForwardDeclaration(DeclarationCommon):
@@ -265,28 +236,18 @@ class ForwardDeclaration(DeclarationCommon):
     isScoped: Literal[True] | None = None
     scopedKind: ScopedKind | None = None
 
-ForwardDeclaration_VF = frozenset(['isTemplateSpecialization', 'templateSpecializationKind',
-                                   'primaryTemplateQualifiedName', 'templateArguments', 'underlyingType',
-                                   'isScoped', 'scopedKind']).union(DeclarationCommon_VF)
-
 
 class AliasDeclaration(DeclarationCommon):
     kind: Literal["alias"]
     templateParameters: list[TemplateParameter] | None = None
     aliasedType: str
 
-AliasDeclaration_VF = frozenset(['aliasedType']).union(DeclarationCommon_VF)
-
 class FreeFunctionDeclaration(DeclarationCommon, FunctionDetails):
     kind: Literal["function"]
     functionKind: Literal["function"]
 
-FreeFunctionDeclaration_VF = DeclarationCommon_VF.union(FunctionDetails_VF)
-
 class GlobalDeclaration(DeclarationCommon, VariableDetails):
     kind: Literal["variable"]
-
-GlobalDeclaration_VF = DeclarationCommon_VF.union(VariableDetails_VF)
 
 NestedDeclaration = Annotated[
     ClassDeclaration

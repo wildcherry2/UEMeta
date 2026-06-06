@@ -54,6 +54,7 @@ class File:
                 raise Exception(f"File {self.path} does not have the correct naming format!")
 
     def get_json(self):
+        self.load_if_needed()
         return self.__json
 
 

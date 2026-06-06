@@ -2,68 +2,74 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import Literal, Any, cast
 
-from DSO import EnumDeclaration, EnumDeclaration_VF, Enumerator_VF, Enumerator
+from DSO import EnumDeclaration, EnumDeclaration_VF, Enumerator_VF, Enumerator, DeclarationCommon_VF
 from Group import NameGroup, File
 
+class VersionSet:
+    def __init__(self, initial: tuple[str, Any] | None = None):
+        self.__map: dict[Any, set[str]] = {}
+        if initial is not None:
+            self.add_item(*initial)
 
-@dataclass
-class VersionedFieldInstance[T = Any]:
-    versions: set[str]
-    instance: T
-
-@dataclass
-class VersionedField[T = Any]:
-    instances: list[VersionedFieldInstance[T]]
-
-type UnionResult = dict[str, Any | VersionedField[Any]]
-
-def make_versioned(out: UnionResult, vfs: frozenset[str], version: str):
-    for key in out.keys():
-        if key in vfs:
-            val = out[key]
-            out[key] = VersionedField(instances=[VersionedFieldInstance(versions=set(version), instance=val)])
-
-def collapse_versioned(out: UnionResult, vfs: frozenset[str]):
-    for key in out.keys():
-        if key in vfs and len(out[key].instances) == 1:
-            out[key] = out[key].instances[0]
-
-def merge(out: UnionResult, vfs: frozenset[str], json_dict: dict[str, Any], json_version: str):
-    for vf in vfs:
-        out_field: VersionedField = out[vf]
-        current_field = json_dict[vf]
-        found = next((v for v in out_field.instances if v.instance == current_field), None)
-        if found is None:
-            out_field.instances.append(VersionedFieldInstance(instance=current_field, versions=set(json_version)))
+    def add_item(self, version: str, instance: Any):
+        if self.__map.get(instance) is None:
+            self.__map[instance] = {version}
         else:
-            found.versions.add(json_version)
+            self.__map[instance].add(version)
 
-# assumes all decls are EnumDeclarations and refer to the same enum across versions, and that there are at least
-# 2 files in group.values()
-def union_enums(files: list[File]):
-    enum_vfs = EnumDeclaration_VF
-    enumerators_vfs = Enumerator_VF
-    out: UnionResult = files[0].get_json()
+    def get_versions(self, instance: Any):
+        return self.__map.get(instance, {})
 
-    make_versioned(out, enum_vfs, files[0].version)
-    make_versioned(cast(UnionResult, out['enumerators']), enumerators_vfs, files[0].version)
+    def get_collapsed_value(self):
+        length = len(self.__map)
+        if length != 1:
+            return None
 
-    # union files + 1 with out object
-    for file in islice(files, 1, None):
-        json_dict = file.get_json()
-        merge(out, enum_vfs, json_dict, file.version)
-        merge(cast(UnionResult, out['enumerators']), enumerators_vfs, json_dict['enumerators'], file.version)
+        return next(iter(self.__map.keys()))
 
-    collapse_versioned(out, enum_vfs)
-    collapse_versioned(cast(UnionResult, out['enumerators']), enumerators_vfs)
+    def __iter__(self):
+        return self.__map.__iter__()
 
+type FullUnionDict = dict[str, VersionSet | FullUnionDict]
+type UnionDict = dict[str, Any]
+
+def to_full_union_dict(json: dict[str, Any], version: str) -> FullUnionDict:
+    out: FullUnionDict = {}
+    for k, v in json.items():
+        if isinstance(v, dict):
+            out[k] = to_full_union_dict(v, version)
+        else:
+            out[k] = {VersionSet((version, v))}
     return out
 
+def append_version(out: FullUnionDict, inp: dict[str, Any], version: str):
+    for k, v in out.items():
+        if isinstance(v, dict):
+            append_version(v, inp[k], version)
+        else:
+            v.add_item(version, inp[k])
 
-def union(files: list[File]):
+def collapse(out: FullUnionDict):
+    for k, v in out.items():
+        if isinstance(v, dict):
+            collapse(v)
+        else:
+            collapsed = out[k].get_collapsed_value()
+            if collapsed is not None:
+                out[k] = collapsed
+
+def union(files: list[File]) -> UnionDict:
     num_entries = len(files)
     if num_entries == 0:
         return {}
     elif num_entries == 1:
         return files[0].get_json()
-    return None
+
+    out = to_full_union_dict(files[0].get_json(), files[0].version)
+
+    for file in islice(files, 1, None):
+        append_version(out, file.get_json(), file.version)
+
+    collapse(out)
+
+    return out
