@@ -1,12 +1,8 @@
-import git
-
-from Config import GLOBAL_CONFIG
-from Git import init_repo
 from Util import with_tqdm_logging
 
 
 def main():
-    GLOBAL_CONFIG.initialize()
+    pass
 
 
 if __name__ == "__main__":
