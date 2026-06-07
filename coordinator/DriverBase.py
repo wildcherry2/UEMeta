@@ -45,8 +45,8 @@ def _validate_branches(repo_url: str, branches: frozenset[str]):
         log_exc(f"Some branches are missing: {branches.difference(output)}", argparse.ArgumentTypeError)
 
 def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: Path, addl_cmds: list[str])-> list[str | PathLike]:
-    return [parser_path, f"--file \"{target_cpp}\"", f"--compile-commands \"{cc}\"",
-            f"--out \"{out}\"", "--split-strategy decl", *addl_cmds]
+    return [parser_path, "--file", target_cpp, "--compile-commands", cc,
+            "--out", out, "--split-strategy", "decl", *addl_cmds]
 
 class DriverBase(ABC):
     def __init__(self):

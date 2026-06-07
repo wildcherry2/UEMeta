@@ -93,8 +93,8 @@ class DefaultUnrealProjectGenerator:
         if not self.generate_project_files_path.exists():
             log_exc(f"Failed to find GenerateProjectFiles for UnrealEngine branch {self.branch}!")
 
-        generate_project_files_args = [self.generate_project_files_path, f"-project=\"{self.project_path}\""]
-        if self.driver.platform == "Windows":
+        generate_project_files_args = [self.generate_project_files_path, f"-project={self.project_path}"]
+        if self.driver.platform == "win32":
             generate_project_files_args.append("-game")
             generate_project_files_args.append("-engine")
 
@@ -174,11 +174,11 @@ class DefaultUnrealProjectGenerator:
     def run_ubt(self):
         if not self.ubt_path.exists():
             log_exc(f"Failed to find UnrealBuildTool for UnrealEngine branch {self.branch}!")
-        ubt_args = [self.dotnet_path, f"\"{self.ubt_path}\"", "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
-                    f"-project=\"{self.project_path}\"",
+        ubt_args = [self.dotnet_path, self.ubt_path, "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
+                    f"-project={self.project_path}",
                     "-WaitMutex", "-architecture=x64",
-                    f"-WorkingDir=\"{self.project_root / "Intermediate" / "ProjectFiles"}\"",
-                    f"-Files=\"{self.project_src / "MetadataAnalysis.cpp"}\""]
+                    f"-WorkingDir={self.project_root / "Intermediate" / "ProjectFiles"}",
+                    f"-Files={self.project_src / "MetadataAnalysis.cpp"}"]
         exec_proc(ubt_args,
                   f"Successfully ran UBT/UHT for branch {self.branch}.",
                   f"Failed to run UBT/UHT for branch {self.branch}.")
@@ -186,7 +186,7 @@ class DefaultUnrealProjectGenerator:
 
     def run_generate_clang_database(self):
         args = [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
-                                   self.driver.ubt_platform, self.driver.ubt_config, f"-project=\"{self.project_path}\""]
+                                   self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
         exec_proc(args, f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
                   f"Failed to run GenerateClangDatabase for branch {self.branch}!")
 
@@ -220,7 +220,7 @@ def _validate_msvc():
 
     jsn = exec_proc([vswhere.resolve(), "-utf8", "-format", "json", "-nocolor"],
               "Acquired VS version info...",
-              "Failed to get VS version info!", 0, False)
+              "Failed to get VS version info!", expected_ret=0, log_output=False)
 
     if len(jsn) == 0:
         log_exc("vswhere.exe failed to dump json!")
