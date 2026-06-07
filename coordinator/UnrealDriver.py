@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import re
-from abc import abstractmethod, ABC
 from pathlib import Path
 from typing import override, Any
 
@@ -222,14 +221,13 @@ def _validate_msvc():
         log_exc("vswhere.exe failed to dump json!")
 
     try:
-        jsn: list[dict[str, Any]] = json.loads(jsn)
+        jsn_dict: list[dict[str, str]] = json.loads(jsn)
     except Exception as e:
         log_exc(f"Failed to parse json from vswhere: {e}")
 
-    if len(jsn) == 0:
+    if len(jsn_dict) == 0:
         log_exc("vswhere.exe failed to dump json!")
-
-    if not any(install['displayName'] == 'Visual Studio Community 2022' for install in jsn):
+    if not any(re.search(r"Visual Studio (Community|Professional|Enterprise) 2022", install['displayName']) for install in jsn_dict):
         log_exc("Visual Studio 2022 install not found, which is required for Unreal Engine! To install it, "
                         "download an engine version in the epic launcher, "
                         "create a new project, set it to C++, and it'll give you a valid download.")
