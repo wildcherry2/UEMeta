@@ -148,10 +148,10 @@ def start():
                 "-WaitMutex", "-architecture=x64", f"-WorkingDir=\"{project_root / "Intermediate" / "ProjectFiles"}\"",
                 f"-Files=\"{project_src / "MetadataAnalysis.cpp"}\""]
     with subprocess.Popen(ubt_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as ubt_process:
-        if process.stdout:
-            for line in process.stdout:
+        if ubt_process.stdout:
+            for line in ubt_process.stdout:
                 logging.info(line.strip())
-    return_code = process.wait()
+    return_code = ubt_process.wait()
     if return_code == 0:
         logging.info("Successfully ran UBT/UHT for project.")
     else:
