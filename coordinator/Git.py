@@ -6,8 +6,6 @@ from git import UpdateProgress, Repo
 from tqdm.asyncio import tqdm_asyncio
 from tqdm.auto import tqdm
 
-from Config import GLOBAL_CONFIG
-
 GIT = git.Git()
 REPO: Repo | None = None
 
@@ -30,16 +28,16 @@ class GitProgressLogger(UpdateProgress):
 
 def init_repo(branch: str): #todo: prune all gitignores to make cleanup easier?
     global REPO
-    with tqdm(total=100) as pbar:
-        try:
-            git_logger = GitProgressLogger(pbar)
-            REPO = Repo.clone_from(GLOBAL_CONFIG.repo_url, GLOBAL_CONFIG.intermediate_path,
-                                   partial(GitProgressLogger.log_git_progress, git_logger), branch=branch,
-                                   depth=1)
-        except Exception as e:
-            REPO = None
-            logging.error(f"Failed to clone branch {branch} from repo {GLOBAL_CONFIG.repo_url}: {e}")
-            raise e
+    # with tqdm(total=100) as pbar:
+    #     try:
+    #         git_logger = GitProgressLogger(pbar)
+    #         REPO = Repo.clone_from(GLOBAL_CONFIG.repo_url, GLOBAL_CONFIG.intermediate_path,
+    #                                partial(GitProgressLogger.log_git_progress, git_logger), branch=branch,
+    #                                depth=1)
+    #     except Exception as e:
+    #         REPO = None
+    #         logging.error(f"Failed to clone branch {branch} from repo {GLOBAL_CONFIG.repo_url}: {e}")
+    #         raise e
 
 def next_branch(branch: str):
     global REPO

@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -217,10 +218,9 @@ def _validate_msvc():
                         "If not, use the unreal editor; download an engine version in the epic launcher,"
                         "create a new project, set it to C++, and it'll give you a valid download.")
 
-    jsn = ""
-    exec_proc([vswhere.resolve(), "-utf8", "-json", "-nocolor"],
+    jsn = exec_proc([vswhere.resolve(), "-utf8", "-format", "json", "-nocolor"],
               "Acquired VS version info...",
-              "Failed to get VS version info!", jsn)
+              "Failed to get VS version info!", 0, False)
 
     if len(jsn) == 0:
         log_exc("vswhere.exe failed to dump json!")
@@ -236,3 +236,4 @@ def _validate_msvc():
         log_exc("Visual Studio 2022 install not found, which is required for Unreal Engine! To install it, "
                         "download an engine version in the epic launcher, "
                         "create a new project, set it to C++, and it'll give you a valid download.")
+    logging.info("Validated VS 2022 install!")
