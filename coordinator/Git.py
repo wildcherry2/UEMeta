@@ -30,7 +30,7 @@ class GitProgressLogger(UpdateProgress):
 
 def init_repo():
     global REPO
-    branch = GLOBAL_CONFIG.branches.pop()
+    branch = GLOBAL_CONFIG.branches.pop() # make this a param so driver can keep track of it
     with tqdm(total=100) as pbar:
         try:
             git_logger = GitProgressLogger(pbar)

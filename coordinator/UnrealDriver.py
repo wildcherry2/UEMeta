@@ -98,7 +98,7 @@ def start():
             IMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, MetadataHarness, "MetadataHarness");
         """)
     with open(project_src / "MetadataAnalysis.cpp", "w", encoding="utf-8") as anal_src_file:
-        as_includes = {f"#include {header}\n" for header in GLOBAL_CONFIG.headers}
+        as_includes = {f"#include \"{header}\"\n" for header in GLOBAL_CONFIG.headers}
         anal_src_file.write(f"""
             {as_includes}
         """)
