@@ -191,9 +191,10 @@ class DefaultUnrealProjectGenerator:
                   f"Failed to run GenerateClangDatabase for branch {self.branch}!")
 
     def get_uproject(self) -> dict[str, Any]:
+        pure_version = "".join(re.sub(r'[a-zA-Z]', ' ', self.branch).split())
         return {
             "FileVersion": 3,
-            "EngineAssociation": "",
+            "EngineAssociation": f"{pure_version}",
             "Category": "",
             "Description": "",
             "Modules": [
