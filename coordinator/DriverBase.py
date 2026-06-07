@@ -2,12 +2,13 @@ import argparse
 import sys
 from abc import abstractmethod, ABC
 from argparse import Namespace
+from os import PathLike
 from pathlib import Path
 from typing import Final, Literal, cast, final
 
 import git
 
-from Git import GIT, init_repo, next_branch
+from Git import GIT, init_repo, next_branch, REPO
 from Util import log_exc, exec_proc
 
 
@@ -43,8 +44,8 @@ def _validate_branches(repo_url: str, branches: frozenset[str]):
     if branches.issubset(output):
         log_exc(f"Some branches are missing: {branches.difference(output)}", argparse.ArgumentTypeError)
 
-def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: Path, addl_cmds: list[str])-> list[str]:
-    return [str(parser_path), f"--file \"{target_cpp}\"", f"--compile-commands \"{cc}\"",
+def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: Path, addl_cmds: list[str])-> list[str | PathLike]:
+    return [parser_path, f"--file \"{target_cpp}\"", f"--compile-commands \"{cc}\"",
             f"--out \"{out}\"", "--split-strategy decl", *addl_cmds]
 
 class DriverBase(ABC):
@@ -72,7 +73,7 @@ class DriverBase(ABC):
         self.parser_out: Final[Path] = self.intermediate_path / "parser"
         self.parser_additional_commands: Final[list[str]] = self.args.parser_additional_commands if self.args.parser_additional_commands is not None else list()
         self.platform: Final[Literal["win32", "darwin", "linux"]] = cast(Literal["win32", "darwin", "linux"], sys.platform)
-
+        self.repo_root = self.intermediate_path
         try:
             self.intermediate_path.mkdir(exist_ok=True, parents=True)
         except Exception as e:
@@ -103,6 +104,9 @@ class DriverBase(ABC):
             if not self.__repo_initialized:
                 self.on_before_init_repo(branch)
                 init_repo(branch)
+                if not REPO or not REPO.working_tree_dir:
+                    log_exc("Failed to initialize Repository!")
+                self.repo_root = Path(cast(str, REPO.working_tree_dir)).resolve()
                 self.on_after_init_repo(branch)
                 self.__repo_initialized = True
             else:
