@@ -28,9 +28,8 @@ class GitProgressLogger(UpdateProgress):
                message: str = "") -> None:
         self.log_git_progress(op_code, cur_count, max_count, message)
 
-def init_repo():
+def init_repo(branch: str): #todo: prune all gitignores to make cleanup easier?
     global REPO
-    branch = GLOBAL_CONFIG.branches.pop() # make this a param so driver can keep track of it
     with tqdm(total=100) as pbar:
         try:
             git_logger = GitProgressLogger(pbar)
@@ -42,12 +41,11 @@ def init_repo():
             logging.error(f"Failed to clone branch {branch} from repo {GLOBAL_CONFIG.repo_url}: {e}")
             raise e
 
-def next_branch():
+def next_branch(branch: str):
     global REPO
     if REPO is None:
         raise Exception("Failed to go to next branch because REPO is not initialized!")
     try:
-        branch = GLOBAL_CONFIG.branches.pop()
         with tqdm(total=100) as pbar:
             git_logger = GitProgressLogger(pbar)
             if REPO.remotes is None or len(REPO.remotes) == 0:

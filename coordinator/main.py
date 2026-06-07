@@ -2,7 +2,7 @@ import git
 
 from Config import GLOBAL_CONFIG
 from Git import init_repo
-from Logging import with_tqdm_logging
+from Util import with_tqdm_logging
 
 
 def main():

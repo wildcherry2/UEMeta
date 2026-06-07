@@ -171,4 +171,4 @@ def start():
         logging.info("Successfully generated compile_commands.json for UnrealEngine.")
     else:
         logging.error("Failed to generate compile_commands.json for UnrealEngine.")
-        raise Exception("Failed to run compile_commands.json for UnrealEngine.")
+        raise Exception("Failed to generate compile_commands.json for UnrealEngine.")
