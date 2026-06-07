@@ -24,9 +24,10 @@ class UnrealDriver(DriverBase):
             case _:
                 raise Exception(f"Unsupported platform: {self.platform}")
 
-        self.public_dependency_module_names = self.args.public_dependency_module_names \
-            if self.args.public_dependency_module_names else ["Core", "CoreUObject", "Engine"]
+        self.public_dependency_module_names = self.args.public_dependency_module_names
         self.headers: list[str] = self.args.headers
+        self.ubt_platform: str = self.args.ubt_platform
+        self.ubt_config: str = self.args.ubt_config
 
     @override
     def make_compile_commands(self, branch: str) -> Path:
@@ -47,11 +48,15 @@ class UnrealDriver(DriverBase):
 
     @override
     def with_argument_parser(self, parser: argparse.ArgumentParser):
-        parser.add_argument("--public-dependency-module-names", nargs='+', type=str,
+        parser.add_argument("--public-dependency-module-names", nargs='+', type=str, default=["Core", "CoreUObject", "Engine"],
                             help="The names of the Unreal modules to include. Defaults are \"Core\", \"CoreUObject\", and "
                                  "\"Engine\". If you override this, the defaults will be erased.")
         parser.add_argument("--headers", nargs='+', type=str, required=True,
                             help="Unreal .h files to include in the analysis.")
+        parser.add_argument("--ubt-platform", type=str, default="Win64",
+                            help="Unreal platform to use. Defaults to \"Win64\"")
+        parser.add_argument("--ubt-config", type=str, default="Shipping",
+                            help="Unreal configuration to use. Defaults to \"Shipping\".")
 
 def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
     version_ext = branch.replace(".", "_").replace("-", "_")
@@ -168,7 +173,7 @@ class DefaultUnrealProjectGenerator:
     def run_ubt(self):
         if not self.ubt_path.exists():
             log_exc(f"Failed to find UnrealBuildTool for UnrealEngine branch {self.branch}!")
-        ubt_args = [self.dotnet_path, f"\"{self.ubt_path}\"", "MetadataHarness", "Win64", "Shipping",
+        ubt_args = [self.dotnet_path, f"\"{self.ubt_path}\"", "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
                     f"-project=\"{self.project_path}\"",
                     "-WaitMutex", "-architecture=x64",
                     f"-WorkingDir=\"{self.project_root / "Intermediate" / "ProjectFiles"}\"",
@@ -180,7 +185,7 @@ class DefaultUnrealProjectGenerator:
 
     def run_generate_clang_database(self):
         args = [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
-                                   "Win64", "Shipping", f"-project=\"{self.project_path}\""]
+                                   self.driver.ubt_platform, self.driver.ubt_config, f"-project=\"{self.project_path}\""]
         exec_proc(args, f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
                   f"Failed to run GenerateClangDatabase for branch {self.branch}!")
 
