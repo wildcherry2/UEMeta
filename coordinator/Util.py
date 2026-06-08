@@ -6,7 +6,7 @@ from typing import NoReturn
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
-                    handlers=[logging.StreamHandler(), logging.FileHandler("coordinator.log")],
+                    handlers=[logging.StreamHandler(), logging.FileHandler("coordinator.log", mode='w')],
                     force=True)
 
 def with_tqdm_logging(func):
