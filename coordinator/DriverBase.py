@@ -34,11 +34,13 @@ class DriverBase(ABC):
                             help="Additional commands to pass to the parser.")
         self.with_argument_parser(parser)
         self.args: Final[Namespace] = parser.parse_args()
-        self.branches: Final[frozenset[str]] = frozenset(self.args.branches)
+        self.branches: Final[tuple[str, ...]] = tuple(dict.fromkeys(self.args.branches))
         self.repo_url: Final[str] = self.args.repo_url
         self.intermediate_path: Final[Path] = self.args.intermediate_directory.resolve()
         self.parser_path: Final[Path] = self.args.parser_path.resolve()
-        self.parser_out: Final[Path] = self.intermediate_path / "parser"
+        self.target_repo_path: Final[Path] = self.intermediate_path / "UnrealEngine"
+        self.test_project_path: Final[Path] = self.intermediate_path / "MetadataHarness"
+        self.parser_out: Final[Path] = self.intermediate_path / "parser_output"
         self.parser_additional_commands: Final[list[str]] = self.args.parser_additional_commands if self.args.parser_additional_commands is not None else list()
         self.platform: Final[Literal["win32", "darwin", "linux"]] = cast(Literal["win32", "darwin", "linux"], sys.platform)
         self.repo_root = self.intermediate_path
@@ -79,7 +81,9 @@ class DriverBase(ABC):
                 self.__repo_initialized = True
             else:
                 self.on_before_next_repo(branch)
-                self.next_branch(branch)
+                self.repo.git.reset("--hard")
+                if not self.next_branch(branch):
+                    log_exc(f"Failed to checkout branch {branch}!")
                 self.on_after_next_repo(branch)
 
             cc = self.make_compile_commands(branch)
@@ -100,14 +104,15 @@ class DriverBase(ABC):
         with tqdm(total=100) as pbar:
             try:
                 git_logger = GitProgressLogger(pbar)
-                self.repo = Repo.clone_from(self.repo_url, self.intermediate_path,
+                self.repo = Repo.clone_from(self.repo_url, self.target_repo_path,
                                        partial(GitProgressLogger.log_git_progress, git_logger), branch=branch,
                                        depth=1)
                 logging.info(f"Cloned branch {branch}, removing .gitignores...")
 
                 if self.repo.working_tree_dir is not None:
-                    (Path(self.repo.working_tree_dir) / ".gitignore").unlink(missing_ok=True)
-                    for path in Path(repo.working_dir).rglob(".gitignore"):
+                    working_tree = Path(self.repo.working_tree_dir)
+                    (working_tree / ".gitignore").unlink(missing_ok=True)
+                    for path in working_tree.rglob(".gitignore"):
                         path.unlink()
 
             except Exception as e:
@@ -115,7 +120,7 @@ class DriverBase(ABC):
 
 
     @final
-    def next_branch(self, branch: str):
+    def next_branch(self, branch: str) -> bool:
         if self.repo is None:
             raise Exception("Failed to go to next branch because REPO is not initialized!")
         try:
@@ -123,7 +128,11 @@ class DriverBase(ABC):
                 git_logger = GitProgressLogger(pbar)
                 if self.repo.remotes is None or len(self.repo.remotes) == 0:
                     raise Exception("Failed to go to next branch because no remotes exist!")
-                self.repo.remotes[0].fetch(branch=branch, depth=1, progress=git_logger)
+                self.repo.remotes[0].fetch(
+                    refspec=f"+refs/heads/{branch}:refs/remotes/origin/{branch}",
+                    depth=1,
+                    progress=git_logger,
+                )
                 self.repo.git.checkout("-b", branch, f"origin/{branch}")
         except KeyError:
             return False
@@ -177,7 +186,7 @@ def _validate_file_exists(path_str: str):
         return path_str
     log_exc(f"{path_str} does not exist!", argparse.ArgumentTypeError)
 
-def _validate_branches(git_instance: git.Git, repo_url: str, branches: frozenset[str]):
+def _validate_branches(git_instance: git.Git, repo_url: str, branches: tuple[str, ...]):
     try:
         raw_output: str = git_instance.ls_remote("--heads", repo_url)
     except Exception as e:
@@ -189,8 +198,9 @@ def _validate_branches(git_instance: git.Git, repo_url: str, branches: frozenset
         _sha, ref = line.split(maxsplit=1)
         output.add(ref.rsplit("/", 1)[-1])
 
-    if branches.issubset(output):
-        log_exc(f"Some branches are missing: {branches.difference(output)}", argparse.ArgumentTypeError)
+    missing = set(branches).difference(output)
+    if missing:
+        log_exc(f"Some branches are missing: {missing}", argparse.ArgumentTypeError)
 
 def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: Path, addl_cmds: list[str])-> list[str | PathLike]:
     return [parser_path, "--file", target_cpp, "--compile-commands", cc,

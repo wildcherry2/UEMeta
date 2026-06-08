@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import override, Any
 
@@ -36,16 +37,20 @@ class UnrealDriver(DriverBase):
         if self.project_generator is None:
             log_exc(f"Failed to generate uproject for branch {branch}!")
         self.project_generator.run_setup()
+        self.project_generator.write_project_files()
         self.project_generator.run_generate_project_files()
         self.project_generator.run_ubt()
         self.project_generator.run_generate_clang_database()
-        return self.repo_root / "compile_commands.json"
+        compile_commands = self.repo_root / "compile_commands.json"
+        if not compile_commands.exists():
+            log_exc(f"Failed to find generated compile_commands.json for branch {branch}!")
+        return compile_commands
 
     @override
     def get_target_cpp(self) -> Path:
         if not self.project_generator:
             log_exc("get_target_cpp should only be called after make_compile_commands!")
-        return self.project_generator.project_src / "MetadataHarness.cpp"
+        return self.project_generator.project_src / "MetadataAnalysis.cpp"
 
     @override
     def with_argument_parser(self, parser: argparse.ArgumentParser):
@@ -76,10 +81,10 @@ class DefaultUnrealProjectGenerator:
         self.driver = driver
         self.setup_path = self.driver.repo_root / f"Setup.{self.driver.platform_shell_ext}"
         self.generate_project_files_path = self.driver.repo_root / f"GenerateProjectFiles.{self.driver.platform_shell_ext}"
-        self.project_path = self.driver.intermediate_path / "MetadataHarness" / "MetadataHarness.uproject"
-        self.project_root = self.driver.intermediate_path / "MetadataHarness"
+        self.project_path = self.driver.test_project_path / "MetadataHarness.uproject"
+        self.project_root = self.driver.test_project_path
         self.project_src = self.project_root / "Source" / "MetadataHarness"
-        self.dotnet_path = self.get_bundled_dotnet()
+        self.dotnet_path: Path | None = None
         self.ubt_path = self.driver.repo_root / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool" / "UnrealBuildTool.dll"
 
     def run_setup(self):
@@ -104,13 +109,28 @@ class DefaultUnrealProjectGenerator:
 
     def write_project_files(self):
         if self.project_root.exists():
-            self.project_root.rmdir()
+            shutil.rmtree(self.project_root)
         self.project_src.mkdir(parents=True, exist_ok=True)
 
         with open(self.project_path, "w", encoding="utf-8") as uproject_file:
             json.dump(self.get_uproject(), uproject_file)
 
-        with open(self.project_src / "MetadataHarness.build.cs", "w", encoding="utf-8") as build_cs_file:
+        module_names = ", ".join(json.dumps(module) for module in self.driver.public_dependency_module_names)
+        with open(self.project_root / "Source" / "MetadataHarness.Target.cs", "w", encoding="utf-8") as target_cs_file:
+            target_cs_file.write("""
+                using UnrealBuildTool;
+
+                public class MetadataHarnessTarget : TargetRules
+                {
+                    public MetadataHarnessTarget(TargetInfo Target) : base(Target)
+                    {
+                        Type = TargetType.Game;
+                        ExtraModuleNames.Add("MetadataHarness");
+                    }
+                }
+            """)
+
+        with open(self.project_src / "MetadataHarness.Build.cs", "w", encoding="utf-8") as build_cs_file:
             build_cs_file.write(f"""
                 using UnrealBuildTool;
                 public class MetadataHarness : ModuleRules
@@ -121,7 +141,7 @@ class DefaultUnrealProjectGenerator:
 
                         PublicDependencyModuleNames.AddRange(new[]
                         {{
-                            {", ".join(self.driver.public_dependency_module_names)}
+                            {module_names}
                         }});
                     }}
                 }}
@@ -138,20 +158,26 @@ class DefaultUnrealProjectGenerator:
                 IMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, MetadataHarness, "MetadataHarness");
             """)
         with open(self.project_src / "MetadataAnalysis.cpp", "w", encoding="utf-8") as anal_src_file:
-            as_includes = {f"#include \"{header}\"\n" for header in self.driver.headers}
+            includes = "".join(f"#include \"{header.replace("\\", "/")}\"\n" for header in self.driver.headers)
             anal_src_file.write(f"""
-                {as_includes}
+                #include "MetadataHarness.h"
+                {includes}
             """)
 
     def get_bundled_dotnet(self) -> Path:
-        bundled_dotnet = self.driver.repo_root / "Engine" / "Binaries" / "ThirdParty" / "DotNet"
-        if not bundled_dotnet.exists():
+        dotnet_root = self.driver.repo_root / "Engine" / "Binaries" / "ThirdParty" / "DotNet"
+        if not dotnet_root.exists():
             log_exc("Failed to find ThirdParty/DotNet for UnrealEngine.")
+
+        dotnet_exe = f"dotnet{'.exe' if self.driver.platform == 'win32' else ''}"
 
         def entry_is_dotnet(entry: Path):
             return (entry.is_dir()
                     and re.search(r"^(\d+\.)+\d+$", entry.name, re.RegexFlag.M)
-                    and (entry / platform_bundled_dotnet_folder() / f"dotnet{'.exe' if  self.driver.platform == "win32" else ''}").exists())
+                    and (entry / platform_bundled_dotnet_folder() / dotnet_exe).exists())
+
+        def dotnet_version(entry: Path) -> tuple[int, ...]:
+            return tuple(int(part) for part in entry.name.split("."))
 
         def platform_bundled_dotnet_folder():
             match self.driver.platform:
@@ -165,20 +191,23 @@ class DefaultUnrealProjectGenerator:
                     raise Exception(
                         f"Unrecognized platform when trying to get bundled dotnet folder name: {self.driver.platform}")
 
-        bundled_dotnet: list[Path] = [entry for entry in bundled_dotnet.iterdir() if entry_is_dotnet(entry)]
-        bundled_dotnet.sort(reverse=True)
-        if len(bundled_dotnet) == 0:
+        bundled_dotnet_versions: list[Path] = [entry for entry in dotnet_root.iterdir() if entry_is_dotnet(entry)]
+        bundled_dotnet_versions.sort(key=dotnet_version, reverse=True)
+        if len(bundled_dotnet_versions) == 0:
             log_exc("Failed to find bundled DotNet for UnrealEngine.")
-        return (bundled_dotnet[0] / platform_bundled_dotnet_folder() / f"dotnet{'.exe' if self.driver.platform == "win32" else ''}").resolve()
+        return (bundled_dotnet_versions[0] / platform_bundled_dotnet_folder() / dotnet_exe).resolve()
 
     def run_ubt(self):
         if not self.ubt_path.exists():
             log_exc(f"Failed to find UnrealBuildTool for UnrealEngine branch {self.branch}!")
+        if self.dotnet_path is None:
+            self.dotnet_path = self.get_bundled_dotnet()
+        working_dir = self.project_root / "Intermediate" / "ProjectFiles"
         ubt_args = [self.dotnet_path, self.ubt_path, "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
                     f"-project={self.project_path}",
                     "-WaitMutex", "-architecture=x64",
-                    f"-WorkingDir={self.project_root / "Intermediate" / "ProjectFiles"}",
-                    f"-Files={self.project_src / "MetadataAnalysis.cpp"}"]
+                    f"-WorkingDir={working_dir}",
+                    f"-Files={self.project_src / 'MetadataAnalysis.cpp'}"]
         exec_proc(ubt_args,
                   f"Successfully ran UBT/UHT for branch {self.branch}.",
                   f"Failed to run UBT/UHT for branch {self.branch}.")
