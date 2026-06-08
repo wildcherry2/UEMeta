@@ -17,9 +17,10 @@ def log_exc(msg: str, exc: type[Exception] = Exception) -> NoReturn:
     logging.error(msg)
     raise exc(msg)
 
-def exec_proc(argv: list[str | PathLike[str]] | str | PathLike[str], success_msg: str, fail_msg: str, expected_ret = 0, log_output = True) -> str:
+def exec_proc(argv: list[str | PathLike[str]] | str | PathLike[str], success_msg: str, fail_msg: str,
+              expected_ret = 0, log_output = True, cwd: str | PathLike[str] | None = None) -> str:
     out = ""
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1) as proc:
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd) as proc:
         if proc.stdout:
             for line in proc.stdout:
                 if log_output:

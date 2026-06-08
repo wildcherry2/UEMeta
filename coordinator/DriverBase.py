@@ -6,11 +6,10 @@ from argparse import Namespace
 from functools import partial
 from os import PathLike
 from pathlib import Path
-from typing import Final, Literal, cast, final, NoReturn, Union
+from typing import Final, Literal, cast, final, Union
 
 import git
 from git import Repo, UpdateProgress
-from tqdm.asyncio import tqdm_asyncio
 from tqdm.auto import tqdm
 from Util import log_exc, exec_proc
 
@@ -93,7 +92,7 @@ class DriverBase(ABC):
             self.on_before_parse(branch)
             exec_proc(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
                       f"Parsing complete for branch {branch}",
-                      f"Parsing failed for branch {branch}")
+                      f"Parsing failed for branch {branch}", cwd=self.parser_path.parent)
             self.on_after_parse(branch)
 
     @final
@@ -101,12 +100,14 @@ class DriverBase(ABC):
         if self.repo is not None:
             log_exc(f"Tried to initialize an already initialized repo with branch {branch}!")
 
-        with tqdm(total=100) as pbar:
+        with tqdm(total=100, unit="%") as pbar:
             try:
                 git_logger = GitProgressLogger(pbar)
                 self.repo = Repo.clone_from(self.repo_url, self.target_repo_path,
-                                       partial(GitProgressLogger.log_git_progress, git_logger), branch=branch,
-                                       depth=1)
+                                       progress=git_logger, branch=branch,
+                                       depth=1,
+                                       multi_options=["--config", "core.longpaths=true"],
+                                       allow_unsafe_options=True)
                 logging.info(f"Cloned branch {branch}, removing .gitignores...")
 
                 if self.repo.working_tree_dir is not None:
@@ -115,6 +116,12 @@ class DriverBase(ABC):
                     for path in working_tree.rglob(".gitignore"):
                         path.unlink()
 
+            except git.exc.GitCommandError as e:
+                log_exc(_format_git_error(
+                    f"Failed to clone branch {branch} from repo {self.repo_url}",
+                    e,
+                    git_logger,
+                ))
             except Exception as e:
                 log_exc(f"Failed to clone branch {branch} from repo {self.repo_url}: {e}")
 
@@ -124,7 +131,7 @@ class DriverBase(ABC):
         if self.repo is None:
             raise Exception("Failed to go to next branch because REPO is not initialized!")
         try:
-            with tqdm(total=100) as pbar:
+            with tqdm(total=100, unit="%") as pbar:
                 git_logger = GitProgressLogger(pbar)
                 if self.repo.remotes is None or len(self.repo.remotes) == 0:
                     raise Exception("Failed to go to next branch because no remotes exist!")
@@ -182,8 +189,9 @@ def _validate_repo_url(git_instance: git.Git, repo_url: str):
         log_exc(f"Failed to validate repo url: {repo_url}!\nError: {e}", argparse.ArgumentTypeError)
 
 def _validate_file_exists(path_str: str):
-    if Path(path_str).exists():
-        return path_str
+    as_path = Path(path_str)
+    if as_path.exists():
+        return as_path
     log_exc(f"{path_str} does not exist!", argparse.ArgumentTypeError)
 
 def _validate_branches(git_instance: git.Git, repo_url: str, branches: tuple[str, ...]):
@@ -206,18 +214,43 @@ def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: 
     return [parser_path, "--file", target_cpp, "--compile-commands", cc,
             "--out", out, "--split-strategy", "decl", *addl_cmds]
 
+def _format_git_error(prefix: str, error: git.exc.GitCommandError, progress: "GitProgressLogger | None" = None) -> str:
+    details = [f"{prefix}: {error}"]
+    for attr in ("stderr", "stdout"):
+        output = _clean_git_output(getattr(error, attr, ""))
+        if output:
+            details.append(f"git {attr}: {output}")
+    if progress and progress.last_messages:
+        details.append("recent git progress: " + "\n".join(progress.last_messages))
+    return "\n".join(details)
+
+def _clean_git_output(output: object) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode(errors="replace").strip()
+    return str(output).strip()
+
 class GitProgressLogger(UpdateProgress):
-    def __init__(self, pbar: tqdm_asyncio[NoReturn]):
+    def __init__(self, pbar: tqdm):
         super().__init__()
-        self.cnt = 0
+        self.progress = 0.0
         self.pbar = pbar
+        self.last_messages: list[str] = []
 
     def log_git_progress(self, op_code: int, count: str | float,
-                         max_count: str | float | None, msg: str):
-        diff = float(count) - self.cnt
-        self.pbar.update((diff / float(max_count)) if max_count and float(max_count) >= 1 else 0)
-        self.cnt += diff
-        self.pbar.set_postfix_str(msg)
+                         max_count: str | float | None, msg: str = ""):
+        if max_count and float(max_count) > 0:
+            current_progress = min(100.0, max(0.0, (float(count) / float(max_count)) * 100.0))
+            if current_progress < self.progress:
+                self.progress = 0.0
+                self.pbar.reset(total=100)
+            self.pbar.update(current_progress - self.progress)
+            self.progress = current_progress
+        if msg:
+            self.last_messages.append(msg)
+            self.last_messages = self.last_messages[-10:]
+            self.pbar.set_postfix_str(msg)
 
     def update(self, op_code: int, cur_count: Union[str, float], max_count: Union[str, float, None] = None,
                message: str = "") -> None:
