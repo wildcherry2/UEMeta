@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import override, Any
+from typing import override, Any, cast
 
 from DriverBase import DriverBase
 from Util import log_exc, exec_proc
@@ -65,12 +65,18 @@ class UnrealDriver(DriverBase):
                             help="Unreal configuration to use. Defaults to \"Shipping\".")
 
 def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
-    subclasses: list[type[DefaultUnrealProjectGenerator]] = DefaultUnrealProjectGenerator.__subclasses__()
-
-    for subclass in subclasses:
-        if branch in subclass.valid_for:
-            return subclass(branch, driver)
-    return DefaultUnrealProjectGenerator(branch, driver)
+    def gen_helper(cls: type[DefaultUnrealProjectGenerator]) -> DefaultUnrealProjectGenerator | None:
+        subclasses: list[type[DefaultUnrealProjectGenerator]] = cls.__subclasses__()
+        for subclass in subclasses:
+            if branch in subclass.valid_for:
+                return subclass(branch, driver)
+            else:
+                child_gen = gen_helper(subclass)
+                if child_gen is not None:
+                    return child_gen
+        return None
+    gen = gen_helper(DefaultUnrealProjectGenerator)
+    return gen if gen is not None else DefaultUnrealProjectGenerator(branch, driver)
 
 
 class DefaultUnrealProjectGenerator:
@@ -94,18 +100,65 @@ class DefaultUnrealProjectGenerator:
                   f"Setup.bat completed for branch {self.branch}!",
                   f"Failed to run Setup.bat in Unreal branch {self.branch}!")
 
-    def run_generate_project_files(self):
-        if not self.generate_project_files_path.exists():
-            log_exc(f"Failed to find GenerateProjectFiles for UnrealEngine branch {self.branch}!")
-
+    def get_generate_project_files_args(self):
         generate_project_files_args = [self.generate_project_files_path, f"-project={self.project_path}"]
         if self.driver.platform == "win32":
             generate_project_files_args.append("-game")
             generate_project_files_args.append("-engine")
+        return generate_project_files_args
 
-        exec_proc(generate_project_files_args,
+    def run_generate_project_files(self):
+        if not self.generate_project_files_path.exists():
+            log_exc(f"Failed to find GenerateProjectFiles for UnrealEngine branch {self.branch}!")
+
+        exec_proc(self.get_generate_project_files_args(),
                   f"Successfully ran GenerateProjectFiles script for UnrealEngine branch {self.branch}.",
                   f"Failed to run GenerateProjectFiles script for UnrealEngine branch {self.branch}!")
+
+    def get_mh_target_cs(self):
+        return """
+                        using UnrealBuildTool;
+
+                        public class MetadataHarnessTarget : TargetRules
+                        {
+                            public MetadataHarnessTarget(TargetInfo Target) : base(Target)
+                            {
+                                Type = TargetType.Game;
+                                ExtraModuleNames.Add("MetadataHarness");
+                                DefaultBuildSettings = BuildSettingsVersion.Latest;
+                                IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
+                            }
+                        }
+                    """
+
+    def get_mh_build_cs(self, module_names: str):
+        return f"""
+            using UnrealBuildTool;
+            public class MetadataHarness : ModuleRules
+            {{
+                public MetadataHarness(ReadOnlyTargetRules Target) : base(Target)
+                {{
+                    PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+                    PublicDependencyModuleNames.AddRange(new[]
+                    {{
+                        {module_names}
+                    }});
+                }}
+            }}
+        """
+
+    def get_mh_h(self):
+        return """
+                #pragma once
+                #include "CoreMinimal.h"
+            """
+
+    def get_mh_cpp(self, includes: str):
+        return f"""
+            #include "MetadataHarness.h"
+            {includes}
+        """
 
     def write_project_files(self):
         if self.project_root.exists():
@@ -117,43 +170,13 @@ class DefaultUnrealProjectGenerator:
 
         module_names = ", ".join(json.dumps(module) for module in self.driver.public_dependency_module_names)
         with open(self.project_root / "Source" / "MetadataHarness.Target.cs", "w", encoding="utf-8") as target_cs_file:
-            target_cs_file.write("""
-                using UnrealBuildTool;
-
-                public class MetadataHarnessTarget : TargetRules
-                {
-                    public MetadataHarnessTarget(TargetInfo Target) : base(Target)
-                    {
-                        Type = TargetType.Game;
-                        ExtraModuleNames.Add("MetadataHarness");
-                        DefaultBuildSettings = BuildSettingsVersion.Latest;
-                        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-                    }
-                }
-            """)
+            target_cs_file.write(self.get_mh_target_cs())
 
         with open(self.project_src / "MetadataHarness.Build.cs", "w", encoding="utf-8") as build_cs_file:
-            build_cs_file.write(f"""
-                using UnrealBuildTool;
-                public class MetadataHarness : ModuleRules
-                {{
-                    public MetadataHarness(ReadOnlyTargetRules Target) : base(Target)
-                    {{
-                        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-
-                        PublicDependencyModuleNames.AddRange(new[]
-                        {{
-                            {module_names}
-                        }});
-                    }}
-                }}
-            """)
+            build_cs_file.write(self.get_mh_build_cs(module_names))
 
         with open(self.project_src / "MetadataHarness.h", "w", encoding="utf-8") as harness_header_file:
-            harness_header_file.write("""
-                #pragma once
-                #include "CoreMinimal.h"
-            """)
+            harness_header_file.write(self.get_mh_h())
         with open(self.project_src / "MetadataHarness.cpp", "w", encoding="utf-8") as harness_src_file:
             harness_src_file.write("""
                 #include "MetadataHarness.h"
@@ -161,10 +184,7 @@ class DefaultUnrealProjectGenerator:
             """)
         with open(self.project_src / "MetadataAnalysis.cpp", "w", encoding="utf-8") as anal_src_file:
             includes = "".join(f"#include \"{header.replace("\\", "/")}\"\n" for header in self.driver.headers)
-            anal_src_file.write(f"""
-                #include "MetadataHarness.h"
-                {includes}
-            """)
+            anal_src_file.write(self.get_mh_cpp(includes))
 
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         if platform_dict is None:
@@ -189,26 +209,29 @@ class DefaultUnrealProjectGenerator:
             log_exc("Failed to find bundled DotNet for UnrealEngine.")
         return (bundled_dotnet_versions[0] / platform_dict[self.driver.platform] / dotnet_exe).resolve()
 
+    def get_ubt_args(self, working_dir: Path):
+        return [cast(Path, self.dotnet_path), self.ubt_path, "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
+         f"-project={self.project_path}",
+         "-WaitMutex", "-architecture=x64",
+         f"-WorkingDir={working_dir}",
+         f"-Files={self.project_src / 'MetadataAnalysis.cpp'}"]
+
     def run_ubt(self):
         if not self.ubt_path.exists():
             log_exc(f"Failed to find UnrealBuildTool for UnrealEngine branch {self.branch}!")
         if self.dotnet_path is None:
             self.dotnet_path = self.get_bundled_dotnet()
         working_dir = self.project_root / "Intermediate" / "ProjectFiles"
-        ubt_args = [self.dotnet_path, self.ubt_path, "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
-                    f"-project={self.project_path}",
-                    "-WaitMutex", "-architecture=x64",
-                    f"-WorkingDir={working_dir}",
-                    f"-Files={self.project_src / 'MetadataAnalysis.cpp'}"]
-        exec_proc(ubt_args,
+        exec_proc(self.get_ubt_args(working_dir),
                   f"Successfully ran UBT/UHT for branch {self.branch}.",
                   f"Failed to run UBT/UHT for branch {self.branch}.")
 
+    def get_generate_clang_database_args(self):
+        return [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
+                                   self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
 
     def run_generate_clang_database(self):
-        args = [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
-                                   self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
-        exec_proc(args, f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
+        exec_proc(self.get_generate_clang_database_args(), f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
                   f"Failed to run GenerateClangDatabase for branch {self.branch}!")
 
     def get_uproject(self) -> dict[str, Any]:
@@ -265,3 +288,17 @@ class UPG_54(DefaultUnrealProjectGenerator):
 
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'})
+
+class UPG_52(UPG_54):
+    valid_for = {'5.2'}
+
+    def get_ubt_args(self, working_dir: Path):
+        args = super().get_ubt_args(working_dir)
+        for i in range(len(args) - 1, -1, -1):
+            if args[i].startswith('-Files'):  # Your specific condition
+                args[i] = f"-SingleFile={self.project_src / 'MetadataAnalysis.cpp'}"
+                break
+
+        args.append("-CompilerVersion=14.29.30159")
+        args.append("-Compiler=VisualStudio2022")
+        return args
