@@ -65,11 +65,10 @@ class UnrealDriver(DriverBase):
                             help="Unreal configuration to use. Defaults to \"Shipping\".")
 
 def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
-    version_ext = branch.replace(".", "_").replace("-", "_")
     subclasses: list[type[DefaultUnrealProjectGenerator]] = DefaultUnrealProjectGenerator.__subclasses__()
 
     for subclass in subclasses:
-        if version_ext in subclass.valid_for:
+        if branch in subclass.valid_for:
             return subclass(branch, driver)
     return DefaultUnrealProjectGenerator(branch, driver)
 
@@ -179,7 +178,7 @@ class DefaultUnrealProjectGenerator:
         def entry_is_dotnet(entry: Path):
             return (entry.is_dir()
                     and re.search(r"^(\d+\.)+\d+$", entry.name, re.RegexFlag.M)
-                    and (entry / platform_bundled_dotnet_folder() / dotnet_exe).exists())
+                    and (entry / platform_dict[self.driver.platform] / dotnet_exe).exists())
 
         def dotnet_version(entry: Path) -> tuple[int, ...]:
             return tuple(int(part) for part in entry.name.split("."))

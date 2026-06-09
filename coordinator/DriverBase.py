@@ -50,7 +50,6 @@ class DriverBase(ABC):
 
         _validate_branches(self.git, self.repo_url, self.branches)
         self.__started = False
-        self.__repo_initialized = False
 
     @abstractmethod
     def make_compile_commands(self, branch: str) -> Path:
@@ -70,14 +69,13 @@ class DriverBase(ABC):
         self.__started = True
 
         for branch in self.branches:
-            if not self.__repo_initialized:
+            if self.repo is None:
                 self.on_before_init_repo(branch)
                 self.init_target_repo(branch)
                 if not self.repo or not self.repo.working_tree_dir:
                     log_exc("Failed to initialize Repository!")
                 self.repo_root = Path(cast(str, self.repo.working_tree_dir)).resolve()
                 self.on_after_init_repo(branch)
-                self.__repo_initialized = True
             else:
                 self.on_before_next_repo(branch)
                 logging.info("Resetting current repo state...")
@@ -102,6 +100,18 @@ class DriverBase(ABC):
         if self.repo is not None:
             log_exc(f"Tried to initialize an already initialized repo with branch {branch}!")
 
+        try:
+            self.repo = Repo(self.target_repo_path)
+            if self.repo.remotes.origin.config_reader.get('url') == self.repo_url:
+                logging.info(f"Repo for url {self.repo_url} already present!")
+                self.next_branch(branch)
+                return
+            else:
+                self.repo = None
+                self.target_repo_path.rmdir()
+        except Exception as e:
+            self.repo = None
+
         with tqdm(total=100, unit="%") as pbar:
             try:
                 git_logger = GitProgressLogger(pbar)
@@ -111,12 +121,7 @@ class DriverBase(ABC):
                                        multi_options=["--config", "core.longpaths=true"],
                                        allow_unsafe_options=True)
                 logging.info(f"Cloned branch {branch}, removing .gitignores...")
-
-                if self.repo.working_tree_dir is not None:
-                    working_tree = Path(self.repo.working_tree_dir)
-                    (working_tree / ".gitignore").unlink(missing_ok=True)
-                    for path in working_tree.rglob(".gitignore"):
-                        path.unlink()
+                _remove_gitignores(self.repo.working_tree_dir)
 
             except git.exc.GitCommandError as e:
                 log_exc(_format_git_error(
@@ -133,6 +138,14 @@ class DriverBase(ABC):
         if self.repo is None:
             raise Exception("Failed to go to next branch because REPO is not initialized!")
         try:
+            if self.repo.active_branch.name == branch:
+                logging.info(f"Branch {branch} is already checked out!")
+                return True
+        except Exception:
+            logging.info(f"Failed to get branch name from current repo state, checking out branch {branch}...")
+
+        try:
+            logging.info(f"Fetching branch {branch}...")
             with tqdm(total=100, unit="%") as pbar:
                 git_logger = GitProgressLogger(pbar)
                 if self.repo.remotes is None or len(self.repo.remotes) == 0:
@@ -142,8 +155,9 @@ class DriverBase(ABC):
                     depth=1,
                     progress=git_logger,
                 )
+                logging.info(f"Checking out branch {branch}...")
                 self.repo.git.checkout("-b", branch, f"origin/{branch}")
-                # todo unapply gitignore
+                _remove_gitignores(self.repo.working_tree_dir)
         except KeyError:
             return False
 
@@ -233,6 +247,14 @@ def _clean_git_output(output: object) -> str:
     if isinstance(output, bytes):
         return output.decode(errors="replace").strip()
     return str(output).strip()
+
+def _remove_gitignores(root: PathLike | None):
+    if root is None:
+        return
+    working_tree = Path(root)
+    (working_tree / ".gitignore").unlink(missing_ok=True)
+    for path in working_tree.rglob(".gitignore"):
+        path.unlink()
 
 class GitProgressLogger(UpdateProgress):
     def __init__(self, pbar: tqdm):
