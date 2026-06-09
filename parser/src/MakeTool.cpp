@@ -132,11 +132,6 @@ static std::string FixupCommand(const std::string& cc_path) {
                 return "";
             }
 
-            if (!entry.output) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing an 'output' field!", cpp_path_string);
-                return "";
-            }
-
             const auto transformed = std::vector{
                 CompileCommandEntry{
                     .file = entry.file,

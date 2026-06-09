@@ -340,6 +340,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
         cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
         cfg.path_delimiters.emplace_back("MetadataHarness");
+        cfg.additional_clang_args.emplace_back("/clang:-mwaitpkg");
+        cfg.additional_clang_args.emplace_back("/clang:-fno-access-control");
         cfg.initialized.test_and_set();
 
         std::ostringstream config_stream;
