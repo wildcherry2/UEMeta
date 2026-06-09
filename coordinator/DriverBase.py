@@ -124,13 +124,9 @@ class DriverBase(ABC):
                 _remove_gitignores(self.repo.working_tree_dir)
 
             except git.exc.GitCommandError as e:
-                log_exc(_format_git_error(
-                    f"Failed to clone branch {branch} from repo {self.repo_url}",
-                    e,
-                    git_logger,
-                ))
+                log_exc(f"Failed to clone branch {branch} from repo {self.repo_url} (command exception): {e}")
             except Exception as e:
-                log_exc(f"Failed to clone branch {branch} from repo {self.repo_url}: {e}")
+                log_exc(f"Failed to clone branch {branch} from repo {self.repo_url} (general exception): {e}")
 
 
     @final
@@ -234,23 +230,6 @@ def _validate_branches(git_instance: git.Git, repo_url: str, branches: tuple[str
 def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: Path, addl_cmds: list[str])-> list[str | PathLike]:
     return [parser_path, "--file", target_cpp, "--compile-commands", cc,
             "--out", out, "--split-strategy", "decl", *addl_cmds]
-
-def _format_git_error(prefix: str, error: git.exc.GitCommandError, progress: "GitProgressLogger | None" = None) -> str:
-    details = [f"{prefix}: {error}"]
-    for attr in ("stderr", "stdout"):
-        output = _clean_git_output(getattr(error, attr, ""))
-        if output:
-            details.append(f"git {attr}: {output}")
-    if progress and progress.last_messages:
-        details.append("recent git progress: " + "\n".join(progress.last_messages))
-    return "\n".join(details)
-
-def _clean_git_output(output: object) -> str:
-    if output is None:
-        return ""
-    if isinstance(output, bytes):
-        return output.decode(errors="replace").strip()
-    return str(output).strip()
 
 def _remove_gitignores(root: PathLike | None):
     if root is None:

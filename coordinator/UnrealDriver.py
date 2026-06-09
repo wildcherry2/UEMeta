@@ -290,7 +290,7 @@ class UPG_54(DefaultUnrealProjectGenerator):
         return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'})
 
 class UPG_52(UPG_54):
-    valid_for = {'5.2'}
+    valid_for = {'5.2', '5.1'}
 
     def get_ubt_args(self, working_dir: Path):
         args = super().get_ubt_args(working_dir)
