@@ -80,7 +80,9 @@ class DriverBase(ABC):
                 self.__repo_initialized = True
             else:
                 self.on_before_next_repo(branch)
+                logging.info("Resetting current repo state...")
                 self.repo.git.reset("--hard")
+                logging.info(f"Checking out branch {branch}...")
                 if not self.next_branch(branch):
                     log_exc(f"Failed to checkout branch {branch}!")
                 self.on_after_next_repo(branch)
@@ -141,6 +143,7 @@ class DriverBase(ABC):
                     progress=git_logger,
                 )
                 self.repo.git.checkout("-b", branch, f"origin/{branch}")
+                # todo unapply gitignore
         except KeyError:
             return False
 

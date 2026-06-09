@@ -69,12 +69,13 @@ def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGe
     subclasses: list[type[DefaultUnrealProjectGenerator]] = DefaultUnrealProjectGenerator.__subclasses__()
 
     for subclass in subclasses:
-        if subclass.__name__.endswith(version_ext):
+        if version_ext in subclass.valid_for:
             return subclass(branch, driver)
     return DefaultUnrealProjectGenerator(branch, driver)
 
 
 class DefaultUnrealProjectGenerator:
+    valid_for: set[str] = []
     def __init__(self, branch: str, driver: UnrealDriver):
         super().__init__()
         self.branch = branch
@@ -126,6 +127,8 @@ class DefaultUnrealProjectGenerator:
                     {
                         Type = TargetType.Game;
                         ExtraModuleNames.Add("MetadataHarness");
+                        DefaultBuildSettings = BuildSettingsVersion.Latest;
+                        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
                     }
                 }
             """)
@@ -164,7 +167,9 @@ class DefaultUnrealProjectGenerator:
                 {includes}
             """)
 
-    def get_bundled_dotnet(self) -> Path:
+    def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
+        if platform_dict is None:
+            platform_dict = {"win32": "win-x64", 'linux': 'linux-x64', 'darwin': 'mac-x64'}
         dotnet_root = self.driver.repo_root / "Engine" / "Binaries" / "ThirdParty" / "DotNet"
         if not dotnet_root.exists():
             log_exc("Failed to find ThirdParty/DotNet for UnrealEngine.")
@@ -179,23 +184,11 @@ class DefaultUnrealProjectGenerator:
         def dotnet_version(entry: Path) -> tuple[int, ...]:
             return tuple(int(part) for part in entry.name.split("."))
 
-        def platform_bundled_dotnet_folder():
-            match self.driver.platform:
-                case "win32":
-                    return "win-x64"
-                case "linux":
-                    return "linux-x64"
-                case "darwin":
-                    return "mac-x64"
-                case _:
-                    raise Exception(
-                        f"Unrecognized platform when trying to get bundled dotnet folder name: {self.driver.platform}")
-
         bundled_dotnet_versions: list[Path] = [entry for entry in dotnet_root.iterdir() if entry_is_dotnet(entry)]
         bundled_dotnet_versions.sort(key=dotnet_version, reverse=True)
         if len(bundled_dotnet_versions) == 0:
             log_exc("Failed to find bundled DotNet for UnrealEngine.")
-        return (bundled_dotnet_versions[0] / platform_bundled_dotnet_folder() / dotnet_exe).resolve()
+        return (bundled_dotnet_versions[0] / platform_dict[self.driver.platform] / dotnet_exe).resolve()
 
     def run_ubt(self):
         if not self.ubt_path.exists():
@@ -267,3 +260,9 @@ def _validate_msvc():
                         "download an engine version in the epic launcher, "
                         "create a new project, set it to C++, and it'll give you a valid download.")
     logging.info("Validated VS 2022 install!")
+
+class UPG_54(DefaultUnrealProjectGenerator):
+    valid_for = ['5.4']
+
+    def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
+        return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'})
