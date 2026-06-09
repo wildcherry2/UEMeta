@@ -155,11 +155,15 @@ class DriverBase(ABC):
                     depth=1,
                     progress=git_logger,
                 )
-                logging.info(f"Checking out branch {branch}...")
-                self.repo.git.checkout("-b", branch, f"origin/{branch}")
-                _remove_gitignores(self.repo.working_tree_dir)
+                pbar.moveto(100)
+            logging.info(f"Checking out branch {branch}...")
+            self.repo.git.checkout("-b", branch, f"origin/{branch}")
+            _remove_gitignores(self.repo.working_tree_dir)
         except KeyError:
             return False
+        except Exception as e:
+            logging.error(f"Failed to go to switch to branch {branch}: {e}!")
+            raise e
 
         return True
 
@@ -276,6 +280,8 @@ class GitProgressLogger(UpdateProgress):
             self.last_messages.append(msg)
             self.last_messages = self.last_messages[-10:]
             self.pbar.set_postfix_str(msg)
+        if self._cur_line:
+            logging.info(self._cur_line)
 
     def update(self, op_code: int, cur_count: Union[str, float], max_count: Union[str, float, None] = None,
                message: str = "") -> None:

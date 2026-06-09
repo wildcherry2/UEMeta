@@ -28,6 +28,7 @@ def exec_proc(argv: list[str | PathLike[str]] | str | PathLike[str], success_msg
                 out += line
 
     return_code = proc.wait()
+    proc.kill()
     if return_code == expected_ret:
         logging.info(success_msg)
         return out

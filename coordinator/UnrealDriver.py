@@ -261,7 +261,7 @@ def _validate_msvc():
     logging.info("Validated VS 2022 install!")
 
 class UPG_54(DefaultUnrealProjectGenerator):
-    valid_for = ['5.4']
+    valid_for = {'5.4', '5.3'}
 
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'})
