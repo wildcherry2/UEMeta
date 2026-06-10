@@ -101,19 +101,17 @@ class DriverBase(ABC):
             log_exc(f"Tried to initialize an already initialized repo with branch {branch}!")
 
         try:
-            self.repo = Repo(self.target_repo_path)
-            if self.repo.remotes.origin.config_reader.get('url') == self.repo_url:
-                logging.info(f"Repo for url {self.repo_url} already present!")
-                self.next_branch(branch)
-                return
-            else:
-                self.repo = None
-                self.target_repo_path.rmdir()
-        except Exception as e:
-            self.repo = None
+            if self.target_repo_path.exists():
+                self.repo = Repo(self.target_repo_path)
+                if self.repo.remotes.origin.config_reader.get('url') == self.repo_url:
+                    logging.info(f"Repo for url {self.repo_url} already present!")
+                    self.next_branch(branch)
+                    return
+                else:
+                    self.repo = None
+                    self.target_repo_path.rmdir()
 
-        with tqdm(total=100, unit="%") as pbar:
-            try:
+            with tqdm(total=100, unit="%") as pbar:
                 git_logger = GitProgressLogger(pbar)
                 self.repo = Repo.clone_from(self.repo_url, self.target_repo_path,
                                        progress=git_logger, branch=branch,
@@ -123,10 +121,10 @@ class DriverBase(ABC):
                 logging.info(f"Cloned branch {branch}, removing .gitignores...")
                 _remove_gitignores(self.repo.working_tree_dir)
 
-            except git.exc.GitCommandError as e:
-                log_exc(f"Failed to clone branch {branch} from repo {self.repo_url} (command exception): {e}")
-            except Exception as e:
-                log_exc(f"Failed to clone branch {branch} from repo {self.repo_url} (general exception): {e}")
+        except git.exc.GitCommandError as e:
+            log_exc(f"Failed to initialize branch {branch} from repo {self.repo_url} (command exception): {e}")
+        except Exception as e:
+            log_exc(f"Failed to initialize branch {branch} from repo {self.repo_url} (general exception): {e}")
 
 
     @final
@@ -153,7 +151,7 @@ class DriverBase(ABC):
                 )
                 pbar.moveto(100)
             logging.info(f"Checking out branch {branch}...")
-            self.repo.git.checkout("-b", branch, f"origin/{branch}")
+            self.repo.git.checkout("-B", branch, f"origin/{branch}")
             _remove_gitignores(self.repo.working_tree_dir)
         except KeyError:
             return False

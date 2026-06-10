@@ -287,7 +287,7 @@ class UPG_54(DefaultUnrealProjectGenerator):
     valid_for = {'5.4', '5.3'}
 
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
-        return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'})
+        return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'} if platform_dict is None else platform_dict)
 
 class UPG_52(UPG_54):
     valid_for = {'5.2', '5.1'}
@@ -302,3 +302,69 @@ class UPG_52(UPG_54):
         args.append("-CompilerVersion=14.29.30159")
         args.append("-Compiler=VisualStudio2022")
         return args
+
+#todo implement reclone for transitions 5.0 <-> 5.1
+
+class UPG_5(UPG_52):
+    valid_for = {'5.0'}
+    # missing macro for the current version of the compiler
+    _win10_ge_definition = "NTDDI_WIN10_GE=0x0A000010"
+    _parser_additional_commands = [
+        "--additional-clang-args=/std:c++17",
+        "--additional-clang-args=/clang:-Wno-c++11-narrowing"
+    ]
+
+    def get_mh_target_cs(self):
+        return """
+                    using UnrealBuildTool;
+
+                    public class MetadataHarnessTarget : TargetRules
+                    {
+                        public MetadataHarnessTarget(TargetInfo Target) : base(Target)
+                        {
+                            Type = TargetType.Game;
+                            ExtraModuleNames.Add("MetadataHarness");
+                            DefaultBuildSettings = BuildSettingsVersion.Latest;
+                            if (Target.Platform == UnrealTargetPlatform.Win64)
+                            {
+                                GlobalDefinitions.Add("__WIN10_GE_DEFINITION__");
+                            }
+                        }
+                    }
+                """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition)
+
+    def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
+        if platform_dict is not None:
+            return super().get_bundled_dotnet(platform_dict)
+        platform_dict = {'linux': 'Linux', 'darwin': 'Mac', 'win32': 'Windows'}
+        return self.driver.repo_root / "Engine" / "Binaries" / "ThirdParty" / "DotNet" / platform_dict[self.driver.platform] / "dotnet.exe"
+
+    def run_ubt(self):
+        if self.driver.platform != "win32":
+            super().run_ubt()
+            return
+
+        # env workaround for ubt issue
+        msvc_define = f"/D{self._win10_ge_definition}"
+        previous_cl = os.environ.get("CL")
+        if previous_cl is None:
+            os.environ["CL"] = msvc_define
+        elif msvc_define.lower() not in previous_cl.lower():
+            os.environ["CL"] = f"{previous_cl} {msvc_define}"
+
+        try:
+            super().run_ubt()
+        finally:
+            if previous_cl is None:
+                os.environ.pop("CL", None)
+            else:
+                os.environ["CL"] = previous_cl
+
+    def run_generate_clang_database(self):
+        super().run_generate_clang_database()
+        if self.driver.platform != "win32":
+            return
+
+        for arg in self._parser_additional_commands:
+            if arg not in self.driver.parser_additional_commands:
+                self.driver.parser_additional_commands.append(arg)
