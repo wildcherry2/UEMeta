@@ -1,3 +1,5 @@
+import os
+import psutil
 import logging
 import subprocess
 import sys
@@ -36,14 +38,19 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
             expected_ret = 0,
             cwd: Optional[str | PathLike[str]] = None,
             raise_on_error = True,
-            output = ExecuteOutputOptions.LOGGER) -> tuple[int, str]:
+            output = ExecuteOutputOptions.LOGGER,
+            addl_env: Optional[dict[str, str]] = None) -> tuple[int, str]:
 
     out = ""
     is_silent = output == ExecuteOutputOptions.SILENT
     use_logger = output & ExecuteOutputOptions.LOGGER
     use_stdout = (not use_logger) and output & ExecuteOutputOptions.STDOUT
     use_file = (not use_logger) and output & ExecuteOutputOptions.FILE
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd) as proc:
+
+    if addl_env is not None and len(addl_env) > 0:
+        addl_env = addl_env | os.environ.copy()
+
+    with psutil.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env) as proc:
         if proc.stdout:
             for line in proc.stdout:
                 out += line
@@ -61,7 +68,6 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
                                 file.stream.flush()
 
     return_code = proc.wait()
-    proc.kill()
 
     if return_code == expected_ret:
         if success_msg is not None:

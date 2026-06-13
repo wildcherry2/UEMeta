@@ -22,6 +22,7 @@ class Git:
         self.root.mkdir(parents=True, exist_ok=True)
         self.url = url
         self.remote: str | None = None
+        self.__long_paths_configured = False
 
     def initialize(self, branch_list: list[str]):
         if len(branch_list) == 0:
@@ -44,14 +45,13 @@ class Git:
                     logging.info(f"Branch {current_branch} is already checked out, git initialized!")
                     branch_list.remove(current_branch)
                     self.reset()
-                    return
-
-                # current branch is not the one we want, so checkout a branch we want
-                logging.info(f"Current branch ({current_branch}) is not in the branch list ({branch_list}), checking out {branch_list[0]}...")
-                branch = branch_list.pop(0)
-                self.reset()
-                self.checkout(branch)
-                logging.info(f"Checked out {branch}, git initialized!")
+                else:
+                    # current branch is not the one we want, so checkout a branch we want
+                    logging.info(f"Current branch ({current_branch}) is not in the branch list ({branch_list}), checking out {branch_list[0]}...")
+                    branch = branch_list.pop(0)
+                    self.reset()
+                    self.checkout(branch)
+                    logging.info(f"Checked out {branch}, git initialized!")
         else:
             # there isn't a repo in the root, clone from the URL and checkout the branch
             branch = branch_list.pop(0)
@@ -83,6 +83,7 @@ class Git:
     def checkout(self, branch: str):
         if self.remote is None:
             raise Exception("Failed to checkout because the remote is not set!")
+        self.__config_long_paths_if_needed()
         if self.current_branch() != branch:
             execute(["git", "fetch", "--progress", "--depth", "1", self.remote,
                      f"+refs/heads/{branch}:refs/remotes/{self.remote}/{branch}"], cwd=self.root,
@@ -119,9 +120,11 @@ class Git:
         Git.ls_remote(url)
         return url
 
-    # Hard resets the repo. Will throw if the repo is not initialized.
+    # Hard resets the repo and removes untracked/ignored files. Will throw if the repo is not initialized.
     def reset(self):
-        return execute(["git", "reset", "--hard"], cwd=self.root, output=ExecuteOutputOptions.SILENT)
+        self.__config_long_paths_if_needed()
+        execute(["git", "clean", "-ffdx"], cwd=self.root, output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
+        return execute(["git", "reset", "--hard"], cwd=self.root, output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     # Helper to find the remote name from the url
     def __find_remote(self) -> str | None:
@@ -140,8 +143,14 @@ class Git:
         shutil.rmtree(self.root)
         self.root.parent.mkdir(parents=True, exist_ok=True)
         self.remote = "origin"
-        execute(["git", "clone", "--progress", "--branch", branch, "--depth", "1", self.url, self.root], cwd=self.root.parent,
-                output=(ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT))
+        execute(["git", "clone", "--progress", "-c", "core.longpaths=true", "--branch", branch, "--depth", "1",
+                 self.url, self.root], cwd=self.root.parent, output=(ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT))
+        self.__long_paths_configured = True
+
+    def __config_long_paths_if_needed(self):
+        if not self.__long_paths_configured:
+            execute(["git", "config", "core.longPaths", "true"], cwd=self.root)
+            self.__long_paths_configured = True
 
 # Helper to parse a repo name from a url.
 def _repo_name_from_url(url: str) -> str:

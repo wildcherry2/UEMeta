@@ -82,48 +82,19 @@ class DriverBase(ABC):
                     success_msg=f"Parsing complete for branch {in_branch}",
                     fail_msg=f"Parsing failed for branch {in_branch}", cwd=self.parser_path.parent,
                     output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
-            logging.info(f"Parsing complete for branch {in_branch}!")
             self.on_after_parse(in_branch)
 
-        logging.info(f"Removing .gitignores...")
-        _remove_gitignores(self.git.root)
+        logging.info(f"Resetting repo to a clean state...")
+        self.git.reset()
         do_parse(initial_branch)
 
         for branch in self.branches:
             self.on_before_next_checkout(branch)
-            logging.info(f"Resetting and checking out next branch {branch}...")
+            logging.info(f"Resetting repo to a clean state and checking out next branch {branch}...")
             self.git.reset()
             self.git.checkout(branch)
-            logging.info(f"Removing .gitignores...")
-            _remove_gitignores(self.git.root)
             self.on_after_next_checkout(branch)
             do_parse(branch)
-        # for branch in self.branches:
-        #     if self.repo is None:
-        #         self.on_before_init_repo(branch)
-        #         self.init_target_repo(branch)
-        #         if not self.repo or not self.repo.working_tree_dir:
-        #             log_exc("Failed to initialize Repository!")
-        #         self.repo_root = Path(cast(str, self.repo.working_tree_dir)).resolve()
-        #         self.on_after_init_repo(branch)
-        #     else:
-        #         self.on_before_next_repo(branch)
-        #         logging.info("Resetting current repo state...")
-        #         self.repo.git.reset("--hard")
-        #         logging.info(f"Checking out branch {branch}...")
-        #         if not self.next_branch(branch):
-        #             log_exc(f"Failed to checkout branch {branch}!")
-        #         self.on_after_next_repo(branch)
-        #
-        #     cc = self.make_compile_commands(branch)
-        #     target_cpp = self.get_target_cpp()
-        #     parser_working_dir = self.parser_out / branch
-        #     parser_working_dir.mkdir(exist_ok=True, parents=True)
-        #     self.on_before_parse(branch)
-        #     execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
-        #             success_msg=f"Parsing complete for branch {branch}",
-        #             fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent)
-        #     self.on_after_parse(branch)
 
     def on_before_init_repo(self):
         pass
@@ -165,10 +136,3 @@ def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: 
     return [parser_path, "--file", target_cpp, "--compile-commands", cc,
             "--out", out, "--split-strategy", "decl", *addl_cmds]
 
-def _remove_gitignores(root: PathLike | None):
-    if root is None:
-        return
-    working_tree = Path(root)
-    (working_tree / ".gitignore").unlink(missing_ok=True)
-    for path in working_tree.rglob(".gitignore"):
-        path.unlink()
