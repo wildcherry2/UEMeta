@@ -6,3 +6,5 @@
 /.idea/vcs.xml
 /intermediate/*
 *.log
+/.idea/pyLspTools.xml
+/.idea/pyTypeEngine.xml
