@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import override, Any, cast
 
 from DriverBase import DriverBase
-from Util import log_exc, exec_proc
+from Util import ExecuteOutputOptions, execute, log_exc
 
 
 class UnrealDriver(DriverBase):
@@ -96,9 +96,9 @@ class DefaultUnrealProjectGenerator:
     def run_setup(self):
         if not self.setup_path.exists():
             log_exc(f"Failed to find Setup.bat file in Unreal branch {self.branch}!")
-        exec_proc(self.setup_path,
-                  f"Setup.bat completed for branch {self.branch}!",
-                  f"Failed to run Setup.bat in Unreal branch {self.branch}!")
+        execute(self.setup_path,
+                success_msg=f"Setup.bat completed for branch {self.branch}!",
+                fail_msg=f"Failed to run Setup.bat in Unreal branch {self.branch}!")
 
     def get_generate_project_files_args(self):
         generate_project_files_args = [self.generate_project_files_path, f"-project={self.project_path}"]
@@ -111,9 +111,9 @@ class DefaultUnrealProjectGenerator:
         if not self.generate_project_files_path.exists():
             log_exc(f"Failed to find GenerateProjectFiles for UnrealEngine branch {self.branch}!")
 
-        exec_proc(self.get_generate_project_files_args(),
-                  f"Successfully ran GenerateProjectFiles script for UnrealEngine branch {self.branch}.",
-                  f"Failed to run GenerateProjectFiles script for UnrealEngine branch {self.branch}!")
+        execute(self.get_generate_project_files_args(),
+                success_msg=f"Successfully ran GenerateProjectFiles script for UnrealEngine branch {self.branch}.",
+                fail_msg=f"Failed to run GenerateProjectFiles script for UnrealEngine branch {self.branch}!")
 
     def get_mh_target_cs(self):
         return """
@@ -222,17 +222,18 @@ class DefaultUnrealProjectGenerator:
         if self.dotnet_path is None:
             self.dotnet_path = self.get_bundled_dotnet()
         working_dir = self.project_root / "Intermediate" / "ProjectFiles"
-        exec_proc(self.get_ubt_args(working_dir),
-                  f"Successfully ran UBT/UHT for branch {self.branch}.",
-                  f"Failed to run UBT/UHT for branch {self.branch}.")
+        execute(self.get_ubt_args(working_dir),
+                success_msg=f"Successfully ran UBT/UHT for branch {self.branch}.",
+                fail_msg=f"Failed to run UBT/UHT for branch {self.branch}.")
 
     def get_generate_clang_database_args(self):
         return [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
                                    self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
 
     def run_generate_clang_database(self):
-        exec_proc(self.get_generate_clang_database_args(), f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
-                  f"Failed to run GenerateClangDatabase for branch {self.branch}!")
+        execute(self.get_generate_clang_database_args(),
+                success_msg=f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
+                fail_msg=f"Failed to run GenerateClangDatabase for branch {self.branch}!")
 
     def get_uproject(self) -> dict[str, Any]:
         pure_version = "".join(re.sub(r'[a-zA-Z]', ' ', self.branch).split())
@@ -263,9 +264,11 @@ def _validate_msvc():
                         "If not, use the unreal editor; download an engine version in the epic launcher,"
                         "create a new project, set it to C++, and it'll give you a valid download.")
 
-    jsn = exec_proc([vswhere.resolve(), "-utf8", "-format", "json", "-nocolor"],
-              "Acquired VS version info...",
-              "Failed to get VS version info!", expected_ret=0, log_output=False)
+    _, jsn = execute([vswhere.resolve(), "-utf8", "-format", "json", "-nocolor"],
+                     success_msg="Acquired VS version info...",
+                     fail_msg="Failed to get VS version info!",
+                     expected_ret=0,
+                     output=ExecuteOutputOptions.SILENT)
 
     if len(jsn) == 0:
         log_exc("vswhere.exe failed to dump json!")

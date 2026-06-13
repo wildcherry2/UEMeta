@@ -1,5 +1,6 @@
 import logging
 import subprocess
+import sys
 from enum import Flag, auto
 from os import PathLike
 from typing import NoReturn, Optional
@@ -19,28 +20,6 @@ def log_exc(msg: str, exc: type[Exception] = Exception) -> NoReturn:
     logging.error(msg)
     raise exc(msg)
 
-def exec_proc(argv: list[str | PathLike[str]] | str | PathLike[str], success_msg: Optional[str] = None, fail_msg: Optional[str] = None,
-              expected_ret = 0, log_output = True, cwd: str | PathLike[str] | None = None, soft_fail = False) -> tuple[int, str]:
-    out = ""
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd) as proc:
-        if proc.stdout:
-            for line in proc.stdout:
-                if log_output:
-                    logging.info(line.strip())
-                out += line
-
-    return_code = proc.wait()
-    proc.kill()
-    if return_code == expected_ret:
-        if log_output and (success_msg is not None):
-            logging.info(success_msg)
-        return return_code, out
-    elif soft_fail:
-        return return_code, out
-    else:
-        log_exc(fail_msg if fail_msg is not None else "Unknown error!")
-#todo add log to file at end, stream output option with ability to bypass logger
-
 class ExecuteOutputOptions(Flag):
     # No output from subprocess.
     SILENT = 0
@@ -55,7 +34,6 @@ class ExecuteOutputOptions(Flag):
 
     # Logs each line to the file associated with the current logger.
     # Does not use the logger (so no console output or timestamps on its own)
-    # When | STREAM_STDOUT, the file won't be updated until the process exits
     FILE = auto()
 
 def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
@@ -63,6 +41,38 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
             fail_msg: Optional[str] = None,
             expected_ret = 0,
             cwd: Optional[str | PathLike[str]] = None,
-            except_on_error = True,
-            output = ExecuteOutputOptions.LOGGER):
-    pass
+            raise_on_error = True,
+            output = ExecuteOutputOptions.LOGGER) -> tuple[int, str]:
+
+    out = ""
+    is_silent = output == ExecuteOutputOptions.SILENT
+    use_logger = output & ExecuteOutputOptions.LOGGER
+    use_stdout = (not use_logger) and output & ExecuteOutputOptions.STDOUT
+    use_file = (not use_logger) and output & ExecuteOutputOptions.FILE
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd) as proc:
+        if proc.stdout:
+            for line in proc.stdout:
+                out += line
+                if not is_silent:
+                    if use_logger:
+                        stripped = line.strip()
+                        logging.info(stripped)
+                    if use_stdout:
+                        sys.stdout.write(line)
+                    if use_file:
+                        all_files = [handler for handler in logging.getLogger().handlers if isinstance(handler, logging.FileHandler)]
+                        for file in all_files:
+                            if file.stream is not None:
+                                file.stream.write(line)
+                                file.stream.flush()
+
+    return_code = proc.wait()
+    proc.kill()
+
+    if return_code == expected_ret:
+        if success_msg is not None:
+            logging.info(success_msg)
+    elif raise_on_error:
+        log_exc(fail_msg + f" (process returned {return_code})" if fail_msg is not None else f"Error! (process returned {return_code})!")
+
+    return return_code, out

@@ -11,7 +11,7 @@ from typing import Final, Literal, cast, final, Union
 import git
 from git import Repo, UpdateProgress
 from tqdm.auto import tqdm
-from Util import log_exc, exec_proc
+from Util import log_exc, execute
 
 
 class DriverBase(ABC):
@@ -90,9 +90,9 @@ class DriverBase(ABC):
             parser_working_dir = self.parser_out / branch
             parser_working_dir.mkdir(exist_ok=True, parents=True)
             self.on_before_parse(branch)
-            exec_proc(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
-                      f"Parsing complete for branch {branch}",
-                      f"Parsing failed for branch {branch}", cwd=self.parser_path.parent)
+            execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
+                    success_msg=f"Parsing complete for branch {branch}",
+                    fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent)
             self.on_after_parse(branch)
 
     @final
