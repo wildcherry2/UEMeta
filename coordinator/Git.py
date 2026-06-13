@@ -1,9 +1,10 @@
+import logging
 import shutil
 import re
 from os import PathLike
 from pathlib import Path
 from re import RegexFlag
-from typing import final
+from typing import final, Iterable
 
 from Util import ExecuteOutputOptions, execute
 
@@ -13,7 +14,7 @@ _REMOTE_LINE = re.compile(r"^(?P<remote_name>\S+)\s+(?P<remote_url>.+?)\s+\((?P<
 
 @final
 class Git:
-    def __init__(self, init_in: PathLike, url: str, init_with_branch: str):
+    def __init__(self, init_in: PathLike, url: str):
         if shutil.which("git") is None:
             raise Exception("'git' command not found!")
 
@@ -21,23 +22,44 @@ class Git:
         self.root.mkdir(parents=True, exist_ok=True)
         self.url = url
         self.remote: str | None = None
+
+    def initialize(self, branch_list: list[str]):
+        if len(branch_list) == 0:
+            raise Exception("Failed to initialize git because the branch list is empty!")
+        logging.info(f"Initializing git with branch list: {branch_list}")
         if self.status()[0] == 0:
+            logging.info(f"Found repo in root {self.root}...")
+
             # if there's a repo in the root, validate that the url matches the current remote and checkout the branch
             self.remote = self.__find_remote()
             if self.remote is None:
+                branch = branch_list.pop(0)
+                logging.info(f"Current repo isn't the one we're processing, cloning repo at {self.url} with branch {branch}...")
                 # remote doesn't match up with desired URL, reclone from the URL
-                self.__clone(init_with_branch)
+                self.__clone(branch)
             else:
                 # see if the checked out branch matches one in the list
-                if self.current_branch() == init_with_branch:
+                current_branch = self.current_branch()
+                if current_branch in branch_list:
+                    logging.info(f"Branch {current_branch} is already checked out, git initialized!")
+                    branch_list.remove(current_branch)
                     return
 
-                # current branch is not the one we want, so checkout the branch we want
-                self.checkout(init_with_branch)
+                # current branch is not the one we want, so checkout a branch we want
+                logging.info(f"Current branch ({current_branch}) is not in the branch list ({branch_list}), checking out {branch_list[0]}...")
+                branch = branch_list.pop(0)
+                self.checkout(branch)
+                logging.info(f"Checked out {branch}, git initialized!")
         else:
             # there isn't a repo in the root, clone from the URL and checkout the branch
-            self.__clone(init_with_branch)
+            branch = branch_list.pop(0)
+            logging.info(f"No repo found in root, cloning repo at {self.url} with branch {branch}...")
+            self.__clone(branch_list.pop(0))
+            logging.info(f"Checked out {branch}, git initialized!")
 
+
+    # Get the status of the repo root. Can be called before initialization to tell if a repo exists.
+    # Will fail if the repo at the root is not a top level repo or if it doesn't exist.
     def status(self, soft_fail=True):
         parse_res = execute(["git", "rev-parse", "--show-toplevel"], cwd=self.root, raise_on_error=not soft_fail,
                        output=ExecuteOutputOptions.SILENT)
@@ -50,10 +72,12 @@ class Git:
             raise Exception(msg)
         return 1, msg
 
+    # Get the name of the current branch. Will throw if the repo is not initialized.
     def current_branch(self):
         return execute(["git", "branch", "--show-current", "--no-color"], cwd=self.root,
                        output=ExecuteOutputOptions.SILENT)[1].strip()
 
+    # Checkout the branch. Will look through remote's branch list. Will throw if the repo is not initialized.
     def checkout(self, branch: str):
         if self.remote is None:
             raise Exception("Failed to checkout because the remote is not set!")
@@ -64,7 +88,8 @@ class Git:
             execute(["git", "checkout", "-B", branch, f"{self.remote}/{branch}"], cwd=self.root,
                     output=(ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT))
 
-    def assert_branches_exist(self, branches: tuple[str, ...]):
+    # Assert that the tuple of branches exists in the remote. Will throw if the repo is not initialized.
+    def assert_branches_exist(self, branches: Iterable[str]):
         if self.remote is None:
             raise Exception("Failed to assert_branches_exist because the remote is not set!")
         branches_copy = list(branches)
@@ -80,18 +105,23 @@ class Git:
         if not len(branches_copy) == 0:
             raise Exception(f"Missing branches in remote {self.remote}: {branches_copy}")
 
+    # Get the remotes at a url. Can be used without initialization/instance.
     @staticmethod
     def ls_remote(url: str):
         return execute(["git", "ls-remote", url], output=ExecuteOutputOptions.SILENT)
 
+    # Asserts that the url leads to a git repo. Can be used without initialization/instance.
+    # Returns a string; this is for argparse.
     @staticmethod
     def assert_remote_exists_with_string_return(url: str):
         # ls_remote will throw if it doesn't exist
         return Git.ls_remote(url)[1]
 
+    # Hard resets the repo. Will throw if the repo is not initialized.
     def reset(self):
         return execute(["git", "reset", "--hard"], cwd=self.root, output=ExecuteOutputOptions.SILENT)
 
+    # Helper to find the remote name from the url
     def __find_remote(self) -> str | None:
         remotes = execute(["git", "remote", "-v"], cwd=self.root, output=ExecuteOutputOptions.SILENT)[1]
         for line in remotes.splitlines():
@@ -103,6 +133,7 @@ class Git:
                 return group['remote_name']
         return None
 
+    # Helper to clear and clone a repo.
     def __clone(self, branch: str):
         shutil.rmtree(self.root)
         self.root.parent.mkdir(parents=True, exist_ok=True)
@@ -110,7 +141,7 @@ class Git:
         execute(["git", "clone", "--branch", branch, "--depth", "1", self.url, self.root], cwd=self.root.parent,
                 output=(ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT))
 
-
+# Helper to parse a repo name from a url.
 def _repo_name_from_url(url: str) -> str:
     name = url.rstrip("/\\").replace("\\", "/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
     if name.endswith(".git"):

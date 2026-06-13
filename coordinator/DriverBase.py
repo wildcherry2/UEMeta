@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final, Literal, cast, final, Union, Optional
 
 from Git import Git
-from Util import log_exc, execute
+from Util import log_exc, execute, ExecuteOutputOptions
 
 
 class DriverBase(ABC):
@@ -29,7 +29,7 @@ class DriverBase(ABC):
                             help="Additional commands to pass to the parser.")
         self.with_argument_parser(parser)
         self.args: Final[Namespace] = parser.parse_args()
-        self.branches: tuple[str, ...] = tuple(dict.fromkeys(self.args.branches))
+        self.branches: list[str] = list(dict.fromkeys(self.args.branches))
         self.repo_url: Final[str] = self.args.repo_url
         self.intermediate_path: Final[Path] = self.args.intermediate_directory.resolve()
         self.parser_path: Final[Path] = self.args.parser_path.resolve()
@@ -38,7 +38,7 @@ class DriverBase(ABC):
         self.parser_out: Final[Path] = self.intermediate_path / "parser_output"
         self.parser_additional_commands: Final[list[str]] = self.args.parser_additional_commands if self.args.parser_additional_commands is not None else list()
         self.platform: Final[Literal["win32", "darwin", "linux"]] = cast(Literal["win32", "darwin", "linux"], sys.platform)
-        self.git: Optional[Git] = None
+        self.git = Git(self.intermediate_path, self.repo_url)
         try:
             self.intermediate_path.mkdir(exist_ok=True, parents=True)
         except Exception as e:
@@ -62,34 +62,36 @@ class DriverBase(ABC):
         if self.__started:
             log_exc("Failed to start driver: already started!")
         self.__started = True
-        branch = self.branches[0]
-        self.on_before_init_repo(branch)
-        self.git = Git(self.intermediate_path, self.repo_url, branch)
-        self.branches = self.branches[1:]
+        self.on_before_init_repo()
+        logging.info("Starting driver!")
+        self.git.initialize(self.branches)
         self.git.assert_branches_exist(self.branches)
-        _remove_gitignores(self.git.root)
-        self.on_after_init_repo(branch)
+        initial_branch = self.git.current_branch()
+        self.on_after_init_repo(self.git.current_branch())
 
-        def do_parse():
-            cast(Git, self.git).reset()
-            cc = self.make_compile_commands(branch)
+        def do_parse(in_branch: str):
+            cc = self.make_compile_commands(in_branch)
             target_cpp = self.get_target_cpp()
-            parser_working_dir = self.parser_out / branch
+            parser_working_dir = self.parser_out / in_branch
             parser_working_dir.mkdir(exist_ok=True, parents=True)
-            self.on_before_parse(branch)
+            self.on_before_parse(in_branch)
             execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
-                    success_msg=f"Parsing complete for branch {branch}",
-                    fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent)
-            self.on_after_parse(branch)
+                    success_msg=f"Parsing complete for branch {in_branch}",
+                    fail_msg=f"Parsing failed for branch {in_branch}", cwd=self.parser_path.parent,
+                    output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
+            self.on_after_parse(in_branch)
 
-        do_parse()
+        self.git.reset()
+        _remove_gitignores(self.git.root)
+        do_parse(initial_branch)
 
         for branch in self.branches:
             self.on_before_next_checkout(branch)
+            self.git.reset()
             self.git.checkout(branch)
             _remove_gitignores(self.git.root)
             self.on_after_next_checkout(branch)
-            do_parse()
+            do_parse(branch)
         # for branch in self.branches:
         #     if self.repo is None:
         #         self.on_before_init_repo(branch)
@@ -117,7 +119,7 @@ class DriverBase(ABC):
         #             fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent)
         #     self.on_after_parse(branch)
 
-    def on_before_init_repo(self, branch: str):
+    def on_before_init_repo(self):
         pass
 
     def on_after_init_repo(self, branch: str):
