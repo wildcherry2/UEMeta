@@ -8,7 +8,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Final, Literal, cast, final, Union, Optional
 
-from Git import Git
+from Git import Git, CloneException, CheckoutException
 from Util import log_exc, execute, ExecuteOutputOptions
 
 
@@ -66,8 +66,15 @@ class DriverBase(ABC):
         logging.info("Starting driver!")
         logging.info(f"Asserting that branches {self.branches} exist at the remote url {self.repo_url}...")
         Git.assert_branches_exist(self.repo_url, self.branches)
-        self.git.initialize(self.branches)
-        initial_branch = self.git.current_branch()
+        initial_branch: Optional[str] = None
+        try:
+            self.git.initialize(self.branches)
+            initial_branch = self.git.current_branch()
+        except CloneException as e:
+            self.on_clone_exception(e)
+        except CheckoutException as e:
+            self.on_checkout_exception(e)
+
         self.on_after_init_repo(self.git.current_branch())
 
         def do_parse(in_branch: str):
@@ -86,13 +93,17 @@ class DriverBase(ABC):
 
         logging.info(f"Resetting repo to a clean state...")
         self.git.reset()
+        initial_branch = self.git.current_branch() if initial_branch is None else initial_branch
         do_parse(initial_branch)
 
         for branch in self.branches:
             self.on_before_next_checkout(branch)
             logging.info(f"Resetting repo to a clean state and checking out next branch {branch}...")
             self.git.reset()
-            self.git.checkout(branch)
+            try:
+                self.git.checkout(branch)
+            except CheckoutException as e:
+                self.on_checkout_exception(e)
             self.on_after_next_checkout(branch)
             do_parse(branch)
 
@@ -104,6 +115,12 @@ class DriverBase(ABC):
 
     def on_before_next_checkout(self, branch: str):
         pass
+
+    def on_clone_exception(self, ex: CloneException) -> None:
+        raise ex
+
+    def on_checkout_exception(self, ex: CheckoutException) -> None:
+        raise ex
 
     def on_after_next_checkout(self, branch: str):
         pass

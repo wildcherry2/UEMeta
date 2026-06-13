@@ -3,8 +3,9 @@ import logging
 import subprocess
 import sys
 from enum import Flag, auto
+from functools import partial
 from os import PathLike
-from typing import NoReturn, Optional
+from typing import NoReturn, Optional, cast
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
@@ -31,12 +32,20 @@ class ExecuteOutputOptions(Flag):
     # Does not use the logger (so no console output or timestamps on its own)
     FILE = auto()
 
+class ExecuteException(Exception):
+    def __init__(self, return_code: int, expected_return_code: int, stdout: str, *args):
+        super().__init__(*args)
+        self.return_code = return_code
+        self.expected_return_code = expected_return_code
+        self.stdout = stdout
+
 def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
             success_msg: Optional[str] = None,
             fail_msg: Optional[str] = None,
             expected_ret = 0,
             cwd: Optional[str | PathLike[str]] = None,
-            raise_on_error = True,
+            raise_on_error: Optional[type[ExecuteException]] = ExecuteException,
+            log_on_error: bool = True,
             output = ExecuteOutputOptions.LOGGER,
             addl_env: Optional[dict[str, str]] = None) -> tuple[int, str]:
 
@@ -71,7 +80,11 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
     if return_code == expected_ret:
         if success_msg is not None:
             logging.info(success_msg)
-    elif raise_on_error:
-        log_exc(fail_msg + f" (process returned {return_code})" if fail_msg is not None else f"Error! (process returned {return_code})!")
+    elif raise_on_error is not None:
+        msg = fail_msg + f" (process returned {return_code})" if fail_msg is not None else f"Error! (process returned {return_code})!"
+        if log_on_error:
+            log_exc(msg, cast(type[Exception], partial(raise_on_error, return_code, expected_ret, out)))
+        else:
+            raise raise_on_error(return_code, expected_ret, out)
 
     return return_code, out
