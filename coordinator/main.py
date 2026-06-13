@@ -2,8 +2,6 @@ import argparse
 import sys
 
 import UnrealDriver
-from Util import with_tqdm_logging
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -18,4 +16,5 @@ def main():
             raise Exception("Unknown mode!")
 
 if __name__ == "__main__":
-    with_tqdm_logging(main)
+    main()
+    sys.exit(0)

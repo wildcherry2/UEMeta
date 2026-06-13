@@ -2,6 +2,7 @@ import shutil
 import re
 from os import PathLike
 from pathlib import Path
+from re import RegexFlag
 from typing import final
 
 from Util import ExecuteOutputOptions, execute
@@ -62,6 +63,34 @@ class Git:
                     output=(ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT))
             execute(["git", "checkout", "-B", branch, f"{self.remote}/{branch}"], cwd=self.root,
                     output=(ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT))
+
+    def assert_branches_exist(self, branches: tuple[str, ...]):
+        if self.remote is None:
+            raise Exception("Failed to assert_branches_exist because the remote is not set!")
+        branches_copy = list(branches)
+        for match in re.finditer(r"^[^\s]+\s+refs/heads/(?P<branch>.+)$",
+                                 execute(["git", "ls-remote", "--heads", self.remote],
+                                         output=ExecuteOutputOptions.SILENT, cwd=self.root)[1], RegexFlag.M):
+            branch = match.groupdict()["branch"]
+            if branch in branches_copy:
+                branches_copy.remove(branch)
+                if len(branches_copy) == 0:
+                    break
+
+        if not len(branches_copy) == 0:
+            raise Exception(f"Missing branches in remote {self.remote}: {branches_copy}")
+
+    @staticmethod
+    def ls_remote(url: str):
+        return execute(["git", "ls-remote", url], output=ExecuteOutputOptions.SILENT)
+
+    @staticmethod
+    def assert_remote_exists_with_string_return(url: str):
+        # ls_remote will throw if it doesn't exist
+        return Git.ls_remote(url)[1]
+
+    def reset(self):
+        return execute(["git", "reset", "--hard"], cwd=self.root, output=ExecuteOutputOptions.SILENT)
 
     def __find_remote(self) -> str | None:
         remotes = execute(["git", "remote", "-v"], cwd=self.root, output=ExecuteOutputOptions.SILENT)[1]

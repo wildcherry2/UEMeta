@@ -6,15 +6,9 @@ from os import PathLike
 from typing import NoReturn, Optional
 from pathlib import Path
 
-from tqdm.contrib.logging import logging_redirect_tqdm
-
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
                     handlers=[logging.StreamHandler(), logging.FileHandler(Path().cwd() / "intermediate" / "coordinator.log", mode='w')],
                     force=True)
-
-def with_tqdm_logging(func):
-    with logging_redirect_tqdm():
-        return func()
 
 def log_exc(msg: str, exc: type[Exception] = Exception) -> NoReturn:
     logging.error(msg)

@@ -4,10 +4,12 @@ import logging
 import os
 import re
 import shutil
+from os import PathLike
 from pathlib import Path
 from typing import override, Any, cast
 
 from DriverBase import DriverBase
+from Git import Git
 from Util import ExecuteOutputOptions, execute, log_exc
 
 
@@ -41,7 +43,7 @@ class UnrealDriver(DriverBase):
         self.project_generator.run_generate_project_files()
         self.project_generator.run_ubt()
         self.project_generator.run_generate_clang_database()
-        compile_commands = self.repo_root / "compile_commands.json"
+        compile_commands = cast(Git, self.git).root / "compile_commands.json"
         if not compile_commands.exists():
             log_exc(f"Failed to find generated compile_commands.json for branch {branch}!")
         return compile_commands
@@ -80,18 +82,19 @@ def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGe
 
 
 class DefaultUnrealProjectGenerator:
-    valid_for: set[str] = []
+    valid_for: set[str] = set()
     def __init__(self, branch: str, driver: UnrealDriver):
         super().__init__()
         self.branch = branch
         self.driver = driver
-        self.setup_path = self.driver.repo_root / f"Setup.{self.driver.platform_shell_ext}"
-        self.generate_project_files_path = self.driver.repo_root / f"GenerateProjectFiles.{self.driver.platform_shell_ext}"
+        self.git = cast(Git, self.driver.git)
+        self.setup_path = self.git.root / f"Setup.{self.driver.platform_shell_ext}"
+        self.generate_project_files_path = self.git.root / f"GenerateProjectFiles.{self.driver.platform_shell_ext}"
         self.project_path = self.driver.test_project_path / "MetadataHarness.uproject"
         self.project_root = self.driver.test_project_path
         self.project_src = self.project_root / "Source" / "MetadataHarness"
         self.dotnet_path: Path | None = None
-        self.ubt_path = self.driver.repo_root / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool" / "UnrealBuildTool.dll"
+        self.ubt_path = self.git.root / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool" / "UnrealBuildTool.dll"
 
     def run_setup(self):
         if not self.setup_path.exists():
@@ -100,8 +103,8 @@ class DefaultUnrealProjectGenerator:
                 success_msg=f"Setup.bat completed for branch {self.branch}!",
                 fail_msg=f"Failed to run Setup.bat in Unreal branch {self.branch}!")
 
-    def get_generate_project_files_args(self):
-        generate_project_files_args = [self.generate_project_files_path, f"-project={self.project_path}"]
+    def get_generate_project_files_args(self) -> list[PathLike[str] | str]:
+        generate_project_files_args: list[PathLike[str] | str] = [self.generate_project_files_path, f"-project={self.project_path}"]
         if self.driver.platform == "win32":
             generate_project_files_args.append("-game")
             generate_project_files_args.append("-engine")
@@ -115,7 +118,7 @@ class DefaultUnrealProjectGenerator:
                 success_msg=f"Successfully ran GenerateProjectFiles script for UnrealEngine branch {self.branch}.",
                 fail_msg=f"Failed to run GenerateProjectFiles script for UnrealEngine branch {self.branch}!")
 
-    def get_mh_target_cs(self):
+    def get_mh_target_cs(self) -> str:
         return """
                         using UnrealBuildTool;
 
@@ -189,7 +192,7 @@ class DefaultUnrealProjectGenerator:
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         if platform_dict is None:
             platform_dict = {"win32": "win-x64", 'linux': 'linux-x64', 'darwin': 'mac-x64'}
-        dotnet_root = self.driver.repo_root / "Engine" / "Binaries" / "ThirdParty" / "DotNet"
+        dotnet_root = self.git.root / "Engine" / "Binaries" / "ThirdParty" / "DotNet"
         if not dotnet_root.exists():
             log_exc("Failed to find ThirdParty/DotNet for UnrealEngine.")
 
@@ -209,7 +212,7 @@ class DefaultUnrealProjectGenerator:
             log_exc("Failed to find bundled DotNet for UnrealEngine.")
         return (bundled_dotnet_versions[0] / platform_dict[self.driver.platform] / dotnet_exe).resolve()
 
-    def get_ubt_args(self, working_dir: Path):
+    def get_ubt_args(self, working_dir: Path) -> list[PathLike[str] | str]:
         return [cast(Path, self.dotnet_path), self.ubt_path, "MetadataHarness", self.driver.ubt_platform, self.driver.ubt_config,
          f"-project={self.project_path}",
          "-WaitMutex", "-architecture=x64",
@@ -226,7 +229,7 @@ class DefaultUnrealProjectGenerator:
                 success_msg=f"Successfully ran UBT/UHT for branch {self.branch}.",
                 fail_msg=f"Failed to run UBT/UHT for branch {self.branch}.")
 
-    def get_generate_clang_database_args(self):
+    def get_generate_clang_database_args(self) -> list[PathLike[str] | str]:
         return [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
                                    self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
 
@@ -298,7 +301,7 @@ class UPG_52(UPG_54):
     def get_ubt_args(self, working_dir: Path):
         args = super().get_ubt_args(working_dir)
         for i in range(len(args) - 1, -1, -1):
-            if args[i].startswith('-Files'):  # Your specific condition
+            if str(args[i]).startswith('-Files'):  # Your specific condition
                 args[i] = f"-SingleFile={self.project_src / 'MetadataAnalysis.cpp'}"
                 break
 
@@ -340,7 +343,7 @@ class UPG_5(UPG_52):
         if platform_dict is not None:
             return super().get_bundled_dotnet(platform_dict)
         platform_dict = {'linux': 'Linux', 'darwin': 'Mac', 'win32': 'Windows'}
-        return self.driver.repo_root / "Engine" / "Binaries" / "ThirdParty" / "DotNet" / platform_dict[self.driver.platform] / "dotnet.exe"
+        return self.git.root / "Engine" / "Binaries" / "ThirdParty" / "DotNet" / platform_dict[self.driver.platform] / "dotnet.exe"
 
     def run_ubt(self):
         if self.driver.platform != "win32":
