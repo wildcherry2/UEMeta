@@ -101,7 +101,8 @@ class DefaultUnrealProjectGenerator:
             log_exc(f"Failed to find Setup.bat file in Unreal branch {self.branch}!")
         execute(self.setup_path,
                 success_msg=f"Setup.bat completed for branch {self.branch}!",
-                fail_msg=f"Failed to run Setup.bat in Unreal branch {self.branch}!")
+                fail_msg=f"Failed to run Setup.bat in Unreal branch {self.branch}!",
+                output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     def get_generate_project_files_args(self) -> list[PathLike[str] | str]:
         generate_project_files_args: list[PathLike[str] | str] = [self.generate_project_files_path, f"-project={self.project_path}"]
@@ -116,7 +117,8 @@ class DefaultUnrealProjectGenerator:
 
         execute(self.get_generate_project_files_args(),
                 success_msg=f"Successfully ran GenerateProjectFiles script for UnrealEngine branch {self.branch}.",
-                fail_msg=f"Failed to run GenerateProjectFiles script for UnrealEngine branch {self.branch}!")
+                fail_msg=f"Failed to run GenerateProjectFiles script for UnrealEngine branch {self.branch}!",
+                output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     def get_mh_target_cs(self) -> str:
         return """
@@ -227,7 +229,8 @@ class DefaultUnrealProjectGenerator:
         working_dir = self.project_root / "Intermediate" / "ProjectFiles"
         execute(self.get_ubt_args(working_dir),
                 success_msg=f"Successfully ran UBT/UHT for branch {self.branch}.",
-                fail_msg=f"Failed to run UBT/UHT for branch {self.branch}.")
+                fail_msg=f"Failed to run UBT/UHT for branch {self.branch}.",
+                output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     def get_generate_clang_database_args(self) -> list[PathLike[str] | str]:
         return [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
@@ -236,7 +239,8 @@ class DefaultUnrealProjectGenerator:
     def run_generate_clang_database(self):
         execute(self.get_generate_clang_database_args(),
                 success_msg=f"Successfully ran GenerateClangDatabase for branch {self.branch}.",
-                fail_msg=f"Failed to run GenerateClangDatabase for branch {self.branch}!")
+                fail_msg=f"Failed to run GenerateClangDatabase for branch {self.branch}!",
+                output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     def get_uproject(self) -> dict[str, Any]:
         pure_version = "".join(re.sub(r'[a-zA-Z]', ' ', self.branch).split())

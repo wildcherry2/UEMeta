@@ -64,31 +64,37 @@ class DriverBase(ABC):
         self.__started = True
         self.on_before_init_repo()
         logging.info("Starting driver!")
+        logging.info(f"Asserting that branches {self.branches} exist at the remote url {self.repo_url}...")
+        Git.assert_branches_exist(self.repo_url, self.branches)
         self.git.initialize(self.branches)
-        self.git.assert_branches_exist(self.branches)
         initial_branch = self.git.current_branch()
         self.on_after_init_repo(self.git.current_branch())
 
         def do_parse(in_branch: str):
+            logging.info(f"Creating compile_commands.json for branch {in_branch}...")
             cc = self.make_compile_commands(in_branch)
             target_cpp = self.get_target_cpp()
             parser_working_dir = self.parser_out / in_branch
             parser_working_dir.mkdir(exist_ok=True, parents=True)
             self.on_before_parse(in_branch)
+            logging.info(f"Parsing branch {in_branch}...")
             execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
                     success_msg=f"Parsing complete for branch {in_branch}",
                     fail_msg=f"Parsing failed for branch {in_branch}", cwd=self.parser_path.parent,
                     output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
+            logging.info(f"Parsing complete for branch {in_branch}!")
             self.on_after_parse(in_branch)
 
-        self.git.reset()
+        logging.info(f"Removing .gitignores...")
         _remove_gitignores(self.git.root)
         do_parse(initial_branch)
 
         for branch in self.branches:
             self.on_before_next_checkout(branch)
+            logging.info(f"Resetting and checking out next branch {branch}...")
             self.git.reset()
             self.git.checkout(branch)
+            logging.info(f"Removing .gitignores...")
             _remove_gitignores(self.git.root)
             self.on_after_next_checkout(branch)
             do_parse(branch)
