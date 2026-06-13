@@ -1,5 +1,4 @@
 import os
-import psutil
 import logging
 import subprocess
 import sys
@@ -50,7 +49,7 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
     if addl_env is not None and len(addl_env) > 0:
         addl_env = addl_env | os.environ.copy()
 
-    with psutil.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env) as proc:
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env) as proc:
         if proc.stdout:
             for line in proc.stdout:
                 out += line

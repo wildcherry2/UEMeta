@@ -1,4 +1,3 @@
-import psutil
 import argparse
 import json
 import logging
