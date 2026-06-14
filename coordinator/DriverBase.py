@@ -105,7 +105,7 @@ class DriverBase(ABC):
             self.on_after_next_checkout(branch)
             do_parse(branch)
 
-    def on_before_init_repo(self):
+    def on_before_init_repo(self): #todo simplification: make each step an overridable function instead
         pass
 
     def on_after_init_repo(self, branch: str):

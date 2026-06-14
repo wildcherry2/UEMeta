@@ -45,7 +45,9 @@ class UnrealDriver(DriverBase):
         self.__checkout_ran = True
         self.project_generator.run_setup()
         self.project_generator.write_project_files()
+        self.project_generator.patch_src()
         self.project_generator.run_generate_project_files()
+        self.project_generator.write_build_config()
         self.project_generator.run_ubt()
         self.project_generator.run_generate_clang_database() #todo may not need this if we can find the same files present in ue4 builds
         compile_commands = self.git.root / "compile_commands.json"
@@ -197,6 +199,9 @@ class DefaultUnrealProjectGenerator:
                 output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT,
                 addl_env=self.get_env())
 
+    def patch_src(self):
+        pass
+
     def get_mh_target_cs(self) -> str:
         return """
                     using UnrealBuildTool;
@@ -267,6 +272,23 @@ class DefaultUnrealProjectGenerator:
         with open(self.project_src / "MetadataAnalysis.cpp", "w", encoding="utf-8") as anal_src_file:
             includes = "".join(f"#include \"{header.replace("\\", "/")}\"\n" for header in self.driver.headers)
             anal_src_file.write(self.get_mh_cpp(includes))
+
+    def get_build_config(self) -> str | None:
+        return None
+
+    def get_build_config_path(self):
+        return self.git.root / "Engine" / "Saved" / "UnrealBuildTool" / "BuildConfiguration.xml"
+
+    def write_build_config(self):
+        config_str = self.get_build_config()
+        if config_str is None:
+            return
+
+        config_path = self.get_build_config_path()
+        if not config_path.exists():
+            raise Exception(f"Failed to find BuildConfiguration.xml file for branch {self.branch}: {config_path}")
+        with open(config_path, "w", encoding="utf-8") as config_file:
+            config_file.write(config_str.strip())
 
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         if platform_dict is None:
@@ -523,7 +545,7 @@ class UPG_427(UPG_5):
         return candidates[0]
 
 class UPG_423(UPG_427):
-    valid_for = {'4.23'}
+    valid_for = {'4.23', '4.22'}
 
     @override
     def get_mh_target_cs(self):
@@ -544,21 +566,78 @@ class UPG_423(UPG_427):
                     }
                 """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition)
 
-    # def get_build_config(self):
-    #     return  """
-    #                 <?xml version="1.0" encoding="utf-8"?>
-    #                 <Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
-    #                   <WindowsPlatform>
-    #                     <Compiler>VisualStudio2019</Compiler>
-    #                     <CompilerVersion>14.29.30133</CompilerVersion>
-    #                   </WindowsPlatform>
-    #                 </Configuration>
-    #             """
-    #
-    # def write_project_files(self):
-    #     super().write_project_files()
-    #     config_path = self.git.root / "Engine" / "Saved" / "UnrealBuildTools" / "BuildConfiguration.xml"
-    #     if not config_path.exists():
-    #         raise Exception(f"Failed to find BuildConfiguration.xml file for branch {self.branch}: {config_path}")
-    #     with open(config_path, "w", encoding="utf-8") as config_file:
-    #         config_file.write(self.get_build_config())
+    @override
+    def get_build_config(self):
+        return  """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
+                      <WindowsPlatform>
+                        <Compiler>VisualStudio2019</Compiler>
+                        <CompilerVersion>14.29.30133</CompilerVersion>
+                      </WindowsPlatform>
+                    </Configuration>
+                """
+
+class UPG_421(UPG_423):
+    valid_for = {'4.21','4.20'}
+
+    @override
+    # pyrefly: ignore [bad-override]
+    def get_build_config(self):
+        return """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
+                      <WindowsPlatform>
+                        <Compiler>VisualStudio2017</Compiler>
+                        <CompilerVersion>14.29.30133</CompilerVersion>
+                      </WindowsPlatform>
+                    </Configuration>
+                """
+
+class UPG_419(UPG_421):
+    valid_for = {'4.19'}
+
+    @override
+    # pyrefly: ignore [bad-override]
+    def get_build_config(self): # WindowsPlatform doesn't accept Compiler/CompilerVersion from here down
+        return None
+
+    @override
+    def patch_src(self):
+        if self.driver.platform != "win32":
+            return
+        self.patch_crt_version_selector()
+        self.patch_tuple_header()
+
+    def patch_crt_version_selector(self):
+        target_path = self.git.root / "Engine" / "Source" / "Programs" / "UnrealBuildTool" / "Platform" / "Windows" / "VCEnvironment.cs"
+        if not target_path.exists():
+            log_exc(f"Failed to find unreal build tool source directory under {target_path}!")
+        text = target_path.read_text(encoding="utf-8")
+        old =   """DirectoryInfo LatestIncludeDir = IncludeDirs.OrderBy(x => x.Name).LastOrDefault(n => n.Name.All(s => (s >= '0' && s <= '9') || s == '.') && Directory.Exists(n.FullName + "\\\\ucrt"));"""
+        new =   """Version MaxUniversalCRTVersion = new Version(10, 0, 19041, 0);
+                DirectoryInfo LatestIncludeDir = IncludeDirs
+                .Where(n => n.Name.All(s => (s >= '0' && s <= '9') || s == '.') && Directory.Exists(n.FullName + "\\\\ucrt"))
+                .Where(n => new Version(n.Name) <= MaxUniversalCRTVersion)
+                .OrderBy(n => new Version(n.Name))
+                .LastOrDefault();
+                """
+        if "MaxUniversalCRTVersion" in text:
+            return
+        if old not in text:
+            log_exc(f"Failed to patch UBT Universal CRT selection in {target_path}")
+        target_path.write_text(text.replace(old, new), encoding="utf-8")
+        logging.info("Patched UBT to cap Universal CRT selection at 10.0.19041.0!")
+
+    def patch_tuple_header(self):
+        target_path = self.git.root / "Engine" / "Source" / "Runtime" / "Core" / "Public" / "Templates" / "Tuple.h"
+        if not target_path.exists():
+            log_exc(f"Failed to find Tuple.h at {target_path}")
+        text = target_path.read_text(encoding="utf-8")
+        old = """#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)"""
+        new = """#if defined(_MSC_VER) && !defined(__clang__) && !defined(__INTEL_COMPILER)"""
+
+        if old not in text:
+            log_exc(f"Failed to patch Tuple.h at {target_path}")
+        target_path.write_text(text.replace(old, new), encoding="utf-8")
+        logging.info("Patched Tuple.h!")
