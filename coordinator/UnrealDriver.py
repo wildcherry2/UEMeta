@@ -34,13 +34,14 @@ class UnrealDriver(DriverBase):
         self.ubt_platform: str = self.args.ubt_platform
         self.ubt_config: str = self.args.ubt_config
         self.broken_branches: Final[dict[str, Path]] = _get_broken_branches()
-        _ensure_branches_canon(self.branches)
+        self.__checkout_ran = False
 
     @override
     def make_compile_commands(self, branch: str) -> Path:
         self.project_generator = _make_generator(branch, self)
         if self.project_generator is None:
             log_exc(f"Failed to generate uproject for branch {branch}!")
+        self.__checkout_ran = True
         self.project_generator.run_setup()
         self.project_generator.write_project_files()
         self.project_generator.run_generate_project_files()
@@ -80,7 +81,15 @@ class UnrealDriver(DriverBase):
         if not self.__handle_git_ex(ex.branch):
             super().on_checkout_exception(ex)
 
+    @override
+    def on_before_next_checkout(self, branch: str):
+        super().on_before_next_checkout(branch)
+        self.__checkout_ran = False
+
     def __handle_git_ex(self, branch: str) -> bool:
+        if self.__checkout_ran:
+            return False
+
         file = self.broken_branches[branch]
         if file is None:
             return False
@@ -95,10 +104,11 @@ class UnrealDriver(DriverBase):
 
 
 def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
+    canonical = _canonical_branch(branch)
     def gen_helper(cls: type[DefaultUnrealProjectGenerator]) -> DefaultUnrealProjectGenerator | None:
         subclasses: list[type[DefaultUnrealProjectGenerator]] = cls.__subclasses__()
         for subclass in subclasses:
-            if branch in subclass.valid_for:
+            if canonical in subclass.valid_for:
                 return subclass(branch, driver)
             else:
                 child_gen = gen_helper(subclass)
@@ -127,14 +137,20 @@ def _get_broken_branches():
 
     return out
 
-def _ensure_branches_canon(branches: list[str]):
-    # valid branches are {version} or {version-release}, and don't start with 'dev'
-    pattern = re.compile(r"^(\d+\.\d+)(\.(\d+))?(-release)?$", RegexFlag.M | RegexFlag.U)
-    for branch in branches:
+CANONICAL_BRANCH_RE = re.compile(r"^(?P<version>(?P<major>\d+\.\d+)(\.(?P<patch>\d+))?)(-release)?$",
+                                 RegexFlag.M | RegexFlag.U)
+def _canonical_branch(branch: str):
+    match = CANONICAL_BRANCH_RE.match(branch)
+    if match is None:
         if branch.startswith("dev"):
             raise Exception(f"Invalid branch '{branch}': development branches not allowed!")
-        if not pattern.match(branch):
-            raise Exception(f"Invalid branch '{branch}': canonical branches ('version' or 'version-release') only!")
+        raise Exception(f"Invalid branch '{branch}': canonical branches ('{{version}}' or '{{version}}-release') only!")
+
+    match_dict = match.groupdict()
+    patch = match_dict['patch']
+    if patch is None or patch == "0":
+        return match_dict["major"]
+    return match_dict["version"]
 
 class DefaultUnrealProjectGenerator:
     valid_for: set[str] = set()
