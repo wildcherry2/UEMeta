@@ -1,3 +1,6 @@
+from re import RegexFlag
+from Git import CheckoutException
+from Git import CloneException
 import argparse
 import json
 import logging
@@ -6,10 +9,9 @@ import re
 import shutil
 from os import PathLike
 from pathlib import Path
-from typing import override, Any, cast
+from typing import override, Any, cast, Final
 
 from DriverBase import DriverBase
-from Git import Git
 from Util import ExecuteOutputOptions, execute, log_exc
 
 class UnrealDriver(DriverBase):
@@ -31,6 +33,8 @@ class UnrealDriver(DriverBase):
         self.headers: list[str] = self.args.headers
         self.ubt_platform: str = self.args.ubt_platform
         self.ubt_config: str = self.args.ubt_config
+        self.broken_branches: Final[dict[str, Path]] = _get_broken_branches()
+        #todo ensure branches don't contain preview versions
 
     @override
     def make_compile_commands(self, branch: str) -> Path:
@@ -42,7 +46,7 @@ class UnrealDriver(DriverBase):
         self.project_generator.run_generate_project_files()
         self.project_generator.run_ubt()
         self.project_generator.run_generate_clang_database()
-        compile_commands = cast(Git, self.git).root / "compile_commands.json"
+        compile_commands = self.git.root / "compile_commands.json"
         if not compile_commands.exists():
             log_exc(f"Failed to find generated compile_commands.json for branch {branch}!")
         return compile_commands
@@ -65,6 +69,31 @@ class UnrealDriver(DriverBase):
         parser.add_argument("--ubt-config", type=str, default="Shipping",
                             help="Unreal configuration to use. Defaults to \"Shipping\".")
 
+    @override
+    def on_clone_exception(self, ex: CloneException) -> None:
+        if not self.__handle_git_ex(ex.branch):
+            super().on_clone_exception(ex)
+
+
+    @override
+    def on_checkout_exception(self, ex: CheckoutException) -> None:
+        if not self.__handle_git_ex(ex.branch):
+            super().on_checkout_exception(ex)
+
+    def __handle_git_ex(self, branch: str) -> bool:
+        file = self.broken_branches[branch]
+        if file is None:
+            return False
+
+        target = self.git.root / "Engine" / "Build" / "Commit.gitdeps.xml"
+        if not target.exists():
+            logging.error(f"Failed to handle bad branch {branch}!")
+            return False
+
+        shutil.copy2(file, target)
+        return True
+
+
 def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
     def gen_helper(cls: type[DefaultUnrealProjectGenerator]) -> DefaultUnrealProjectGenerator | None:
         subclasses: list[type[DefaultUnrealProjectGenerator]] = cls.__subclasses__()
@@ -79,6 +108,25 @@ def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGe
     gen = gen_helper(DefaultUnrealProjectGenerator)
     return gen if gen is not None else DefaultUnrealProjectGenerator(branch, driver)
 
+BBR = re.compile(r".*Commit\.gitdeps\.(?P<branch>(?P<major>\d+\.\d+)(\.(?P<patch>\d+))?).xml$",
+                 RegexFlag.M | RegexFlag.U)
+
+def _get_broken_branches():
+    directory = Path.cwd() / "external"
+    if not directory.exists() or not directory.is_dir():
+        raise Exception(f"Could not construct BrokenBranchesDict because directory {directory} does not exist!")
+
+    out: dict[str, Path] = {}
+    for file in directory.iterdir():
+        match = BBR.match(file.name)
+        if match is not None:
+            groups = match.groupdict()
+            if groups["patch"] is None or groups["patch"] == "0":
+                out[groups["major"]] = file
+            out[groups["branch"]] = file
+            out[groups["branch"] + "-release"] = file
+
+    return out
 
 class DefaultUnrealProjectGenerator:
     valid_for: set[str] = set()
@@ -86,7 +134,7 @@ class DefaultUnrealProjectGenerator:
         super().__init__()
         self.branch = branch
         self.driver = driver
-        self.git = cast(Git, self.driver.git)
+        self.git = self.driver.git
         self.setup_path = self.git.root / f"Setup.{self.driver.platform_shell_ext}"
         self.generate_project_files_path = self.git.root / f"GenerateProjectFiles.{self.driver.platform_shell_ext}"
         self.project_path = self.driver.test_project_path / "MetadataHarness.uproject"
@@ -322,9 +370,7 @@ class UPG_52(UPG_54):
         args.append("-Compiler=VisualStudio2022")
         return args
 
-#todo implement reclone for transitions 5.0 <-> 5.1
-
-class UPG_5(UPG_52):
+class UPG_5(UPG_52): # todo singlefile not working
     valid_for = {'5.0'}
     # missing macro for the current version of the compiler
     _win10_ge_definition = "NTDDI_WIN10_GE=0x0A000010"

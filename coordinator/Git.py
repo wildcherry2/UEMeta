@@ -81,12 +81,12 @@ class Git:
                        output=ExecuteOutputOptions.SILENT)[1].strip()
 
     # Checkout the branch. Will look through remote's branch list. Will throw if the repo is not initialized.
-    def checkout(self, branch: str):
+    def checkout(self, branch: str, force: bool = False):
         if self.remote is None:
             raise CheckoutException(branch, self.root, "Failed to checkout because the remote is not set!")
         ex = cast(type[ExecuteException], partial(CheckoutException.from_execute, branch, self.root))
         self.__config_long_paths_if_needed()
-        if self.current_branch() != branch:
+        if force or self.current_branch() != branch:
             fr = execute(["git", "fetch", "--progress", "--depth", "1", self.remote,
                      f"+refs/heads/{branch}:refs/remotes/{self.remote}/{branch}"], cwd=self.root,
                     output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT,
