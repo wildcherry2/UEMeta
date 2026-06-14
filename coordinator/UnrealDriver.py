@@ -595,7 +595,7 @@ class UPG_421(UPG_423):
                 """
 
 class UPG_419(UPG_421):
-    valid_for = {'4.19'}
+    valid_for = {'4.19', '4.18'}
 
     @override
     # pyrefly: ignore [bad-override]
@@ -609,8 +609,11 @@ class UPG_419(UPG_421):
         self.patch_crt_version_selector()
         self.patch_tuple_header()
 
+    def get_vcenv_cs(self):
+        return self.git.root / "Engine" / "Source" / "Programs" / "UnrealBuildTool" / "Platform" / "Windows" / "VCEnvironment.cs"
+
     def patch_crt_version_selector(self):
-        target_path = self.git.root / "Engine" / "Source" / "Programs" / "UnrealBuildTool" / "Platform" / "Windows" / "VCEnvironment.cs"
+        target_path = self.get_vcenv_cs()
         if not target_path.exists():
             log_exc(f"Failed to find unreal build tool source directory under {target_path}!")
         text = target_path.read_text(encoding="utf-8")
@@ -641,3 +644,19 @@ class UPG_419(UPG_421):
             log_exc(f"Failed to patch Tuple.h at {target_path}")
         target_path.write_text(text.replace(old, new), encoding="utf-8")
         logging.info("Patched Tuple.h!")
+
+class UPG_417(UPG_419):
+    valid_for = {'4.17', '4.16'}
+
+    @override
+    def get_vcenv_cs(self):
+        return self.git.root / "Engine" / "Source" / "Programs" / "UnrealBuildTool" / "Windows" / "VCEnvironment.cs"
+
+class UPG_415(UPG_417):
+    valid_for = {'4.15'}
+
+    @override
+    def patch_src(self):
+        if self.driver.platform != "win32":
+            return
+        self.patch_crt_version_selector()
