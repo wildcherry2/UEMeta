@@ -34,7 +34,7 @@ class UnrealDriver(DriverBase):
         self.ubt_platform: str = self.args.ubt_platform
         self.ubt_config: str = self.args.ubt_config
         self.broken_branches: Final[dict[str, Path]] = _get_broken_branches()
-        #todo ensure branches don't contain preview versions
+        _ensure_branches_canon(self.branches)
 
     @override
     def make_compile_commands(self, branch: str) -> Path:
@@ -108,17 +108,16 @@ def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGe
     gen = gen_helper(DefaultUnrealProjectGenerator)
     return gen if gen is not None else DefaultUnrealProjectGenerator(branch, driver)
 
-BBR = re.compile(r".*Commit\.gitdeps\.(?P<branch>(?P<major>\d+\.\d+)(\.(?P<patch>\d+))?).xml$",
-                 RegexFlag.M | RegexFlag.U)
-
 def _get_broken_branches():
     directory = Path.cwd() / "external"
     if not directory.exists() or not directory.is_dir():
         raise Exception(f"Could not construct BrokenBranchesDict because directory {directory} does not exist!")
 
+    bbr = re.compile(r".*Commit\.gitdeps\.(?P<branch>(?P<major>\d+\.\d+)(\.(?P<patch>\d+))?).xml$",
+                     RegexFlag.M | RegexFlag.U)
     out: dict[str, Path] = {}
     for file in directory.iterdir():
-        match = BBR.match(file.name)
+        match = bbr.match(file.name)
         if match is not None:
             groups = match.groupdict()
             if groups["patch"] is None or groups["patch"] == "0":
@@ -127,6 +126,15 @@ def _get_broken_branches():
             out[groups["branch"] + "-release"] = file
 
     return out
+
+def _ensure_branches_canon(branches: list[str]):
+    # valid branches are {version} or {version-release}, and don't start with 'dev'
+    pattern = re.compile(r"^(\d+\.\d+)(\.(\d+))?(-release)?$", RegexFlag.M | RegexFlag.U)
+    for branch in branches:
+        if branch.startswith("dev"):
+            raise Exception(f"Invalid branch '{branch}': development branches not allowed!")
+        if not pattern.match(branch):
+            raise Exception(f"Invalid branch '{branch}': canonical branches ('version' or 'version-release') only!")
 
 class DefaultUnrealProjectGenerator:
     valid_for: set[str] = set()
