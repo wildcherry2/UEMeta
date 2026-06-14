@@ -46,7 +46,7 @@ class UnrealDriver(DriverBase):
         self.project_generator.write_project_files()
         self.project_generator.run_generate_project_files()
         self.project_generator.run_ubt()
-        self.project_generator.run_generate_clang_database()
+        self.project_generator.run_generate_clang_database() #todo may not need this if we can find the same files present in ue4 builds
         compile_commands = self.git.root / "compile_commands.json"
         if not compile_commands.exists():
             log_exc(f"Failed to find generated compile_commands.json for branch {branch}!")
@@ -165,7 +165,7 @@ class DefaultUnrealProjectGenerator:
         self.project_root = self.driver.test_project_path
         self.project_src = self.project_root / "Source" / "MetadataHarness"
         self.dotnet_path: Path | None = None
-        self.ubt_path = self.git.root / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool" / "UnrealBuildTool.dll"
+        self.ubt_path = self.get_ubt_path()
 
     def run_setup(self):
         if not self.setup_path.exists():
@@ -175,6 +175,9 @@ class DefaultUnrealProjectGenerator:
                 fail_msg=f"Failed to run Setup.bat in Unreal branch {self.branch}!",
                 output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT,
                 addl_env=self.get_env())
+
+    def get_ubt_path(self):
+        return self.git.root / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool" / "UnrealBuildTool.dll"
 
     def get_generate_project_files_args(self) -> list[PathLike[str] | str]:
         generate_project_files_args: list[PathLike[str] | str] = [self.generate_project_files_path, f"-project={self.project_path}"]
@@ -195,19 +198,19 @@ class DefaultUnrealProjectGenerator:
 
     def get_mh_target_cs(self) -> str:
         return """
-                        using UnrealBuildTool;
+                    using UnrealBuildTool;
 
-                        public class MetadataHarnessTarget : TargetRules
+                    public class MetadataHarnessTarget : TargetRules
+                    {
+                        public MetadataHarnessTarget(TargetInfo Target) : base(Target)
                         {
-                            public MetadataHarnessTarget(TargetInfo Target) : base(Target)
-                            {
-                                Type = TargetType.Game;
-                                ExtraModuleNames.Add("MetadataHarness");
-                                DefaultBuildSettings = BuildSettingsVersion.Latest;
-                                IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-                            }
+                            Type = TargetType.Game;
+                            ExtraModuleNames.Add("MetadataHarness");
+                            DefaultBuildSettings = BuildSettingsVersion.Latest;
+                            IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
                         }
-                    """
+                    }
+                """
 
     def get_mh_build_cs(self, module_names: str):
         return f"""
@@ -308,7 +311,7 @@ class DefaultUnrealProjectGenerator:
 
     def get_generate_clang_database_args(self) -> list[PathLike[str] | str]:
         return [self.generate_project_files_path, "-Mode=GenerateClangDatabase", "MetadataHarness",
-                                   self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
+                self.driver.ubt_platform, self.driver.ubt_config, f"-project={self.project_path}"]
 
     def run_generate_clang_database(self):
         execute(self.get_generate_clang_database_args(),
@@ -386,7 +389,7 @@ class UPG_52(UPG_54):
     def get_ubt_args(self, working_dir: Path):
         args = super().get_ubt_args(working_dir)
         for i in range(len(args) - 1, -1, -1):
-            if str(args[i]).startswith('-Files'):  # Your specific condition
+            if str(args[i]).startswith('-Files'):
                 args[i] = f"-SingleFile={self.project_src / 'MetadataAnalysis.cpp'}"
                 break
 
@@ -394,7 +397,7 @@ class UPG_52(UPG_54):
         args.append("-Compiler=VisualStudio2022")
         return args
 
-class UPG_5(UPG_52): # todo singlefile not working
+class UPG_5(UPG_52):
     valid_for = {'5.0'}
     # missing macro for the current version of the compiler
     _win10_ge_definition = "NTDDI_WIN10_GE=0x0A000010"
@@ -454,6 +457,60 @@ class UPG_5(UPG_52): # todo singlefile not working
         if self.driver.platform != "win32":
             return
 
+        self.add_parser_additional_commands()
+
+    def add_parser_additional_commands(self):
         for arg in self._parser_additional_commands:
             if arg not in self.driver.parser_additional_commands:
                 self.driver.parser_additional_commands.append(arg)
+
+class UPG_427(UPG_5):
+    valid_for = {'4.27', '4.26'}
+
+    @override
+    def get_ubt_path(self):
+        return self.git.root / "Engine" / "Binaries" / "DotNET" / "UnrealBuildTool.exe"
+
+    @override
+    def get_ubt_args(self, working_dir: Path):
+        def_args = super().get_ubt_args(working_dir)
+        def_args.pop(0)
+        return def_args
+
+    @override
+    def run_generate_clang_database(self):
+        if self.driver.platform != "win32":
+            super().run_generate_clang_database()
+            return
+
+        response_file = self.find_metadata_analysis_response_file()
+        response_args = [line.strip() for line in response_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if len(response_args) == 0:
+            log_exc(f"Failed to synthesize compile_commands.json: {response_file} is empty!")
+
+        compile_commands = [
+            {
+                "file": str((self.project_src / "MetadataAnalysis.cpp").resolve()),
+                "command": " ".join(["clang-cl.exe", *response_args]),
+                "directory": str((self.git.root / "Engine" / "Source").resolve())
+            }
+        ]
+        compile_commands_path = self.git.root / "compile_commands.json"
+        with open(compile_commands_path, "w", encoding="utf-8") as compile_commands_file:
+            json.dump(compile_commands, compile_commands_file, indent=2)
+            compile_commands_file.write("\n")
+
+        self.add_parser_additional_commands()
+        logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {response_file}.")
+
+    def find_metadata_analysis_response_file(self) -> Path:
+        build_root = self.project_root / "Intermediate" / "Build" / self.driver.ubt_platform
+        if not build_root.exists():
+            log_exc(f"Failed to find build output directory for branch {self.branch}: {build_root}")
+
+        candidates = list(build_root.rglob("MetadataAnalysis.cpp.obj.response"))
+        if len(candidates) == 0:
+            log_exc(f"Failed to find MetadataAnalysis.cpp response file under {build_root}")
+
+        candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+        return candidates[0]
