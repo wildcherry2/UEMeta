@@ -14,6 +14,7 @@ from typing import override, Any, cast, Final
 from DriverBase import DriverBase
 from Util import ExecuteOutputOptions, execute, log_exc
 
+# note: long paths can be an issue
 class UnrealDriver(DriverBase):
     def __init__(self):
         super().__init__()
@@ -465,7 +466,7 @@ class UPG_5(UPG_52):
                 self.driver.parser_additional_commands.append(arg)
 
 class UPG_427(UPG_5):
-    valid_for = {'4.27', '4.26'}
+    valid_for = {'4.27', '4.26', '4.25', '4.24'}
 
     @override
     def get_ubt_path(self):
