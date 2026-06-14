@@ -91,8 +91,6 @@ class DriverBase(ABC):
                     output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
             self.on_after_parse(in_branch)
 
-        logging.info(f"Resetting repo to a clean state...")
-        self.git.reset()
         initial_branch = self.git.current_branch() if initial_branch is None else initial_branch
         do_parse(initial_branch)
 

@@ -42,9 +42,11 @@ class Git:
                 # see if the checked out branch matches one in the list
                 current_branch = self.current_branch()
                 if current_branch in branch_list:
-                    logging.info(f"Branch {current_branch} is already checked out, git initialized!")
+                    logging.info(f"Branch {current_branch} is already checked out. Resetting before initialization completes...")
                     branch_list.remove(current_branch)
                     self.reset()
+                    self.checkout(current_branch, force=True)
+                    logging.info(f"Checked out {current_branch}, git initialized!")
                 else:
                     # current branch is not the one we want, so checkout a branch we want
                     logging.info(f"Current branch ({current_branch}) is not in the branch list ({branch_list}), checking out {branch_list[0]}...")
