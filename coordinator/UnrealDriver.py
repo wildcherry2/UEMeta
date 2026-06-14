@@ -381,12 +381,14 @@ def _validate_msvc():
 class UPG_54(DefaultUnrealProjectGenerator):
     valid_for = {'5.4', '5.3'}
 
+    @override
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         return super().get_bundled_dotnet({'linux': 'linux', 'darwin': 'mac-x64', 'win32': 'windows'} if platform_dict is None else platform_dict)
 
 class UPG_52(UPG_54):
     valid_for = {'5.2', '5.1'}
 
+    @override
     def get_ubt_args(self, working_dir: Path):
         args = super().get_ubt_args(working_dir)
         for i in range(len(args) - 1, -1, -1):
@@ -407,6 +409,7 @@ class UPG_5(UPG_52):
         "--additional-clang-args=/clang:-Wno-c++11-narrowing"
     ]
 
+    @override
     def get_mh_target_cs(self):
         return """
                     using UnrealBuildTool;
@@ -426,12 +429,14 @@ class UPG_5(UPG_52):
                     }
                 """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition)
 
+    @override
     def get_bundled_dotnet(self, platform_dict: dict[str, str] | None = None) -> Path:
         if platform_dict is not None:
             return super().get_bundled_dotnet(platform_dict)
         platform_dict = {'linux': 'Linux', 'darwin': 'Mac', 'win32': 'Windows'}
         return self.git.root / "Engine" / "Binaries" / "ThirdParty" / "DotNet" / platform_dict[self.driver.platform] / "dotnet.exe"
 
+    @override
     def run_ubt(self):
         if self.driver.platform != "win32":
             super().run_ubt()
@@ -453,6 +458,7 @@ class UPG_5(UPG_52):
             else:
                 os.environ["CL"] = previous_cl
 
+    @override
     def run_generate_clang_database(self):
         super().run_generate_clang_database()
         if self.driver.platform != "win32":
@@ -515,3 +521,44 @@ class UPG_427(UPG_5):
 
         candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
         return candidates[0]
+
+class UPG_423(UPG_427):
+    valid_for = {'4.23'}
+
+    @override
+    def get_mh_target_cs(self):
+        return  """
+                    using UnrealBuildTool;
+        
+                    public class MetadataHarnessTarget : TargetRules
+                    {
+                        public MetadataHarnessTarget(TargetInfo Target) : base(Target)
+                        {
+                            Type = TargetType.Game;
+                            ExtraModuleNames.Add("MetadataHarness");
+                            if (Target.Platform == UnrealTargetPlatform.Win64)
+                            {
+                                GlobalDefinitions.Add("__WIN10_GE_DEFINITION__");
+                            }
+                        }
+                    }
+                """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition)
+
+    # def get_build_config(self):
+    #     return  """
+    #                 <?xml version="1.0" encoding="utf-8"?>
+    #                 <Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
+    #                   <WindowsPlatform>
+    #                     <Compiler>VisualStudio2019</Compiler>
+    #                     <CompilerVersion>14.29.30133</CompilerVersion>
+    #                   </WindowsPlatform>
+    #                 </Configuration>
+    #             """
+    #
+    # def write_project_files(self):
+    #     super().write_project_files()
+    #     config_path = self.git.root / "Engine" / "Saved" / "UnrealBuildTools" / "BuildConfiguration.xml"
+    #     if not config_path.exists():
+    #         raise Exception(f"Failed to find BuildConfiguration.xml file for branch {self.branch}: {config_path}")
+    #     with open(config_path, "w", encoding="utf-8") as config_file:
+    #         config_file.write(self.get_build_config())
