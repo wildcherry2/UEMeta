@@ -218,7 +218,7 @@ class DefaultUnrealProjectGenerator:
                     }
                 """
 
-    def get_mh_build_cs(self, module_names: str):
+    def get_mh_build_cs(self, module_names: str)->str: #todo remove pch usage
         return f"""
             using UnrealBuildTool;
             public class MetadataHarness : ModuleRules
@@ -235,13 +235,13 @@ class DefaultUnrealProjectGenerator:
             }}
         """
 
-    def get_mh_h(self):
+    def get_mh_h(self)->str:
         return """
                 #pragma once
                 #include "CoreMinimal.h"
             """
 
-    def get_mh_cpp(self, includes: str):
+    def get_mh_cpp(self, includes: str)->str:
         return f"""
             #include "MetadataHarness.h"
             {includes}
@@ -564,7 +564,7 @@ class UPG_423(UPG_427):
                             }
                         }
                     }
-                """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition)
+                """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition) #todo should only do this if win32
 
     @override
     def get_build_config(self):
@@ -656,7 +656,108 @@ class UPG_415(UPG_417):
     valid_for = {'4.15'}
 
     @override
+    def get_mh_target_cs(self):
+        return  """
+                    using UnrealBuildTool;
+                    using System.Collections.Generic;
+
+                    public class MetadataHarnessTarget : TargetRules
+                    {
+                        public MetadataHarnessTarget(TargetInfo Target)
+                        {
+                            Type = TargetType.Game;
+                        }
+
+                        public override void SetupBinaries(
+                            TargetInfo Target,
+                            ref List<UEBuildBinaryConfiguration> OutBuildBinaryConfigurations,
+                            ref List<string> OutExtraModuleNames
+                            )
+                        {
+                            OutExtraModuleNames.Add("MetadataHarness");
+                        }
+                    }
+                """
+
+    @override
+    def get_mh_build_cs(self, module_names: str):
+        definition = f"Definitions.Add(\"{self._win10_ge_definition}\");" if self.driver.platform == "win32" else ""
+        return f"""
+            using UnrealBuildTool;
+            public class MetadataHarness : ModuleRules
+            {{
+                public MetadataHarness(TargetInfo Target)
+                {{
+                    PCHUsage = PCHUsageMode.NoSharedPCHs;
+                    MinFilesUsingPrecompiledHeaderOverride = 999999;
+                    {definition}
+
+                    PublicDependencyModuleNames.AddRange(new string[]
+                    {{
+                        {module_names}
+                    }});
+                }}
+            }}
+        """
+
+    @override
     def patch_src(self):
         if self.driver.platform != "win32":
             return
         self.patch_crt_version_selector()
+
+class UPG_414(UPG_415):
+    valid_for = {'4.14'}
+
+    @override
+    def patch_crt_version_selector(self):
+        target_path = self.get_vcenv_cs()
+        if not target_path.exists():
+            log_exc(f"Failed to find unreal build tool source directory under {target_path}!")
+        text = target_path.read_text(encoding="utf-8")
+        replacements = [
+            (
+                """DirectoryInfo LatestIncludeDir = IncludeDir.EnumerateDirectories().OrderBy(x => x.Name).LastOrDefault();""",
+                """Version MaxUniversalCRTVersion = new Version(10, 0, 19041, 0);
+                DirectoryInfo LatestIncludeDir = IncludeDir.EnumerateDirectories()
+                .Where(n => n.Name.All(s => (s >= '0' && s <= '9') || s == '.') && Directory.Exists(n.FullName + "\\\\ucrt"))
+                .Where(n => new Version(n.Name) <= MaxUniversalCRTVersion)
+                .OrderBy(n => new Version(n.Name))
+                .LastOrDefault();
+                """
+            ),
+            (
+                """DirectoryInfo LatestIncludeDir = IncludeDir.EnumerateDirectories().OrderBy(x => x.Name).LastOrDefault(n => n.Name.All(s => (s >= '0' && s <= '9') || s == '.') && Directory.Exists(n.FullName + "\\\\ucrt"));""",
+                """Version MaxUniversalCRTVersion = new Version(10, 0, 19041, 0);
+                    DirectoryInfo LatestIncludeDir = IncludeDir.EnumerateDirectories()
+                    .Where(n => n.Name.All(s => (s >= '0' && s <= '9') || s == '.') && Directory.Exists(n.FullName + "\\\\ucrt"))
+                    .Where(n => new Version(n.Name) <= MaxUniversalCRTVersion)
+                    .OrderBy(n => new Version(n.Name))
+                    .LastOrDefault();
+                    """
+            )
+        ]
+        patched = False
+        for old, new in replacements:
+            if old in text:
+                text = text.replace(old, new, 1)
+                patched = True
+
+        if text.count("MaxUniversalCRTVersion") < len(replacements):
+            log_exc(f"Failed to patch UBT Universal CRT selection in {target_path}")
+
+        if patched:
+            target_path.write_text(text, encoding="utf-8")
+            logging.info("Patched UBT to cap Universal CRT selection at 10.0.19041.0!")
+
+    @override
+    def get_mh_h(self)->str:
+        return  """
+                #pragma once
+                #include "Core.h"
+                #include "UObject/ObjectMacros.h"
+                """
+
+    @override
+    def get_mh_cpp(self, includes: str) -> str:
+        return super().get_mh_cpp(includes.replace("CoreMinimal.h", "Core.h"))
