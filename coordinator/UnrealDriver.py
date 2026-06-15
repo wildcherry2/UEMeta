@@ -14,6 +14,8 @@ from typing import override, Any, cast, Final
 from DriverBase import DriverBase
 from Util import ExecuteOutputOptions, execute, log_exc
 
+_VS2015_ENV: dict[str, str] | None = None
+
 # note: long paths can be an issue
 class UnrealDriver(DriverBase):
     def __init__(self):
@@ -400,6 +402,69 @@ def _validate_msvc():
                         "create a new project, set it to C++, and it'll give you a valid download.")
     logging.info("Validated VS 2022 install!")
 
+def _get_vs2015_vcvarsall() -> Path:
+    candidates: list[Path] = []
+
+    try:
+        import winreg
+
+        for access in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY, 0):
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\VisualStudio\SxS\VC7", 0,
+                                    winreg.KEY_READ | access) as key:
+                    value, _ = winreg.QueryValueEx(key, "14.0")
+                    candidates.append(Path(value))
+            except OSError:
+                pass
+    except ImportError:
+        pass
+
+    program_files_x86 = os.environ.get("ProgramFiles(x86)")
+    if program_files_x86:
+        candidates.append(Path(program_files_x86) / "Microsoft Visual Studio 14.0" / "VC")
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+
+        vcvarsall = candidate / "vcvarsall.bat"
+        if vcvarsall.exists():
+            return vcvarsall
+
+    log_exc("Failed to find the VS2015 C++ toolchain. Unreal Engine 4.13 requires "
+            "C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat or the matching "
+            "VisualStudio\\SxS\\VC7\\14.0 registry value.")
+
+def _get_vs2015_env() -> dict[str, str]:
+    global _VS2015_ENV
+    if _VS2015_ENV is not None:
+        return _VS2015_ENV
+
+    vcvarsall = _get_vs2015_vcvarsall()
+    _, output = execute(["cmd.exe", "/d", "/c", "call", vcvarsall, "x64", "&&", "set"],
+                        success_msg=f"Captured VS2015 build environment from {vcvarsall}.",
+                        fail_msg=f"Failed to capture VS2015 build environment from {vcvarsall}!",
+                        output=ExecuteOutputOptions.SILENT)
+
+    env: dict[str, str] = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator == "" or key.startswith("="):
+            continue
+        env[key] = value
+
+    env_vars = {key.upper(): value for key, value in env.items()}
+    required_vars = ["INCLUDE", "LIB", "PATH", "VS140COMNTOOLS", "VCINSTALLDIR"]
+    missing = [var for var in required_vars if not env_vars.get(var)]
+    if missing:
+        log_exc(f"VS2015 vcvarsall did not provide required environment variables: {', '.join(missing)}")
+
+    _VS2015_ENV = env
+    return _VS2015_ENV
+
 class UPG_54(DefaultUnrealProjectGenerator):
     valid_for = {'5.4', '5.3'}
 
@@ -761,3 +826,24 @@ class UPG_414(UPG_415):
     @override
     def get_mh_cpp(self, includes: str) -> str:
         return super().get_mh_cpp(includes.replace("CoreMinimal.h", "Core.h"))
+
+class UPG_413(UPG_414):
+    valid_for = {'4.13'}
+
+    @override
+    def get_env(self):
+        env = super().get_env()
+        if self.driver.platform == "win32":
+            env |= _get_vs2015_env()
+        return env
+
+    @override
+    def get_mh_h(self)->str:
+        return  """
+                #pragma once
+                #include "CoreUObject.h"
+                """
+
+    @override
+    def get_mh_cpp(self, includes: str) -> str:
+        return super().get_mh_cpp(includes.replace("UObject/Object.h", "CoreUObject.h"))

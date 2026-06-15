@@ -6,11 +6,6 @@ from enum import Flag, auto
 from functools import partial
 from os import PathLike
 from typing import NoReturn, Optional, cast
-from pathlib import Path
-
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
-                    handlers=[logging.StreamHandler(), logging.FileHandler(Path().cwd() / "intermediate" / "coordinator.log", mode='w')],
-                    force=True)
 
 def log_exc(msg: str, exc: type[Exception] = Exception) -> NoReturn:
     logging.error(msg)
@@ -39,6 +34,20 @@ class ExecuteException(Exception):
         self.expected_return_code = expected_return_code
         self.stdout = stdout
 
+def _merge_env(addl_env: dict[str, str]) -> dict[str, str]:
+    env = os.environ.copy()
+    if os.name != "nt":
+        return env | addl_env
+
+    env_keys = {key.upper(): key for key in env}
+    for key, value in addl_env.items():
+        existing_key = env_keys.get(key.upper())
+        if existing_key is not None and existing_key != key:
+            env.pop(existing_key, None)
+        env[key] = value
+        env_keys[key.upper()] = key
+    return env
+
 def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
             success_msg: Optional[str] = None,
             fail_msg: Optional[str] = None,
@@ -56,7 +65,7 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
     use_file = (not use_logger) and output & ExecuteOutputOptions.FILE
 
     if addl_env is not None and len(addl_env) > 0:
-        addl_env = addl_env | os.environ.copy()
+        addl_env = _merge_env(addl_env)
 
     with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env) as proc:
         if proc.stdout:

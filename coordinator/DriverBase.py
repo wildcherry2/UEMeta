@@ -29,6 +29,10 @@ class DriverBase(ABC):
                             help="Additional commands to pass to the parser.")
         self.with_argument_parser(parser)
         self.args: Final[Namespace] = parser.parse_args()
+        logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
+                            handlers=[logging.StreamHandler(),
+                                      logging.FileHandler(Path().cwd() / "coordinator.log", mode='w')],
+                            force=True)
         self.branches: list[str] = list(dict.fromkeys(self.args.branches))
         self.repo_url: Final[str] = self.args.repo_url
         self.intermediate_path: Final[Path] = self.args.intermediate_directory.resolve()
