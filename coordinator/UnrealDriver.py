@@ -847,3 +847,92 @@ class UPG_413(UPG_414):
     @override
     def get_mh_cpp(self, includes: str) -> str:
         return super().get_mh_cpp(includes.replace("UObject/Object.h", "CoreUObject.h"))
+
+class UPG_412(UPG_413):
+    valid_for = {'4.12'}
+
+    @override
+    def patch_src(self):
+        super().patch_src()
+        if self.driver.platform != "win32":
+            return
+        self.patch_vs2015_comntools_env_fallback()
+
+    def patch_vs2015_comntools_env_fallback(self):
+        target_path = self.git.root / "Engine" / "Source" / "Programs" / "UnrealBuildTool" / "Windows" / "UEBuildWindows.cs"
+        if not target_path.exists():
+            log_exc(f"Failed to find UEBuildWindows.cs at {target_path}")
+
+        text = target_path.read_text(encoding="utf-8")
+        if "VS140COMNTOOLS" in text:
+            return
+
+        old = """if (VSPath == null)
+			{
+				return null;
+			}
+
+			return new DirectoryInfo(Path.Combine(VSPath, "..", "Tools")).FullName;"""
+        new = """if (VSPath == null && VSVersion == 14)
+			{
+				string EnvPath = Environment.GetEnvironmentVariable("VS140COMNTOOLS");
+				if (!String.IsNullOrEmpty(EnvPath))
+				{
+					return new DirectoryInfo(EnvPath).FullName;
+				}
+			}
+
+			if (VSPath == null)
+			{
+				return null;
+			}
+
+			return new DirectoryInfo(Path.Combine(VSPath, "..", "Tools")).FullName;"""
+        if old not in text:
+            log_exc(f"Failed to patch VS2015 common tools lookup in {target_path}")
+
+        target_path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        logging.info("Patched UBT to fall back to VS140COMNTOOLS for VS2015 common tools.")
+
+    @override
+    def run_generate_clang_database(self):
+        if self.driver.platform != "win32":
+            super().run_generate_clang_database()
+            return
+
+        import xml.etree.ElementTree as ET
+
+        xge_tasks_path = self.git.root / "Engine" / "Intermediate" / "Build" / "XGETasks.xml"
+        if not xge_tasks_path.exists():
+            log_exc(f"Failed to find XGE task graph for branch {self.branch}: {xge_tasks_path}")
+
+        root = ET.parse(xge_tasks_path).getroot()
+        metadata_task = next((task for task in root.findall(".//Task")
+                              if task.attrib.get("Caption") == "MetadataAnalysis.cpp"), None)
+        if metadata_task is None:
+            log_exc(f"Failed to find MetadataAnalysis.cpp task in {xge_tasks_path}")
+
+        tool_name = metadata_task.attrib.get("Tool")
+        tool = next((candidate for candidate in root.findall(".//Tool")
+                     if candidate.attrib.get("Name") == tool_name), None)
+        if tool is None:
+            log_exc(f"Failed to find tool {tool_name} for MetadataAnalysis.cpp in {xge_tasks_path}")
+
+        params = tool.attrib.get("Params", "").strip()
+        if len(params) == 0:
+            log_exc(f"Tool {tool_name} has no command params in {xge_tasks_path}")
+
+        compile_commands = [
+            {
+                "file": str((self.project_src / "MetadataAnalysis.cpp").resolve()),
+                "command": " ".join(["clang-cl.exe", params]),
+                "directory": metadata_task.attrib.get("WorkingDir", str((self.git.root / "Engine" / "Source").resolve()))
+            }
+        ]
+        compile_commands_path = self.git.root / "compile_commands.json"
+        with open(compile_commands_path, "w", encoding="utf-8") as compile_commands_file:
+            json.dump(compile_commands, compile_commands_file, indent=2)
+            compile_commands_file.write("\n")
+
+        self.add_parser_additional_commands()
+        logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
