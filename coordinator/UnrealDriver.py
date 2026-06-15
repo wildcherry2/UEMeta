@@ -95,10 +95,10 @@ class UnrealDriver(DriverBase):
         if self.__checkout_ran:
             return False
 
-        file = self.broken_branches[branch]
-        if file is None:
+        if branch not in self.broken_branches:
             return False
 
+        file = self.broken_branches[branch]
         target = self.git.root / "Engine" / "Build" / "Commit.gitdeps.xml"
         if not target.exists():
             logging.error(f"Failed to handle bad branch {branch}!")
