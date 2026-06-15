@@ -849,7 +849,7 @@ class UPG_413(UPG_414):
         return super().get_mh_cpp(includes.replace("UObject/Object.h", "CoreUObject.h"))
 
 class UPG_412(UPG_413):
-    valid_for = {'4.12'}
+    valid_for = {'4.12', '4.11'}
 
     @override
     def patch_src(self):
