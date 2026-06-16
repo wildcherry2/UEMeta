@@ -1226,7 +1226,7 @@ def _github_release_asset_request(url: str) -> urllib.request.Request:
         headers={
             "Authorization": f"token {token}",
             "Accept": "application/octet-stream",
-            "User-Agent": "UEMeta",
+            "User-Agent": "curl",
         },
     )
 
