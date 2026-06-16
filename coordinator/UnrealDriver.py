@@ -1,3 +1,6 @@
+import urllib.error
+import urllib.request
+import zipfile
 from re import RegexFlag
 from Git import CheckoutException
 from Git import CloneException
@@ -14,6 +17,7 @@ from typing import override, Any, cast, Final
 from DriverBase import DriverBase
 from Util import ExecuteOutputOptions, execute, log_exc
 
+_VS2013_ENV: dict[str, str] | None = None
 _VS2015_ENV: dict[str, str] | None = None
 
 # note: long paths can be an issue
@@ -36,6 +40,7 @@ class UnrealDriver(DriverBase):
         self.headers: list[str] = self.args.headers
         self.ubt_platform: str = self.args.ubt_platform
         self.ubt_config: str = self.args.ubt_config
+        self.vs2013_vcvarsall: Path | None = self.args.vs2013_vcvarsall.resolve() if self.args.vs2013_vcvarsall else None
         self.broken_branches: Final[dict[str, Path]] = _get_broken_branches()
         self.__checkout_ran = False
 
@@ -74,6 +79,9 @@ class UnrealDriver(DriverBase):
                             help="Unreal platform to use. Defaults to \"Win64\"")
         parser.add_argument("--ubt-config", type=str, default="Shipping",
                             help="Unreal configuration to use. Defaults to \"Shipping\".")
+        parser.add_argument("--vs2013-vcvarsall", type=Path,
+                            help="Path to the VS2013 vcvarsall.bat, or to a VS2013 VC directory containing it. "
+                                 "Use this when the standalone 2013 tools did not register the normal VS keys.")
 
     @override
     def on_clone_exception(self, ex: CloneException) -> None:
@@ -403,51 +411,196 @@ def _validate_msvc():
                         "create a new project, set it to C++, and it'll give you a valid download.")
     logging.info("Validated VS 2022 install!")
 
-def _get_vs2015_vcvarsall() -> Path:
-    candidates: list[Path] = []
+def _path_value(path: Path) -> str:
+    value = str(path)
+    return value if value.endswith(("\\", "/")) else value + os.sep
+
+def _env_get(env: dict[str, str], key: str) -> str | None:
+    for env_key, value in env.items():
+        if env_key.upper() == key.upper():
+            return value
+    return None
+
+def _env_set(env: dict[str, str], key: str, value: str) -> None:
+    existing_key = next((env_key for env_key in env if env_key.upper() == key.upper()), None)
+    if existing_key is not None and existing_key != key:
+        env.pop(existing_key)
+    env[key] = value
+
+def _path_from_value(value: Path | str | None) -> Path | None:
+    if value is None:
+        return None
+    if isinstance(value, Path):
+        return value
+    value = value.strip().strip('"')
+    return Path(value) if value else None
+
+def _is_installed_product(display_name: str) -> bool:
+    try:
+        import winreg
+    except ImportError:
+        return False
+
+    display_name_lower = display_name.lower()
+    uninstall_key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for access in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY, 0):
+            try:
+                with winreg.OpenKey(hive, uninstall_key, 0, winreg.KEY_READ | access) as key:
+                    for index in range(winreg.QueryInfoKey(key)[0]):
+                        try:
+                            with winreg.OpenKey(key, winreg.EnumKey(key, index)) as sub_key:
+                                value, _ = winreg.QueryValueEx(sub_key, "DisplayName")
+                        except OSError:
+                            continue
+
+                        if display_name_lower in str(value).lower():
+                            return True
+            except OSError:
+                pass
+    return False
+
+def _get_vs_vcvarsall(version: str, override: Path | None = None) -> Path:
+    labels = {"12.0": "VS2013", "14.0": "VS2015"}
+    common_tools_vars = {"12.0": "VS120COMNTOOLS", "14.0": "VS140COMNTOOLS"}
+    override_vars = {
+        "12.0": ("UEMETA_VS2013_VCVARSALL", "VS2013_VCVARSALL", "VS120VCVARSALL"),
+        "14.0": ("UEMETA_VS2015_VCVARSALL", "VS2015_VCVARSALL", "VS140VCVARSALL"),
+    }
+    override_args = {"12.0": "--vs2013-vcvarsall", "14.0": "UEMETA_VS2015_VCVARSALL"}
+    script_names = ("vcvarsall.bat", "vcbuildtools.bat")
+    label = labels.get(version, f"VS{version}")
+    vc_dir_candidates: list[Path] = []
+    script_candidates: list[Path] = []
+
+    def add_vc_dir_candidate(candidate: Path | str | None):
+        candidate = _path_from_value(candidate)
+        if candidate is not None:
+            vc_dir_candidates.append(candidate)
+
+    def add_script_candidate(candidate: Path | str | None):
+        candidate = _path_from_value(candidate)
+        if candidate is not None:
+            script_candidates.append(candidate)
+
+    def add_path_candidate(candidate: Path | str | None):
+        candidate = _path_from_value(candidate)
+        if candidate is None:
+            return
+
+        if candidate.suffix.lower() == ".bat":
+            add_script_candidate(candidate)
+            return
+
+        for script_name in script_names:
+            add_script_candidate(candidate / script_name)
+        add_vc_dir_candidate(candidate)
+
+    def add_vc_dir_from_common_tools(common_tools: str | None):
+        if common_tools:
+            add_vc_dir_candidate(Path(common_tools) / ".." / ".." / "VC")
+
+    def add_vc_dir_from_install_dir(install_dir: str | None):
+        if install_dir:
+            add_vc_dir_candidate(Path(install_dir) / ".." / ".." / "VC")
+
+    def add_vc_dir_from_vs_root(vs_root: str | None):
+        if vs_root and version in str(Path(vs_root)):
+            add_vc_dir_candidate(Path(vs_root) / "VC")
+
+    def add_existing_scripts_under(root: Path):
+        if not root.exists():
+            return
+        try:
+            for script_name in script_names:
+                for script in root.rglob(script_name):
+                    add_script_candidate(script)
+        except OSError:
+            pass
+
+    add_path_candidate(override)
+    for env_var in override_vars.get(version, ()):
+        add_path_candidate(os.environ.get(env_var))
+    add_vc_dir_from_common_tools(os.environ.get(common_tools_vars.get(version, "")))
+    add_vc_dir_from_vs_root(os.environ.get("VSINSTALLDIR"))
 
     try:
         import winreg
 
-        for access in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY, 0):
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\VisualStudio\SxS\VC7", 0,
-                                    winreg.KEY_READ | access) as key:
-                    value, _ = winreg.QueryValueEx(key, "14.0")
-                    candidates.append(Path(value))
-            except OSError:
-                pass
+        for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for access in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY, 0):
+                try:
+                    with winreg.OpenKey(hive, r"SOFTWARE\Microsoft\VisualStudio\SxS\VC7", 0,
+                                        winreg.KEY_READ | access) as key:
+                        value, _ = winreg.QueryValueEx(key, version)
+                        add_vc_dir_candidate(Path(value))
+                except OSError:
+                    pass
+
+                for product in ("VisualStudio", "VCExpress", "WDExpress"):
+                    key_root = rf"SOFTWARE\Microsoft\{product}\{version}"
+                    for key_path, value_name, add_value in (
+                            (key_root, "InstallDir", add_vc_dir_from_install_dir),
+                            (key_root + r"\Setup\VC", "ProductDir", add_vc_dir_candidate),
+                            (key_root + r"\Setup\VS", "ProductDir", add_vc_dir_from_vs_root),
+                    ):
+                        try:
+                            with winreg.OpenKey(hive, key_path, 0,
+                                                winreg.KEY_READ | access) as key:
+                                value, _ = winreg.QueryValueEx(key, value_name)
+                                add_value(value)
+                        except OSError:
+                            pass
     except ImportError:
         pass
 
-    program_files_x86 = os.environ.get("ProgramFiles(x86)")
-    if program_files_x86:
-        candidates.append(Path(program_files_x86) / "Microsoft Visual Studio 14.0" / "VC")
+    program_files_roots = [value for value in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")) if value]
+    for program_files_root in program_files_roots:
+        root = Path(program_files_root)
+        add_vc_dir_candidate(root / f"Microsoft Visual Studio {version}" / "VC")
+        add_existing_scripts_under(root / f"Microsoft Visual Studio {version}")
+        if version == "12.0":
+            add_existing_scripts_under(root / "Microsoft Visual C++ Build Tools 2013")
+            add_existing_scripts_under(root / "Microsoft Build Tools" / "12.0")
+
+    for candidate in vc_dir_candidates:
+        for script_name in script_names:
+            add_script_candidate(candidate / script_name)
 
     seen: set[Path] = set()
-    for candidate in candidates:
-        candidate = candidate.resolve()
-        if candidate in seen:
+    for candidate in script_candidates:
+        resolved_candidate = candidate.resolve()
+        if resolved_candidate in seen:
             continue
-        seen.add(candidate)
+        seen.add(resolved_candidate)
 
-        vcvarsall = candidate / "vcvarsall.bat"
-        if vcvarsall.exists():
-            return vcvarsall
+        if resolved_candidate.exists():
+            return resolved_candidate
 
-    log_exc("Failed to find the VS2015 C++ toolchain. Unreal Engine 4.13 requires "
-            "C:\\Program Files (x86)\\Microsoft Visual Studio 14.0\\VC\\vcvarsall.bat or the matching "
-            "VisualStudio\\SxS\\VC7\\14.0 registry value.")
+    msbuild_only_note = ""
+    if version == "12.0" and _is_installed_product("Microsoft Build Tools 2013"):
+        msbuild_only_note = (
+            " Microsoft Build Tools 2013 is installed, but no VS2013 C++ environment batch was found; "
+            "that package is not enough for UE 4.5 unless a separate VS2013 C++ toolchain is also installed."
+        )
 
-def _get_vs2015_env() -> dict[str, str]:
-    global _VS2015_ENV
-    if _VS2015_ENV is not None:
-        return _VS2015_ENV
+    log_exc(f"Failed to find the {label} C++ toolchain. Expected "
+            f"C:\\Program Files (x86)\\Microsoft Visual Studio {version}\\VC\\vcvarsall.bat, "
+            f"the matching VisualStudio\\SxS\\VC7\\{version} registry value, or "
+            f"{common_tools_vars.get(version, 'VSxxCOMNTOOLS')} pointing at Common7\\Tools. "
+            f"If the standalone tools are installed somewhere else, pass {override_args.get(version, 'a vcvarsall override')}."
+            f"{msbuild_only_note}")
 
-    vcvarsall = _get_vs2015_vcvarsall()
+def _get_vs2015_vcvarsall() -> Path:
+    return _get_vs_vcvarsall("14.0")
+
+def _get_vs2013_vcvarsall(override: Path | None = None) -> Path:
+    return _get_vs_vcvarsall("12.0", override)
+
+def _capture_vcvarsall_env(vcvarsall: Path, label: str, required_vars: list[str]) -> dict[str, str]:
     _, output = execute(["cmd.exe", "/d", "/c", "call", vcvarsall, "x64", "&&", "set"],
-                        success_msg=f"Captured VS2015 build environment from {vcvarsall}.",
-                        fail_msg=f"Failed to capture VS2015 build environment from {vcvarsall}!",
+                        success_msg=f"Captured {label} build environment from {vcvarsall}.",
+                        fail_msg=f"Failed to capture {label} build environment from {vcvarsall}!",
                         output=ExecuteOutputOptions.SILENT)
 
     env: dict[str, str] = {}
@@ -458,12 +611,67 @@ def _get_vs2015_env() -> dict[str, str]:
         env[key] = value
 
     env_vars = {key.upper(): value for key, value in env.items()}
-    required_vars = ["INCLUDE", "LIB", "PATH", "VS140COMNTOOLS", "VCINSTALLDIR"]
     missing = [var for var in required_vars if not env_vars.get(var)]
     if missing:
-        log_exc(f"VS2015 vcvarsall did not provide required environment variables: {', '.join(missing)}")
+        log_exc(f"{label} vcvarsall did not provide required environment variables: {', '.join(missing)}")
 
-    _VS2015_ENV = env
+    return env
+
+def _derive_vc_dir_from_env(vcvarsall: Path, env: dict[str, str]) -> Path | None:
+    vc_install_dir = _env_get(env, "VCINSTALLDIR")
+    if vc_install_dir:
+        return Path(vc_install_dir)
+
+    for parent in vcvarsall.parents:
+        if parent.name.lower() == "vc":
+            return parent
+    return None
+
+def _ensure_vs_common_tools_env(version: str, vcvarsall: Path, env: dict[str, str]) -> None:
+    common_tools_vars = {"12.0": "VS120COMNTOOLS", "14.0": "VS140COMNTOOLS"}
+    common_tools_var = common_tools_vars[version]
+    if _env_get(env, common_tools_var):
+        return
+
+    vc_dir = _derive_vc_dir_from_env(vcvarsall, env)
+    if vc_dir is None:
+        return
+
+    if not _env_get(env, "VCINSTALLDIR"):
+        _env_set(env, "VCINSTALLDIR", _path_value(vc_dir))
+
+    if vc_dir.name.lower() == "vc":
+        vs_root = vc_dir.parent
+        if not _env_get(env, "VSINSTALLDIR"):
+            _env_set(env, "VSINSTALLDIR", _path_value(vs_root))
+        _env_set(env, common_tools_var, _path_value(vs_root / "Common7" / "Tools"))
+
+def _get_vs2013_env(vs2013_vcvarsall: Path | None = None) -> dict[str, str]:
+    global _VS2013_ENV
+    if _VS2013_ENV is not None:
+        return _VS2013_ENV
+
+    vcvarsall = _get_vs2013_vcvarsall(vs2013_vcvarsall)
+    _VS2013_ENV = _capture_vcvarsall_env(
+        vcvarsall,
+        "VS2013",
+        ["INCLUDE", "LIB", "PATH", "VCINSTALLDIR"]
+    )
+    _ensure_vs_common_tools_env("12.0", vcvarsall, _VS2013_ENV)
+    if not _env_get(_VS2013_ENV, "VS120COMNTOOLS"):
+        log_exc("VS2013 environment did not provide enough information to synthesize VS120COMNTOOLS.")
+    return _VS2013_ENV
+
+def _get_vs2015_env() -> dict[str, str]:
+    global _VS2015_ENV
+    if _VS2015_ENV is not None:
+        return _VS2015_ENV
+
+    _VS2015_ENV = _capture_vcvarsall_env(
+        _get_vs2015_vcvarsall(),
+        "VS2015",
+        ["INCLUDE", "LIB", "PATH", "VS140COMNTOOLS", "VCINSTALLDIR"]
+    )
     return _VS2015_ENV
 
 class UPG_54(DefaultUnrealProjectGenerator):
@@ -937,3 +1145,163 @@ class UPG_412(UPG_413):
 
         self.add_parser_additional_commands()
         logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
+
+class UPG_Unsupported(DefaultUnrealProjectGenerator):
+    valid_for = {"4.10", "4.9", "4.8", "4.7", "4.6"}
+
+    def __init__(self, branch: str, driver: UnrealDriver):
+        super().__init__(branch, driver)
+        raise Exception(f"Version {branch} not supported!")
+
+DEP_MAP = {
+    "4.5.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.5.1-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.5.1-release/Required_2of2.zip"
+    ),
+    "4.5": (
+        "https://api.github.com/repos/EpicGames/UnrealEngine/releases/assets/106747982",
+        "https://api.github.com/repos/EpicGames/UnrealEngine/releases/assets/266332"
+    ),
+    "4.4.3": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.3-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.3-release/Required_2of2.zip"
+    ),
+    "4.4.2": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.2-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.2-release/Required_2of2.zip"
+    ),
+    "4.4.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.1-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.1-release/Required_2of2.zip"
+    ),
+    "4.4": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.0-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.4.0-release/Required_2of2.zip"
+    ),
+    "4.3.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.3.1-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.3.1-release/Required_2of2.zip"
+    ),
+    "4.3": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.3.0-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.3.0-release/Required_2of2.zip"
+    ),
+    "4.2.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.2.1-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.2.1-release/Required_2of2.zip"
+    ),
+    "4.2": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.2.0-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.2.0-release/Required_2of2.zip"
+    ),
+    "4.1.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.1.1-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.1.1-release/Required_2of2.zip"
+    ),
+    "4.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.1.0-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.1.0-release/Required_2of2.zip"
+    ),
+    "4.0.2": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.0.2-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.0.2-release/Required_2of2.zip"
+    ),
+    "4.0.1": (
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.0.1-release/Required_1of2.zip",
+        "https://github.com/EpicGames/UnrealEngine/releases/download/4.0.1-release/Required_2of2.zip"
+    ),
+}
+def _github_pat_path() -> Path:
+    for candidate in (Path.cwd() / "key.txt", Path(__file__).resolve().with_name("key.txt")):
+        if candidate.exists():
+            return candidate
+    log_exc("Failed to find key.txt containing a GitHub PAT.")
+
+def _github_release_asset_request(url: str) -> urllib.request.Request:
+    token = _github_pat_path().read_text(encoding="utf-8").strip()
+    if len(token) == 0:
+        log_exc("key.txt exists, but it does not contain a GitHub PAT.")
+    return urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"token {token}",
+            "Accept": "application/octet-stream",
+            "User-Agent": "UEMeta",
+        },
+    )
+
+def _extract_zip(zip_path: Path, destination: Path, ignore_bad_crc: bool = False):
+    with zipfile.ZipFile(zip_path) as zip_:
+        for member in zip_.infolist():
+            member_name = member.filename.replace("\\", "/")
+            try:
+                zip_.extract(member, destination)
+            except zipfile.BadZipFile as ex:
+                if ignore_bad_crc and "Bad CRC-32" in str(ex):
+                    logging.warning(f"Ignoring bad CRC while extracting {zip_path.name}; keeping extracted bytes for {member_name}")
+                    continue
+                raise
+
+def _dependency_zip_cache_path(cache_root: Path, part: int, total_parts: int) -> Path:
+    return cache_root / f"Required_{part}of{total_parts}.zip"
+
+def _ensure_release_asset_cached(url: str, zip_path: Path):
+    if zip_path.exists():
+        if zipfile.is_zipfile(zip_path):
+            logging.info(f"Using cached Unreal dependency zip: {zip_path}")
+            return
+        logging.warning(f"Cached Unreal dependency zip is invalid and will be replaced: {zip_path}")
+        zip_path.unlink()
+
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    download_path = zip_path.with_name(zip_path.name + ".download")
+    try:
+        with urllib.request.urlopen(_github_release_asset_request(url)) as response:
+            with open(download_path, "wb") as download_file:
+                shutil.copyfileobj(response, download_file)
+
+        if not zipfile.is_zipfile(download_path):
+            log_exc(f"Downloaded Unreal dependency is not a zip file: {url}")
+
+        download_path.replace(zip_path)
+        logging.info(f"Cached Unreal dependency zip: {zip_path}")
+    except urllib.error.HTTPError as ex:
+        log_exc(
+            f"Failed to download Unreal dependency zip {url}: GitHub returned HTTP {ex.code}. "
+            "Check that key.txt contains a PAT with access to EpicGames/UnrealEngine."
+        )
+    except urllib.error.URLError as ex:
+        log_exc(f"Failed to download Unreal dependency zip {url}: {ex.reason}")
+    finally:
+        if download_path.exists():
+            download_path.unlink(missing_ok=True)
+
+def _download_and_extract_release_asset(url: str, zip_path: Path, destination: Path, ignore_bad_crc: bool = False):
+    try:
+        _ensure_release_asset_cached(url, zip_path)
+        _extract_zip(zip_path, destination, ignore_bad_crc)
+    except zipfile.BadZipFile as ex:
+        log_exc(f"Failed to extract Unreal dependency zip {zip_path}: {ex}")
+
+class UPG_45(UPG_412): # todo singlefile arg may not be working
+    valid_for = {"4.5"}
+
+    @override
+    def get_env(self):
+        env = DefaultUnrealProjectGenerator.get_env(self)
+        if self.driver.platform == "win32":
+            env |= _get_vs2013_env(self.driver.vs2013_vcvarsall)
+        return env
+
+    @override
+    def run_setup(self):
+        canonical_branch = _canonical_branch(self.branch)
+        deps = DEP_MAP[canonical_branch]
+        cache_root = self.driver.intermediate_path / "zips" / canonical_branch
+        ignore_bad_crc = True
+        logging.info(f"Downloading and unzipping dependencies...")
+        for index, url in enumerate(deps, start=1):
+            zip_path = _dependency_zip_cache_path(cache_root, index, len(deps))
+            _download_and_extract_release_asset(url, zip_path, self.git.root, ignore_bad_crc)
+
+        logging.info(f"Dependencies unzipped!")
