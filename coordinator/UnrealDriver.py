@@ -1256,8 +1256,8 @@ def _download_and_extract_release_asset(url: str, zip_path: Path, destination: P
     except zipfile.BadZipFile as ex:
         log_exc(f"Failed to extract Unreal dependency zip {zip_path}: {ex}")
 
-class UPG_45(UPG_412): # todo singlefile arg may not be working
-    valid_for = {"4.5", "4.4"}
+class UPG_45(UPG_412):
+    valid_for = {"4.5"}
 
     @override
     def get_env(self):
@@ -1282,3 +1282,17 @@ class UPG_45(UPG_412): # todo singlefile arg may not be working
     @override
     def patch_src(self):
         pass
+
+class UPG_44(UPG_45):
+    valid_for = {'4.4', '4.3', '4.2', '4.1'}
+
+    @override
+    def get_uproject(self) -> dict[str, Any]:
+        uproject = super().get_uproject()
+        uproject["Plugins"] = [
+            {
+                "Name": "OculusRift",
+                "Enabled": False
+            }
+        ]
+        return uproject
