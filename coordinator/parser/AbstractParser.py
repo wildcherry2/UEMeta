@@ -1,4 +1,4 @@
-from Util import assert_file_exists
+from GlobalUtil import assert_file_exists
 import argparse
 import logging
 import sys
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final, Literal, cast
 
 from Git import Git
-from Util import log_exc
+from GlobalUtil import log_exc
 
 class AbstractParser(ABC):
     def __init__(self):

@@ -8,7 +8,7 @@ from pathlib import Path
 from re import RegexFlag
 from typing import final, Iterable, cast
 
-from Util import ExecuteOutputOptions, execute, ExecuteException
+from GlobalUtil import ExecuteOutputOptions, execute, ExecuteException
 
 _REMOTE_LINE = re.compile(r"^(?P<remote_name>\S+)\s+(?P<remote_url>.+?)\s+\((?P<supported_action>fetch|push)\)$")
 

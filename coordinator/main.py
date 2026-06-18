@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from UnrealParser import UnrealParser
+from unreal.UnrealParser import UnrealParser
 
 def main():
     parser = argparse.ArgumentParser()

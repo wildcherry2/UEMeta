@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import override, Any, cast, Final
 
 from parser.AbstractCppParser import AbstractCppParser
-from Util import ExecuteOutputOptions, execute, log_exc
+from GlobalUtil import ExecuteOutputOptions, execute, log_exc
 
 _VS2013_ENV: dict[str, str] | None = None
 _VS2015_ENV: dict[str, str] | None = None
