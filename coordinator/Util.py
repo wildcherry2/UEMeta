@@ -100,7 +100,7 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str] | list[str], *
 
     return return_code, out
 
-def validate_file_exists(path_str: str | PathLike[str] | Path) -> Path:
+def assert_file_exists(path_str: str | PathLike[str] | Path) -> Path:
     as_path = Path(path_str)
     if as_path.exists():
         return as_path

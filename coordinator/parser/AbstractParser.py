@@ -1,4 +1,4 @@
-from Util import validate_file_exists
+from Util import assert_file_exists
 import argparse
 import logging
 import sys
@@ -21,7 +21,7 @@ class AbstractParser(ABC):
                             help="The branches to generate wrappers for. Must exist and be accessible from the --repo-url.")
         parser.add_argument("--intermediate-directory", type=Path, required=True,
                             help="The directory where intermediate files are stored.")
-        parser.add_argument("--parser-path", type=validate_file_exists, required=True,
+        parser.add_argument("--parser-path", type=assert_file_exists, required=True,
                             help="The path to the parser executable.")
         parser.add_argument("--parser-additional-commands", type=str, nargs='+',
                             help="Additional commands to pass to the parser.")
