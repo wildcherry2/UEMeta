@@ -34,7 +34,7 @@ class ExecuteException(Exception):
         self.expected_return_code = expected_return_code
         self.stdout = stdout
 
-def _merge_env(addl_env: dict[str, str]) -> dict[str, str]:
+def merge_env(addl_env: dict[str, str]) -> dict[str, str]:
     env = os.environ.copy()
     if os.name != "nt":
         return env | addl_env
@@ -65,7 +65,7 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str] | list[str], *
     use_file = (not use_logger) and output & ExecuteOutputOptions.FILE
 
     if addl_env is not None and len(addl_env) > 0:
-        addl_env = _merge_env(addl_env)
+        addl_env = merge_env(addl_env)
 
     with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env) as proc:
         if proc.stdout:

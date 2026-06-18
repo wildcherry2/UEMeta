@@ -64,7 +64,11 @@ class DriverBase(ABC):
     def checkout(self, branch: str, prevent_checkout_hooks = False):
         self.git.checkout(branch, prevent_hooks=prevent_checkout_hooks, force=True)
 
-    def parse(self, branch: str, target_cpp: Path, cc: Path, parser_working_dir: Path):
+    def parse(self, branch: str):
+        cc = self.make_compile_commands(branch)
+        target_cpp = self.get_target_cpp()
+        parser_working_dir = self.parser_out / branch
+        parser_working_dir.mkdir(exist_ok=True, parents=True)
         execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir,
                                         self.parser_additional_commands),
                         success_msg=f"Parsing complete for branch {branch}",
@@ -78,11 +82,7 @@ class DriverBase(ABC):
         logging.info("Starting driver!")
         for branch in self.branches:
             self.checkout(branch)
-            cc = self.make_compile_commands(branch)
-            target_cpp = self.get_target_cpp()
-            parser_working_dir = self.parser_out / branch
-            parser_working_dir.mkdir(exist_ok=True, parents=True)
-            self.parse(branch, target_cpp, cc, parser_working_dir)
+            self.parse(branch)
 
 def _validate_file_exists(path_str: str):
     as_path = Path(path_str)
