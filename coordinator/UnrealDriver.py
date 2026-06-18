@@ -84,39 +84,6 @@ class UnrealDriver(DriverBase):
                             help="Path to the VS2013 vcvarsall.bat, or to a VS2013 VC directory containing it. "
                                  "Use this when the standalone 2013 tools did not register the normal VS keys.")
 
-    @override
-    def on_clone_exception(self, ex: CloneException) -> None:
-        if not self.__handle_git_ex(ex.branch):
-            super().on_clone_exception(ex)
-
-
-    @override
-    def on_checkout_exception(self, ex: CheckoutException) -> None:
-        if not self.__handle_git_ex(ex.branch):
-            super().on_checkout_exception(ex)
-
-    @override
-    def on_before_next_checkout(self, branch: str):
-        super().on_before_next_checkout(branch)
-        self.__checkout_ran = False
-
-    def __handle_git_ex(self, branch: str) -> bool:
-        if self.__checkout_ran:
-            return False
-
-        if branch not in self.broken_branches:
-            logging.error(f"Failed to handle bad branch {branch}!")
-            return False
-
-        file = self.broken_branches[branch]
-        target = self.git.root / "Engine" / "Build" / "Commit.gitdeps.xml"
-        if not target.exists():
-            logging.error(f"Failed to handle bad branch {branch}!")
-            return False
-
-        shutil.copy2(file, target)
-        return True
-
 
 def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
     canonical = _canonical_branch(branch)

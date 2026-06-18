@@ -27,6 +27,7 @@ class DriverBase(ABC):
                             help="The path to the parser executable.")
         parser.add_argument("--parser-additional-commands", type=str, nargs='+',
                             help="Additional commands to pass to the parser.")
+        parser.add_argument("--prevent-checkout-hooks", type=bool, default=True)
         self.with_argument_parser(parser)
         self.args: Final[Namespace] = parser.parse_args()
         logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
@@ -42,6 +43,7 @@ class DriverBase(ABC):
         self.parser_out: Final[Path] = self.intermediate_path / "parser_output"
         self.parser_additional_commands: Final[list[str]] = self.args.parser_additional_commands if self.args.parser_additional_commands is not None else list()
         self.platform: Final[Literal["win32", "darwin", "linux"]] = cast(Literal["win32", "darwin", "linux"], sys.platform)
+        self.prevent_checkout_hooks: Final[bool] = self.args.prevent_checkout_hooks
         self.git = Git(self.intermediate_path, self.repo_url)
         try:
             self.intermediate_path.mkdir(exist_ok=True, parents=True)
@@ -61,89 +63,29 @@ class DriverBase(ABC):
     def with_argument_parser(self, parser: argparse.ArgumentParser):
         pass
 
+    def checkout(self, branch: str):
+        self.git.checkout(branch, prevent_hooks=self.prevent_checkout_hooks, force=True)
+
+    def parse(self, branch: str, target_cpp: Path, cc: Path, parser_working_dir: Path):
+        execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir,
+                                        self.parser_additional_commands),
+                        success_msg=f"Parsing complete for branch {branch}",
+                        fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent,
+                        output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
+
     @final
     def start(self):
         if self.__started:
             log_exc("Failed to start driver: already started!")
         self.__started = True
-        self.on_before_init_repo()
         logging.info("Starting driver!")
-        logging.info(f"Asserting that branches {self.branches} exist at the remote url {self.repo_url}...")
-        Git.assert_branches_exist(self.repo_url, self.branches)
-        initial_branch: Optional[str] = None
-        try:
-            self.git.initialize(self.branches)
-            initial_branch = self.git.current_branch()
-        except CloneException as e:
-            self.on_clone_exception(e)
-        except CheckoutException as e:
-            self.on_checkout_exception(e)
-
-        self.on_after_init_repo(self.git.current_branch())
-
-        def do_parse(in_branch: str):
-            logging.info(f"Creating compile_commands.json for branch {in_branch}...")
-            cc = self.make_compile_commands(in_branch)
-            target_cpp = self.get_target_cpp()
-            parser_working_dir = self.parser_out / in_branch
-            parser_working_dir.mkdir(exist_ok=True, parents=True)
-            self.on_before_parse(in_branch)
-            logging.info(f"Parsing branch {in_branch}...")
-            execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir, self.parser_additional_commands),
-                    success_msg=f"Parsing complete for branch {in_branch}",
-                    fail_msg=f"Parsing failed for branch {in_branch}", cwd=self.parser_path.parent,
-                    output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
-            self.on_after_parse(in_branch)
-
-        initial_branch = self.git.current_branch() if initial_branch is None else initial_branch
-        do_parse(initial_branch)
-
         for branch in self.branches:
-            self.on_before_next_checkout(branch)
-            logging.info(f"Resetting repo to a clean state and checking out next branch {branch}...")
-            self.git.reset()
-            try:
-                self.git.checkout(branch)
-            except CheckoutException as e:
-                self.on_checkout_exception(e)
-            self.on_after_next_checkout(branch)
-            do_parse(branch)
-
-    def on_before_init_repo(self): #todo simplification: make each step an overridable function instead
-        pass
-
-    def on_after_init_repo(self, branch: str):
-        pass
-
-    def on_before_next_checkout(self, branch: str):
-        pass
-
-    def on_clone_exception(self, ex: CloneException) -> None:
-        raise ex
-
-    def on_checkout_exception(self, ex: CheckoutException) -> None:
-        raise ex
-
-    def on_after_next_checkout(self, branch: str):
-        pass
-
-    def on_before_parse(self, branch: str):
-        pass
-
-    def on_after_parse(self, branch: str):
-        pass
-
-    def on_before_union(self):
-        pass
-
-    def on_after_union(self):
-        pass
-
-    def on_before_generation(self):
-        pass
-
-    def on_after_generation(self):
-        pass
+            self.checkout(branch)
+            cc = self.make_compile_commands(branch)
+            target_cpp = self.get_target_cpp()
+            parser_working_dir = self.parser_out / branch
+            parser_working_dir.mkdir(exist_ok=True, parents=True)
+            self.parse(branch, target_cpp, cc, parser_working_dir)
 
 def _validate_file_exists(path_str: str):
     as_path = Path(path_str)
