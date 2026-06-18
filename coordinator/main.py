@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-import UnrealDriver
+from UnrealParser import UnrealParser
 
 def main():
     parser = argparse.ArgumentParser()
@@ -10,7 +10,7 @@ def main():
     sys.argv = [sys.argv[0], *remaining_args]
     match args.mode:
         case "unreal":
-            driver = UnrealDriver.UnrealDriver()
+            driver = UnrealParser()
             driver.start()
         case _:
             raise Exception("Unknown mode!")

@@ -3,16 +3,15 @@ import logging
 import sys
 from abc import abstractmethod, ABC
 from argparse import Namespace
-from functools import partial
 from os import PathLike
 from pathlib import Path
-from typing import Final, Literal, cast, final, Union, Optional
+from typing import Final, Literal, cast
 
-from Git import Git, CloneException, CheckoutException
+from Git import Git
 from Util import log_exc, execute, ExecuteOutputOptions
 
 
-class DriverBase(ABC):
+class AbstractParser(ABC):
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument("--repo-url", type=Git.assert_remote_exists_with_string_return, required=True,

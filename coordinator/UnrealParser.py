@@ -15,14 +15,14 @@ from os import PathLike
 from pathlib import Path
 from typing import override, Any, cast, Final
 
-from DriverBase import DriverBase
+from AbstractParser import AbstractParser
 from Util import ExecuteOutputOptions, execute, log_exc
 
 _VS2013_ENV: dict[str, str] | None = None
 _VS2015_ENV: dict[str, str] | None = None
 
-# note: long paths can be an issue
-class UnrealDriver(DriverBase):
+# note: long paths can be an issue regardless of git/windows configs
+class UnrealParser(AbstractParser):
     def __init__(self):
         super().__init__()
         self.project_generator: DefaultUnrealProjectGenerator | None = None
@@ -100,7 +100,7 @@ class UnrealDriver(DriverBase):
         shutil.copy2(file, target)
 
 
-def _make_generator(branch: str, driver: UnrealDriver) -> DefaultUnrealProjectGenerator:
+def _make_generator(branch: str, driver: UnrealParser) -> DefaultUnrealProjectGenerator:
     canonical = _canonical_branch(branch)
     def gen_helper(cls: type[DefaultUnrealProjectGenerator]) -> DefaultUnrealProjectGenerator | None:
         subclasses: list[type[DefaultUnrealProjectGenerator]] = cls.__subclasses__()
@@ -151,7 +151,7 @@ def _canonical_branch(branch: str):
 
 class DefaultUnrealProjectGenerator:
     valid_for: set[str] = set()
-    def __init__(self, branch: str, driver: UnrealDriver):
+    def __init__(self, branch: str, driver: UnrealParser):
         super().__init__()
         self.branch = branch
         self.driver = driver
@@ -1132,7 +1132,7 @@ class UPG_412(UPG_413):
 class UPG_Unsupported(DefaultUnrealProjectGenerator):
     valid_for = {"4.10", "4.9", "4.8", "4.7", "4.6"}
 
-    def __init__(self, branch: str, driver: UnrealDriver):
+    def __init__(self, branch: str, driver: UnrealParser):
         super().__init__(branch, driver)
         raise Exception(f"Version {branch} not supported!")
 
