@@ -1,15 +1,14 @@
+from Util import validate_file_exists
 import argparse
 import logging
 import sys
 from abc import abstractmethod, ABC
 from argparse import Namespace
-from os import PathLike
 from pathlib import Path
 from typing import Final, Literal, cast
 
 from Git import Git
-from Util import log_exc, execute, ExecuteOutputOptions
-
+from Util import log_exc
 
 class AbstractParser(ABC):
     def __init__(self):
@@ -22,7 +21,7 @@ class AbstractParser(ABC):
                             help="The branches to generate wrappers for. Must exist and be accessible from the --repo-url.")
         parser.add_argument("--intermediate-directory", type=Path, required=True,
                             help="The directory where intermediate files are stored.")
-        parser.add_argument("--parser-path", type=_validate_file_exists, required=True,
+        parser.add_argument("--parser-path", type=validate_file_exists, required=True,
                             help="The path to the parser executable.")
         parser.add_argument("--parser-additional-commands", type=str, nargs='+',
                             help="Additional commands to pass to the parser.")
@@ -49,30 +48,15 @@ class AbstractParser(ABC):
 
         self.__started = False
 
-    @abstractmethod
-    def make_compile_commands(self, branch: str) -> Path:
-        pass
-
-    @abstractmethod
-    def get_target_cpp(self) -> Path:
-        pass
-
     def with_argument_parser(self, parser: argparse.ArgumentParser):
         pass
 
     def checkout(self, branch: str, prevent_checkout_hooks = False):
         self.git.checkout(branch, prevent_hooks=prevent_checkout_hooks, force=True)
 
+    @abstractmethod
     def parse(self, branch: str):
-        cc = self.make_compile_commands(branch)
-        target_cpp = self.get_target_cpp()
-        parser_working_dir = self.parser_out / branch
-        parser_working_dir.mkdir(exist_ok=True, parents=True)
-        execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir,
-                                        self.parser_additional_commands),
-                        success_msg=f"Parsing complete for branch {branch}",
-                        fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent,
-                        output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
+        pass
 
     def start(self):
         if self.__started:
@@ -82,14 +66,3 @@ class AbstractParser(ABC):
         for branch in self.branches:
             self.checkout(branch)
             self.parse(branch)
-
-def _validate_file_exists(path_str: str):
-    as_path = Path(path_str)
-    if as_path.exists():
-        return as_path
-    log_exc(f"{path_str} does not exist!", argparse.ArgumentTypeError)
-
-def _generate_parse_command(parser_path: Path, target_cpp: Path, cc: Path, out: Path, addl_cmds: list[str])-> list[str | PathLike]:
-    return [parser_path, "--file", target_cpp, "--compile-commands", cc,
-            "--out", out, "--split-strategy", "decl", *addl_cmds]
-

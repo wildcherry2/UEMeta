@@ -2,8 +2,6 @@ import urllib.error
 import urllib.request
 import zipfile
 from re import RegexFlag
-from Git import CheckoutException
-from Git import CloneException
 import xml.etree.ElementTree as ET
 import argparse
 import json
@@ -15,14 +13,14 @@ from os import PathLike
 from pathlib import Path
 from typing import override, Any, cast, Final
 
-from AbstractParser import AbstractParser
+from parser.AbstractCppParser import AbstractCppParser
 from Util import ExecuteOutputOptions, execute, log_exc
 
 _VS2013_ENV: dict[str, str] | None = None
 _VS2015_ENV: dict[str, str] | None = None
 
 # note: long paths can be an issue regardless of git/windows configs
-class UnrealParser(AbstractParser):
+class UnrealParser(AbstractCppParser):
     def __init__(self):
         super().__init__()
         self.project_generator: DefaultUnrealProjectGenerator | None = None

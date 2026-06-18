@@ -1,3 +1,5 @@
+import argparse
+from pathlib import Path
 import os
 import logging
 import subprocess
@@ -97,3 +99,9 @@ def execute(argv: list[str | PathLike[str]] | str | PathLike[str] | list[str], *
             raise raise_on_error(return_code, expected_ret, out)
 
     return return_code, out
+
+def validate_file_exists(path_str: str | PathLike[str] | Path) -> Path:
+    as_path = Path(path_str)
+    if as_path.exists():
+        return as_path
+    log_exc(f"{as_path} does not exist!", argparse.ArgumentTypeError)
