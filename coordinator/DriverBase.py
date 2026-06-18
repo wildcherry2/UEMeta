@@ -27,7 +27,6 @@ class DriverBase(ABC):
                             help="The path to the parser executable.")
         parser.add_argument("--parser-additional-commands", type=str, nargs='+',
                             help="Additional commands to pass to the parser.")
-        parser.add_argument("--prevent-checkout-hooks", type=bool, default=True)
         self.with_argument_parser(parser)
         self.args: Final[Namespace] = parser.parse_args()
         logging.basicConfig(level=logging.INFO, format='[%(levelname)s] [%(asctime)s] %(message)s',
@@ -43,7 +42,6 @@ class DriverBase(ABC):
         self.parser_out: Final[Path] = self.intermediate_path / "parser_output"
         self.parser_additional_commands: Final[list[str]] = self.args.parser_additional_commands if self.args.parser_additional_commands is not None else list()
         self.platform: Final[Literal["win32", "darwin", "linux"]] = cast(Literal["win32", "darwin", "linux"], sys.platform)
-        self.prevent_checkout_hooks: Final[bool] = self.args.prevent_checkout_hooks
         self.git = Git(self.intermediate_path, self.repo_url)
         try:
             self.intermediate_path.mkdir(exist_ok=True, parents=True)
@@ -63,8 +61,8 @@ class DriverBase(ABC):
     def with_argument_parser(self, parser: argparse.ArgumentParser):
         pass
 
-    def checkout(self, branch: str):
-        self.git.checkout(branch, prevent_hooks=self.prevent_checkout_hooks, force=True)
+    def checkout(self, branch: str, prevent_checkout_hooks = False):
+        self.git.checkout(branch, prevent_hooks=prevent_checkout_hooks, force=True)
 
     def parse(self, branch: str, target_cpp: Path, cc: Path, parser_working_dir: Path):
         execute(_generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir,
@@ -73,7 +71,6 @@ class DriverBase(ABC):
                         fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent,
                         output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
-    @final
     def start(self):
         if self.__started:
             log_exc("Failed to start driver: already started!")
