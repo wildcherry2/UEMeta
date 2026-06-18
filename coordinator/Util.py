@@ -48,7 +48,7 @@ def _merge_env(addl_env: dict[str, str]) -> dict[str, str]:
         env_keys[key.upper()] = key
     return env
 
-def execute(argv: list[str | PathLike[str]] | str | PathLike[str], *,
+def execute(argv: list[str | PathLike[str]] | str | PathLike[str] | list[str], *,
             success_msg: Optional[str] = None,
             fail_msg: Optional[str] = None,
             expected_ret = 0,
