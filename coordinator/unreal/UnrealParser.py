@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+import zipfile
 from os import PathLike
 from pathlib import Path
 from typing import override, Any, cast, Final
@@ -13,7 +14,8 @@ from parser.AbstractCppParser import AbstractCppParser
 from GlobalUtil import ExecuteOutputOptions, execute, log_exc
 from unreal.Constants import DEP_MAP
 from unreal.Util import (canonical_branch, dependency_zip_cache_path, download_and_extract_release_asset,
-                         get_broken_branches, get_vs2013_env, get_vs2015_env, validate_msvc)
+                         env_get, env_set, get_broken_branches, get_vs2013_env, get_vs2015_env, path_from_value,
+                         path_value, validate_msvc)
 
 # note: long paths can be an issue regardless of git/windows configs
 class UnrealParser(AbstractCppParser):
@@ -831,11 +833,206 @@ class UPG_412(UPG_413):
         logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
 
 class UPG_Unsupported(DefaultUnrealProjectGenerator):
-    valid_for = {"4.10", "4.9", "4.8", "4.7", "4.6"}
+    valid_for = { "4.9", "4.8", "4.7", "4.6"}
 
     def __init__(self, branch: str, driver: UnrealParser):
         super().__init__(branch, driver)
         raise Exception(f"Version {branch} not supported!")
+
+class UPG_410(UPG_412):
+    valid_for = {"4.10"}
+    _max_windows_sdk_version = (10, 0, 19041, 0)
+    _sdk_dir_env = "UEMETA_WINDOWS_SDK_10_DIR"
+    _sdk_version_env = "UEMETA_WINDOWS_SDK_10_VERSION"
+
+    @override
+    def run_setup(self):
+        setup_path: Path = Path.cwd() / "external" / "UE_4.10_setup.zip"
+        if not setup_path.exists():
+            log_exc(f"Failed to find UE_4.10_setup.zip in {setup_path}!")
+
+        # pyrefly: ignore [bad-argument-type]
+        with zipfile.ZipFile(setup_path, 'r') as zip_file:
+            zip_file.extractall(self.git.root)
+
+    @override
+    def patch_src(self):
+        if self.driver.platform != "win32":
+            return
+        self.patch_vcenv_windows_sdk_override()
+        self.patch_buildconfiguration_disable_pch()
+        self.patch_icu_build_static_libs()
+
+    @override
+    def get_env(self):
+        env = super().get_env()
+        if self.driver.platform == "win32":
+            self.pin_windows_sdk_env(env)
+        return env
+
+    @override
+    def get_ubt_args(self, working_dir: Path):
+        args = super().get_ubt_args(working_dir)
+        args.extend(["-NoPCH", "-NoSharedPCH"])
+        return args
+
+    @override
+    def run_ubt(self):
+        if self.driver.platform == "win32":
+            uht_intermediate = self.engine_path("Intermediate", "Build", self.driver.ubt_platform, "UnrealHeaderTool")
+            if uht_intermediate.exists():
+                shutil.rmtree(uht_intermediate)
+                logging.info(f"Removed stale UE 4.10 UnrealHeaderTool intermediate directory: {uht_intermediate}")
+        super().run_ubt()
+
+    def engine_path(self, *parts: str) -> Path:
+        return self.git.root / "Engine" / Path(*parts)
+
+    def pin_windows_sdk_env(self, env: dict[str, str]):
+        sdk_root_candidates: list[Path | str | None] = [
+            env_get(env, "UniversalCRTSdkDir"),
+            os.environ.get("UniversalCRTSdkDir"),
+            env_get(env, "WindowsSdkDir"),
+            os.environ.get("WindowsSdkDir"),
+        ]
+        if program_files_x86 := os.environ.get("ProgramFiles(x86)"):
+            sdk_root_candidates.append(Path(program_files_x86) / "Windows Kits" / "10")
+
+        sdk_root = next((path for path in map(path_from_value, sdk_root_candidates) if path is not None and path.exists()), None)
+        if sdk_root is None:
+            log_exc("Failed to find Windows 10 SDK root for UE 4.10.")
+
+        include_root = sdk_root / "Include"
+        if not include_root.exists():
+            log_exc(f"Failed to find Windows SDK Include directory at {include_root}")
+
+        def sdk_version_key(path: Path) -> tuple[int, ...] | None:
+            return tuple(int(part) for part in path.name.split(".")) if re.fullmatch(r"\d+(?:\.\d+)*", path.name) else None
+
+        candidates = [
+            (version, candidate.name)
+            for candidate in include_root.iterdir()
+            if candidate.is_dir()
+            and (version := sdk_version_key(candidate)) is not None
+            and version <= self._max_windows_sdk_version
+            and (candidate / "ucrt").exists()
+        ]
+        if len(candidates) == 0:
+            max_version = ".".join(str(part) for part in self._max_windows_sdk_version)
+            log_exc(f"Failed to find a Windows 10 SDK version at or below {max_version} under {include_root}")
+
+        sdk_version = max(candidates)[1]
+        sdk_lib_arch = "x64" if self.driver.ubt_platform.lower() == "win64" else "x86"
+        sdk_paths = {
+            "INCLUDE": [sdk_root / "Include" / sdk_version / name for name in ("ucrt", "shared", "um", "winrt")],
+            "LIB": [sdk_root / "Lib" / sdk_version / name / sdk_lib_arch for name in ("ucrt", "um")],
+        }
+        missing_paths = [path for paths in sdk_paths.values() for path in paths if not path.exists()]
+        if len(missing_paths) > 0:
+            log_exc(f"Windows SDK {sdk_version} is missing required paths: {', '.join(str(path) for path in missing_paths)}")
+
+        sdk_root_value = path_value(sdk_root)
+        for key, value in {
+            "WindowsSdkDir": sdk_root_value,
+            "UniversalCRTSdkDir": sdk_root_value,
+            "WindowsSDKVersion": sdk_version + "\\",
+            "UCRTVersion": sdk_version,
+            self._sdk_dir_env: sdk_root_value,
+            self._sdk_version_env: sdk_version,
+        }.items():
+            env_set(env, key, value)
+
+        for key, paths in sdk_paths.items():
+            current_value = env_get(env, key)
+            env_set(env, key, os.pathsep.join([str(path) for path in paths] + ([current_value] if current_value else [])))
+        libpath_value = env_get(env, "LIBPATH")
+        if libpath_value is not None:
+            env_set(env, "LIBPATH", os.pathsep.join([str(path) for path in sdk_paths["LIB"]] + ([libpath_value] if libpath_value else [])))
+
+        logging.info(f"Pinned UE 4.10 Windows SDK environment to {sdk_version}.")
+
+    @staticmethod
+    def patch_text_file(target_path: Path, sentinel: str, old: str, new: str, description: str):
+        if not target_path.exists():
+            log_exc(f"Failed to find {target_path.name} at {target_path}")
+
+        text = target_path.read_text(encoding="utf-8")
+        if sentinel in text:
+            return
+        if old not in text:
+            log_exc(f"Failed to patch UE 4.10 {description} in {target_path}")
+
+        target_path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        logging.info(f"Patched UE 4.10 {description}.")
+
+    def patch_vcenv_windows_sdk_override(self):
+        old = """if (Platform == CPPTargetPlatform.UWP && UWPPlatform.bBuildForStore)
+			{
+				Utils.SetEnvironmentVariablesFromBatchFile(VCVarsBatchFile, "store");
+			}
+			else
+			{
+				Utils.SetEnvironmentVariablesFromBatchFile(VCVarsBatchFile);
+			}"""
+        new = old + f"""
+
+			string UEMetaWindowsSdkDir = Environment.GetEnvironmentVariable("{self._sdk_dir_env}");
+			string UEMetaWindowsSdkVersion = Environment.GetEnvironmentVariable("{self._sdk_version_env}");
+			if (WindowsPlatform.Compiler == WindowsCompiler.VisualStudio2015 &&
+				!String.IsNullOrEmpty(UEMetaWindowsSdkDir) &&
+				!String.IsNullOrEmpty(UEMetaWindowsSdkVersion))
+			{{
+				UEMetaWindowsSdkDir = UEMetaWindowsSdkDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+				string IncludeRoot = Path.Combine(UEMetaWindowsSdkDir, "Include", UEMetaWindowsSdkVersion);
+				string LibRoot = Path.Combine(UEMetaWindowsSdkDir, "Lib", UEMetaWindowsSdkVersion);
+				string LibArch = (Platform == CPPTargetPlatform.Win64 || Platform == CPPTargetPlatform.UWP) ? "x64" : "x86";
+				Environment.SetEnvironmentVariable("WindowsSdkDir", UEMetaWindowsSdkDir);
+				Environment.SetEnvironmentVariable("UniversalCRTSdkDir", UEMetaWindowsSdkDir);
+				Environment.SetEnvironmentVariable("WindowsSDKVersion", UEMetaWindowsSdkVersion + "\\\\");
+				Environment.SetEnvironmentVariable("UCRTVersion", UEMetaWindowsSdkVersion);
+				Environment.SetEnvironmentVariable("INCLUDE", Utils.ResolveEnvironmentVariable(
+					Path.Combine(IncludeRoot, "ucrt") + ";" +
+					Path.Combine(IncludeRoot, "shared") + ";" +
+					Path.Combine(IncludeRoot, "um") + ";" +
+					Path.Combine(IncludeRoot, "winrt") + ";%INCLUDE%"));
+				Environment.SetEnvironmentVariable("LIB", Utils.ResolveEnvironmentVariable(
+					Path.Combine(LibRoot, "ucrt", LibArch) + ";" +
+					Path.Combine(LibRoot, "um", LibArch) + ";%LIB%"));
+				Environment.SetEnvironmentVariable("LIBPATH", Utils.ResolveEnvironmentVariable(
+					Path.Combine(LibRoot, "ucrt", LibArch) + ";" +
+					Path.Combine(LibRoot, "um", LibArch) + ";%LIBPATH%"));
+			}}"""
+
+        self.patch_text_file(
+            self.get_vcenv_cs(), self._sdk_version_env, old, new,
+            "UBT to reapply the pinned Windows SDK after vcvars")
+
+    def patch_buildconfiguration_disable_pch(self):
+        old = """public static void PostReset()
+		{"""
+        new = old + """
+			// UEMETA_DISABLE_PCH_FOR_VS2015: UE 4.10's shared PCH command lines do not satisfy modern VS2015 PCH validation.
+			BuildConfiguration.bUsePCHFiles = false;
+			BuildConfiguration.bUseSharedPCHs = false;
+
+"""
+        self.patch_text_file(
+            self.engine_path("Source", "Programs", "UnrealBuildTool", "Configuration", "BuildConfiguration.cs"),
+            "UEMETA_DISABLE_PCH_FOR_VS2015", old, new,
+            "UBT to disable PCHs after configuration loading")
+
+    def patch_icu_build_static_libs(self):
+        old = """			EICULinkType ICULinkType = Target.IsMonolithic ? EICULinkType.Static : EICULinkType.Dynamic;"""
+        new = old + """
+			// UEMETA_FORCE_STATIC_ICU_FOR_VS2015: UE 4.10's VS2015 dependency payload can omit ICU import libs.
+			if (!Target.IsMonolithic && !File.Exists(TargetSpecificPath + "lib/icudt.lib") && File.Exists(TargetSpecificPath + "lib/sicudt.lib"))
+			{
+				ICULinkType = EICULinkType.Static;
+			}"""
+        self.patch_text_file(
+            self.engine_path("Source", "ThirdParty", "ICU", "ICU.Build.cs"),
+            "UEMETA_FORCE_STATIC_ICU_FOR_VS2015", old, new,
+            "ICU to use static libs when VS2015 import libs are missing")
 
 class UPG_45(UPG_412):
     valid_for = {"4.5"}
