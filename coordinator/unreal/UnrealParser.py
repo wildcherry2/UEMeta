@@ -12,9 +12,9 @@ from typing import override, Any, cast, Final
 
 from parser.AbstractCppParser import AbstractCppParser
 from GlobalUtil import ExecuteOutputOptions, execute, log_exc
-from unreal.Constants import DEP_MAP
-from unreal.Util import (canonical_branch, dependency_zip_cache_path, download_and_extract_release_asset,
-                         env_get, env_set, get_broken_branches, get_vs2013_env, get_vs2015_env, path_from_value,
+from unreal.Constants import GIT_DEP_MAP, UE_CDN_MAP
+from unreal.Util import (CanonicalVersion, dependency_zip_cache_path, download_and_extract_release_asset,
+                         env_get, env_set, get_broken_gitdep_branches, get_vs2013_env, get_vs2015_env, path_from_value,
                          path_value, validate_msvc)
 
 # note: long paths can be an issue regardless of git/windows configs
@@ -38,7 +38,7 @@ class UnrealParser(AbstractCppParser):
         self.ubt_platform: str = self.args.ubt_platform
         self.ubt_config: str = self.args.ubt_config
         self.vs2013_vcvarsall: Path | None = self.args.vs2013_vcvarsall.resolve() if self.args.vs2013_vcvarsall else None
-        self.broken_branches: Final[dict[str, Path]] = get_broken_branches()
+        self.broken_gitdep_branches: Final[dict[str, Path]] = get_broken_gitdep_branches()
         self.__checkout_ran = False
 
     @override
@@ -82,11 +82,11 @@ class UnrealParser(AbstractCppParser):
 
     @override
     def checkout(self, branch: str, prevent_checkout_hooks = True):
-        if branch not in self.broken_branches:
+        if branch not in self.broken_gitdep_branches:
             super().checkout(branch, prevent_checkout_hooks)
             return
 
-        file = self.broken_branches[branch]
+        file = self.broken_gitdep_branches[branch]
         target = self.git.root / "Engine" / "Build" / "Commit.gitdeps.xml"
         if not target.exists():
             logging.error(f"Failed to handle bad branch {branch}!")
@@ -97,11 +97,11 @@ class UnrealParser(AbstractCppParser):
 
 
 def make_generator(branch: str, driver: UnrealParser) -> DefaultUnrealProjectGenerator:
-    canonical = canonical_branch(branch)
+    canonical = CanonicalVersion(branch)
     def gen_helper(cls: type[DefaultUnrealProjectGenerator]) -> DefaultUnrealProjectGenerator | None:
         subclasses: list[type[DefaultUnrealProjectGenerator]] = cls.__subclasses__()
         for subclass in subclasses:
-            if canonical in subclass.valid_for:
+            if canonical.get_majmin() in subclass.valid_for:
                 return subclass(branch, driver)
             else:
                 child_gen = gen_helper(subclass)
@@ -832,13 +832,6 @@ class UPG_412(UPG_413):
         self.add_parser_additional_commands()
         logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
 
-class UPG_Unsupported(DefaultUnrealProjectGenerator):
-    valid_for = {"20"}
-
-    def __init__(self, branch: str, driver: UnrealParser):
-        super().__init__(branch, driver)
-        raise Exception(f"Version {branch} not supported!")
-
 class UPG_410(UPG_412):
     valid_for = {"4.10"}
     _max_windows_sdk_version = (10, 0, 19041, 0)
@@ -1114,8 +1107,8 @@ class UPG_45(UPG_412):
 
     @override
     def run_setup(self):
-        branch_key = canonical_branch(self.branch)
-        deps = DEP_MAP[branch_key]
+        branch_key = CanonicalVersion(self.branch).get_trimmed_version()
+        deps = GIT_DEP_MAP[branch_key]
         cache_root = self.driver.intermediate_path / "zips" / branch_key
         ignore_bad_crc = True
         logging.info(f"Downloading and unzipping dependencies...")

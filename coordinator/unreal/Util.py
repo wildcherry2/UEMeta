@@ -8,6 +8,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from re import RegexFlag
+from typing import Final
 
 from GlobalUtil import ExecuteOutputOptions, execute, log_exc
 from unreal.Constants import CANONICAL_BRANCH_RE
@@ -16,7 +17,7 @@ VS2013_ENV: dict[str, str] | None = None
 VS2015_ENV: dict[str, str] | None = None
 
 
-def get_broken_branches():
+def get_broken_gitdep_branches():
     directory = Path.cwd() / "external"
     if not directory.exists() or not directory.is_dir():
         raise Exception(f"Could not construct BrokenBranchesDict because directory {directory} does not exist!")
@@ -35,19 +36,52 @@ def get_broken_branches():
 
     return out
 
+class CanonicalVersion:
+    def __init__(self, branch: str):
+        match = CANONICAL_BRANCH_RE.match(branch)
+        if match is None:
+            # we could add custom mappings for certain branches/tags here
+            raise Exception(f"Failed to parse CanonicalBranch: {branch}")
+        match = match.groupdict()
+        self.branch = branch
+        self.version: Final[str] = match['version']
+        self.major: Final[str] = match['major']
+        self.minor: Final[str] = match['minor']
+        if "patch" in match:
+            self.patch: Final[str | None] = match["patch"]
+        else:
+            self.patch: Final[str | None] = None
 
-def canonical_branch(branch: str):
-    match = CANONICAL_BRANCH_RE.match(branch)
-    if match is None:
-        if branch.startswith("dev"):
-            raise Exception(f"Invalid branch '{branch}': development branches not allowed!")
-        raise Exception(f"Invalid branch '{branch}': canonical branches ('{{version}}' or '{{version}}-release') only!")
+        if "label" in match:
+            self.label: Final[str | None] = match["label"]
+        else:
+            self.patch: Final[str | None] = None
 
-    match_dict = match.groupdict()
-    patch = match_dict['patch']
-    if patch is None or patch == "0":
-        return match_dict["major"]
-    return match_dict["version"]
+    def __eq__(self, value, /) -> bool:
+        if isinstance(value, CanonicalVersion):
+            return self.version == value.version and self.label == value.label
+        return self.__eq__(CanonicalVersion(str(value)))
+
+    def __str__(self):
+        return self.version
+
+    def is_same_version(self, other: str | CanonicalVersion) -> bool:
+        if isinstance(other, CanonicalVersion):
+            return other.version == self.version
+        return self.is_same_version(CanonicalVersion(other))
+
+    def is_same_majmin(self, other: str | CanonicalVersion) -> bool:
+        if isinstance(other, CanonicalVersion):
+            return other.major == self.major and other.minor == self.minor
+        return self.is_same_majmin(CanonicalVersion(other))
+
+    def get_majmin(self):
+        return self.major + "." + self.minor
+
+    def get_trimmed_version(self):
+        if self.patch is None or self.patch == "0":
+            return self.get_majmin()
+        return self.get_majmin() + "." + self.patch
 
 
 def validate_msvc():
