@@ -833,14 +833,14 @@ class UPG_412(UPG_413):
         logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
 
 class UPG_Unsupported(DefaultUnrealProjectGenerator):
-    valid_for = { "4.8", "4.7", "4.6"}
+    valid_for = {"4.7", "4.6"}
 
     def __init__(self, branch: str, driver: UnrealParser):
         super().__init__(branch, driver)
         raise Exception(f"Version {branch} not supported!")
 
 class UPG_410(UPG_412):
-    valid_for = {"4.10", "4.9"}
+    valid_for = {"4.10"}
     _max_windows_sdk_version = (10, 0, 19041, 0)
     _sdk_dir_env = "UEMETA_WINDOWS_SDK_10_DIR"
     _sdk_version_env = "UEMETA_WINDOWS_SDK_10_VERSION"
@@ -1031,6 +1031,39 @@ class UPG_410(UPG_412):
             self.engine_path("Source", "ThirdParty", "ICU", "ICU.Build.cs"),
             "UEMETA_FORCE_STATIC_ICU_FOR_VS2015", old, new,
             "ICU to use static libs when VS2015 import libs are missing")
+
+class UPG_49(UPG_410):
+    valid_for = {"4.8", "4.9"}
+
+    @override
+    def get_env(self):
+        env = DefaultUnrealProjectGenerator.get_env(self)
+        if self.driver.platform == "win32":
+            env |= get_vs2013_env(self.driver.vs2013_vcvarsall)
+        return env
+
+    @override
+    def patch_src(self):
+        if self.driver.platform != "win32":
+            return
+        self.patch_buildconfiguration_disable_pch()
+        self.patch_icu_build_static_libs()
+
+    @override
+    def patch_buildconfiguration_disable_pch(self):
+        old = """public static void PostReset()
+		{"""
+        new = old + f"""
+			// UEMETA_DISABLE_PCH_FOR_VS2015: UE {self.branch}'s shared PCH command lines do not satisfy modern VS2015 PCH validation.
+			BuildConfiguration.bUsePCHFiles = false;
+			BuildConfiguration.bUseSharedPCHs = false;
+
+"""
+        self.patch_text_file(
+            self.engine_path("Source", "Programs", "UnrealBuildTool", "Configuration", "UEBuildConfiguration.cs"),
+            "UEMETA_DISABLE_PCH_FOR_VS2015", old, new,
+            "UBT to disable PCHs after configuration loading")
+
 
 class UPG_45(UPG_412):
     valid_for = {"4.5"}
