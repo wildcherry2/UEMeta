@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-import argparse
 import json
 import logging
 import os
@@ -9,18 +8,20 @@ from os import PathLike
 from pathlib import Path
 from typing import override, Any, cast, Final
 
+from CoordinatorConfig import CoordinatorConfig
 from parser.AbstractCppParser import AbstractCppParser
 from GlobalUtil import ExecuteOutputOptions, execute, log_exc
 from unreal.Constants import GIT_DEP_MAP, UE_CDN_MAP
 from unreal.Util import (CanonicalVersion, dependency_archive_cache_path, dependency_zip_cache_path,
                          download_and_extract_archive, download_and_extract_release_asset, download_mega_public_file,
                          env_get, env_set, get_broken_gitdep_branches, get_vs2013_env, get_vs2015_env, path_from_value,
-                         path_value, validate_msvc)
+                         path_value, set_github_pat, validate_msvc)
 
 # note: long paths can be an issue regardless of git/windows configs
 class UnrealParser(AbstractCppParser):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, config: CoordinatorConfig):
+        super().__init__(config)
+        set_github_pat(config.git_pat)
         self.project_generator: DefaultUnrealProjectGenerator | None = None
         match self.platform:
             case "linux":
@@ -33,11 +34,11 @@ class UnrealParser(AbstractCppParser):
             case _:
                 raise Exception(f"Unsupported platform: {self.platform}")
 
-        self.public_dependency_module_names = self.args.public_dependency_module_names
-        self.headers: list[str] = self.args.headers
-        self.ubt_platform: str = self.args.ubt_platform
-        self.ubt_config: str = self.args.ubt_config
-        self.vs2013_vcvarsall: Path | None = self.args.vs2013_vcvarsall.resolve() if self.args.vs2013_vcvarsall else None
+        self.public_dependency_module_names = config.public_dependency_module_names
+        self.headers: list[str] = config.headers
+        self.ubt_platform: str = config.ubt_platform
+        self.ubt_config: str = config.ubt_config
+        self.vs2013_vcvarsall: Path | None = config.vs2013_vcvarsall.resolve() if config.vs2013_vcvarsall else None
         self.broken_gitdep_branches: Final[dict[str, Path]] = get_broken_gitdep_branches()
         self.__checkout_ran = False
 
@@ -64,21 +65,6 @@ class UnrealParser(AbstractCppParser):
         if not self.project_generator:
             log_exc("get_target_cpp should only be called after make_compile_commands!")
         return self.project_generator.project_src / "MetadataAnalysis.cpp"
-
-    @override
-    def with_argument_parser(self, parser: argparse.ArgumentParser):
-        parser.add_argument("--public-dependency-module-names", nargs='+', type=str, default=["Core", "CoreUObject", "Engine"],
-                            help="The names of the Unreal modules to include. Defaults are \"Core\", \"CoreUObject\", and "
-                                 "\"Engine\". If you override this, the defaults will be erased.")
-        parser.add_argument("--headers", nargs='+', type=str, required=True,
-                            help="Unreal .h files to include in the analysis.")
-        parser.add_argument("--ubt-platform", type=str, default="Win64",
-                            help="Unreal platform to use. Defaults to \"Win64\"")
-        parser.add_argument("--ubt-config", type=str, default="Shipping",
-                            help="Unreal configuration to use. Defaults to \"Shipping\".")
-        parser.add_argument("--vs2013-vcvarsall", type=Path,
-                            help="Path to the VS2013 vcvarsall.bat, or to a VS2013 VC directory containing it. "
-                                 "Use this when the standalone 2013 tools did not register the normal VS keys.")
 
     @override
     def checkout(self, branch: str, prevent_checkout_hooks = True):

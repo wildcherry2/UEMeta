@@ -6,6 +6,7 @@ import shutil
 import tarfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -19,6 +20,7 @@ from unreal.Constants import CANONICAL_BRANCH_RE
 
 VS2013_ENV: dict[str, str] | None = None
 VS2015_ENV: dict[str, str] | None = None
+GITHUB_PAT: str | None = None
 TAR_ZST_EXTRACT_LOG_INTERVAL_SECONDS: Final[int] = 15
 TAR_ZST_COPY_BUFFER_SIZE: Final[int] = 1024 * 1024
 
@@ -187,7 +189,7 @@ def get_vs_vcvarsall(version: str, override: Path | None = None) -> Path:
         "12.0": ("UEMETA_VS2013_VCVARSALL", "VS2013_VCVARSALL", "VS120VCVARSALL"),
         "14.0": ("UEMETA_VS2015_VCVARSALL", "VS2015_VCVARSALL", "VS140VCVARSALL"),
     }
-    override_args = {"12.0": "--vs2013-vcvarsall", "14.0": "UEMETA_VS2015_VCVARSALL"}
+    override_args = {"12.0": "[Unreal Parser] vs2013_vcvarsall", "14.0": "UEMETA_VS2015_VCVARSALL"}
     script_names = ("vcvarsall.bat", "vcbuildtools.bat")
     label = labels.get(version, f"VS{version}")
     vc_dir_candidates: list[Path] = []
@@ -402,25 +404,25 @@ def get_vs2015_env() -> dict[str, str]:
     return VS2015_ENV
 
 
-def github_pat_path() -> Path:
-    for candidate in (Path.cwd() / "key.txt", Path(__file__).resolve().with_name("key.txt")):
-        if candidate.exists():
-            return candidate
-    log_exc("Failed to find key.txt containing a GitHub PAT.")
+def set_github_pat(token: str | None) -> None:
+    global GITHUB_PAT
+    GITHUB_PAT = token.strip() if token is not None and len(token.strip()) > 0 else None
+
+
+def require_github_pat() -> str:
+    if GITHUB_PAT is not None:
+        return GITHUB_PAT
+    log_exc("GitHub API release asset downloads require --git-pat.")
 
 
 def github_release_asset_request(url: str) -> urllib.request.Request:
-    token = github_pat_path().read_text(encoding="utf-8").strip()
-    if len(token) == 0:
-        log_exc("key.txt exists, but it does not contain a GitHub PAT.")
-    return urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"token {token}",
-            "Accept": "application/octet-stream",
-            "User-Agent": "curl",
-        },
-    )
+    headers = {
+        "Accept": "application/octet-stream",
+        "User-Agent": "curl",
+    }
+    if urllib.parse.urlparse(url).netloc.casefold() == "api.github.com":
+        headers["Authorization"] = f"token {require_github_pat()}"
+    return urllib.request.Request(url, headers=headers)
 
 
 def extract_zip(zip_path: Path, destination: Path, ignore_bad_crc: bool = False):
@@ -694,7 +696,7 @@ def ensure_release_asset_cached(url: str, zip_path: Path):
         zip_path,
         label="Unreal dependency zip",
         request_factory=github_release_asset_request,
-        http_error_hint="Check that key.txt contains a PAT with access to EpicGames/UnrealEngine.",
+        http_error_hint="Pass --git-pat with access to EpicGames/UnrealEngine.",
     )
 
 
@@ -733,5 +735,5 @@ def download_and_extract_release_asset(url: str, zip_path: Path, destination: Pa
         ignore_bad_crc,
         label="Unreal dependency zip",
         request_factory=github_release_asset_request,
-        http_error_hint="Check that key.txt contains a PAT with access to EpicGames/UnrealEngine.",
+        http_error_hint="Pass --git-pat with access to EpicGames/UnrealEngine.",
     )
