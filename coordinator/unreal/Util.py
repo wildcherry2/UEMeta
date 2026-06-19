@@ -3,18 +3,24 @@ import logging
 import os
 import re
 import shutil
+import tarfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from re import RegexFlag
-from typing import Final
+from typing import Callable, Final
+
+import compression.zstd as zstd
 
 from GlobalUtil import ExecuteOutputOptions, execute, log_exc
 from unreal.Constants import CANONICAL_BRANCH_RE
 
 VS2013_ENV: dict[str, str] | None = None
 VS2015_ENV: dict[str, str] | None = None
+TAR_ZST_EXTRACT_LOG_INTERVAL_SECONDS: Final[int] = 15
+TAR_ZST_COPY_BUFFER_SIZE: Final[int] = 1024 * 1024
 
 
 def get_broken_gitdep_branches():
@@ -430,45 +436,302 @@ def extract_zip(zip_path: Path, destination: Path, ignore_bad_crc: bool = False)
                 raise
 
 
-def dependency_zip_cache_path(cache_root: Path, part: int, total_parts: int) -> Path:
-    return cache_root / f"Required_{part}of{total_parts}.zip"
+def _safe_archive_member_name(name: str) -> str:
+    raw_name = name.replace("\\", "/")
+    path = PurePosixPath(raw_name)
+
+    if "\0" in raw_name:
+        raise ValueError(f"Archive member contains a null byte: {name!r}")
+    if path.is_absolute():
+        raise ValueError(f"Archive member is absolute: {name!r}")
+    if len(raw_name) >= 2 and raw_name[1] == ":":
+        raise ValueError(f"Archive member has a drive prefix: {name!r}")
+
+    parts = [part for part in raw_name.split("/") if part not in ("", ".")]
+    if not parts or any(part == ".." for part in parts):
+        raise ValueError(f"Archive member is not a safe relative path: {name!r}")
+
+    return "/".join(parts)
 
 
-def ensure_release_asset_cached(url: str, zip_path: Path):
-    if zip_path.exists():
-        if zipfile.is_zipfile(zip_path):
-            logging.info(f"Using cached Unreal dependency zip: {zip_path}")
-            return
-        logging.warning(f"Cached Unreal dependency zip is invalid and will be replaced: {zip_path}")
-        zip_path.unlink()
-
-    zip_path.parent.mkdir(parents=True, exist_ok=True)
-    download_path = zip_path.with_name(zip_path.name + ".download")
+def _apply_tar_metadata(member: tarfile.TarInfo, target: Path) -> None:
     try:
-        with urllib.request.urlopen(github_release_asset_request(url)) as response:
-            with open(download_path, "wb") as download_file:
-                shutil.copyfileobj(response, download_file)
+        if not member.issym():
+            target.chmod(member.mode)
+    except OSError:
+        pass
 
-        if not zipfile.is_zipfile(download_path):
-            log_exc(f"Downloaded Unreal dependency is not a zip file: {url}")
+    try:
+        if not member.issym():
+            os.utime(target, (member.mtime, member.mtime))
+    except OSError:
+        pass
 
-        download_path.replace(zip_path)
-        logging.info(f"Cached Unreal dependency zip: {zip_path}")
-    except urllib.error.HTTPError as ex:
-        log_exc(
-            f"Failed to download Unreal dependency zip {url}: GitHub returned HTTP {ex.code}. "
-            "Check that key.txt contains a PAT with access to EpicGames/UnrealEngine."
+
+def _extract_progress_message(
+    archive_path: Path,
+    file_count: int,
+    directory_count: int,
+    extracted_bytes: int,
+    current_member: str | None,
+) -> str:
+    size_gib = extracted_bytes / (1024 ** 3)
+    suffix = f"; current: {current_member}" if current_member else ""
+    return (
+        f"Extracting {archive_path.name}: {file_count} file(s), "
+        f"{directory_count} directory entry/entries, {size_gib:.2f} GiB written{suffix}"
+    )
+
+
+def _log_extract_progress(
+    archive_path: Path,
+    file_count: int,
+    directory_count: int,
+    extracted_bytes: int,
+    current_member: str | None,
+    last_log_time: float,
+    *,
+    force: bool = False,
+) -> float:
+    now = time.monotonic()
+    if force or now - last_log_time >= TAR_ZST_EXTRACT_LOG_INTERVAL_SECONDS:
+        logging.info(
+            _extract_progress_message(
+                archive_path,
+                file_count,
+                directory_count,
+                extracted_bytes,
+                current_member,
+            )
         )
+        return now
+    return last_log_time
+
+
+def extract_tar_zst(archive_path: Path, destination: Path):
+    logging.info(f"Extracting {archive_path} to {destination}...")
+    file_count = 0
+    directory_count = 0
+    extracted_bytes = 0
+    last_log_time = time.monotonic()
+
+    with zstd.open(archive_path, "rb") as compressed:
+        with tarfile.open(fileobj=compressed, mode="r|") as tar_:
+            for member in tar_:
+                try:
+                    member_name = _safe_archive_member_name(member.name)
+                    if member.islnk() or member.issym():
+                        _safe_archive_member_name(member.linkname)
+                except ValueError as ex:
+                    log_exc(f"Refusing to extract unsafe archive member from {archive_path}: {ex}")
+
+                target = destination / member_name
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    _apply_tar_metadata(member, target)
+                    directory_count += 1
+                    last_log_time = _log_extract_progress(
+                        archive_path, file_count, directory_count, extracted_bytes, member_name, last_log_time
+                    )
+                    continue
+
+                if member.isfile():
+                    source = tar_.extractfile(member)
+                    if source is None:
+                        log_exc(f"Failed to open archive member {member.name} from {archive_path}")
+
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with source, open(target, "wb") as output_file:
+                        while True:
+                            chunk = source.read(TAR_ZST_COPY_BUFFER_SIZE)
+                            if len(chunk) == 0:
+                                break
+                            output_file.write(chunk)
+                            extracted_bytes += len(chunk)
+                            last_log_time = _log_extract_progress(
+                                archive_path, file_count, directory_count, extracted_bytes, member_name, last_log_time
+                            )
+
+                    _apply_tar_metadata(member, target)
+                    file_count += 1
+                    continue
+
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tar_.extract(member, destination)
+                _apply_tar_metadata(member, target)
+
+    _log_extract_progress(archive_path, file_count, directory_count, extracted_bytes, None, last_log_time, force=True)
+
+
+def archive_kind(archive_path: Path) -> str:
+    name = archive_path.name.lower()
+    if name.endswith(".tar.zst"):
+        return "tar.zst"
+    if archive_path.suffix.lower() == ".zip":
+        return "zip"
+    log_exc(f"Unsupported Unreal dependency archive type: {archive_path}")
+
+
+def is_archive_file(archive_path: Path, kind: str | None = None) -> bool:
+    kind = archive_kind(archive_path) if kind is None else kind
+    if kind == "zip":
+        return zipfile.is_zipfile(archive_path)
+    if kind == "tar.zst":
+        try:
+            with zstd.open(archive_path, "rb") as compressed:
+                with tarfile.open(fileobj=compressed, mode="r|") as tar_:
+                    return tar_.next() is not None
+        except (OSError, EOFError, tarfile.TarError, zstd.ZstdError):
+            return False
+    log_exc(f"Unsupported Unreal dependency archive type: {archive_path}")
+
+
+def extract_archive(archive_path: Path, destination: Path, ignore_bad_crc: bool = False):
+    kind = archive_kind(archive_path)
+    if kind == "zip":
+        extract_zip(archive_path, destination, ignore_bad_crc)
+        return
+    if kind == "tar.zst":
+        extract_tar_zst(archive_path, destination)
+        return
+    log_exc(f"Unsupported Unreal dependency archive type: {archive_path}")
+
+
+def get_mega_get_path() -> Path:
+    if mega_get := shutil.which("mega-get"):
+        return Path(mega_get)
+
+    candidates = [
+        path_from_value(os.environ.get("UEMETA_MEGA_GET")),
+        Path(os.environ["LOCALAPPDATA"]) / "MEGAcmd" / "mega-get.bat" if os.environ.get("LOCALAPPDATA") else None,
+        Path(os.environ["ProgramFiles"]) / "MEGAcmd" / "mega-get.bat" if os.environ.get("ProgramFiles") else None,
+        Path(os.environ["ProgramFiles(x86)"]) / "MEGAcmd" / "mega-get.bat" if os.environ.get("ProgramFiles(x86)") else None,
+    ]
+    for candidate in candidates:
+        if candidate is not None and candidate.exists():
+            return candidate
+
+    log_exc("Failed to find mega-get. Install MEGAcmd or set UEMETA_MEGA_GET to mega-get.bat.")
+
+
+def download_mega_public_file(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    download_dir = destination.with_name(destination.name + ".mega")
+    if download_dir.exists():
+        shutil.rmtree(download_dir)
+    download_dir.mkdir(parents=True)
+
+    try:
+        execute(
+            [get_mega_get_path(), url, download_dir],
+            success_msg=f"Downloaded MEGA file to {destination}.",
+            fail_msg=f"Failed to download MEGA file {url}!",
+            output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT,
+        )
+        downloaded_files = [path for path in download_dir.rglob("*") if path.is_file()]
+        if len(downloaded_files) != 1:
+            log_exc(f"Expected MEGAcmd to download one file from {url}, found {len(downloaded_files)}.")
+        downloaded_files[0].replace(destination)
+    finally:
+        shutil.rmtree(download_dir, ignore_errors=True)
+
+
+def dependency_archive_cache_path(cache_root: Path, filename: str) -> Path:
+    return cache_root / filename
+
+
+def dependency_zip_cache_path(cache_root: Path, part: int, total_parts: int) -> Path:
+    return dependency_archive_cache_path(cache_root, f"Required_{part}of{total_parts}.zip")
+
+
+def ensure_archive_cached(
+    url: str,
+    archive_path: Path,
+    *,
+    label: str = "Unreal dependency archive",
+    request_factory: Callable[[str], urllib.request.Request | str] | None = None,
+    download_factory: Callable[[str, Path], None] | None = None,
+    http_error_hint: str = "",
+):
+    kind = archive_kind(archive_path)
+    if archive_path.exists():
+        if is_archive_file(archive_path, kind):
+            logging.info(f"Using cached {label}: {archive_path}")
+            return
+        logging.warning(f"Cached {label} is invalid and will be replaced: {archive_path}")
+        archive_path.unlink()
+
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
+    download_path = archive_path.with_name(archive_path.name + ".download")
+    try:
+        if download_factory is not None:
+            download_factory(url, download_path)
+        else:
+            request: urllib.request.Request | str = request_factory(url) if request_factory is not None else url
+            with urllib.request.urlopen(request) as response:
+                with open(download_path, "wb") as download_file:
+                    shutil.copyfileobj(response, download_file)
+
+        logging.info(f"Validating downloaded {label}: {download_path}")
+        if not is_archive_file(download_path, kind):
+            log_exc(f"Downloaded {label} is not a valid {kind} file: {url}")
+
+        download_path.replace(archive_path)
+        logging.info(f"Cached {label}: {archive_path}")
+    except urllib.error.HTTPError as ex:
+        hint = f" {http_error_hint}" if http_error_hint else ""
+        log_exc(f"Failed to download {label} {url}: HTTP {ex.code}.{hint}")
     except urllib.error.URLError as ex:
-        log_exc(f"Failed to download Unreal dependency zip {url}: {ex.reason}")
+        log_exc(f"Failed to download {label} {url}: {ex.reason}")
     finally:
         if download_path.exists():
             download_path.unlink(missing_ok=True)
 
 
-def download_and_extract_release_asset(url: str, zip_path: Path, destination: Path, ignore_bad_crc: bool = False):
+def ensure_release_asset_cached(url: str, zip_path: Path):
+    ensure_archive_cached(
+        url,
+        zip_path,
+        label="Unreal dependency zip",
+        request_factory=github_release_asset_request,
+        http_error_hint="Check that key.txt contains a PAT with access to EpicGames/UnrealEngine.",
+    )
+
+
+def download_and_extract_archive(
+    url: str,
+    archive_path: Path,
+    destination: Path,
+    ignore_bad_crc: bool = False,
+    *,
+    label: str = "Unreal dependency archive",
+    request_factory: Callable[[str], urllib.request.Request | str] | None = None,
+    download_factory: Callable[[str, Path], None] | None = None,
+    http_error_hint: str = "",
+):
     try:
-        ensure_release_asset_cached(url, zip_path)
-        extract_zip(zip_path, destination, ignore_bad_crc)
+        ensure_archive_cached(
+            url,
+            archive_path,
+            label=label,
+            request_factory=request_factory,
+            download_factory=download_factory,
+            http_error_hint=http_error_hint,
+        )
+        extract_archive(archive_path, destination, ignore_bad_crc)
     except zipfile.BadZipFile as ex:
-        log_exc(f"Failed to extract Unreal dependency zip {zip_path}: {ex}")
+        log_exc(f"Failed to extract Unreal dependency zip {archive_path}: {ex}")
+    except (OSError, EOFError, tarfile.TarError, zstd.ZstdError) as ex:
+        log_exc(f"Failed to extract Unreal dependency archive {archive_path}: {ex}")
+
+
+def download_and_extract_release_asset(url: str, zip_path: Path, destination: Path, ignore_bad_crc: bool = False):
+    download_and_extract_archive(
+        url,
+        zip_path,
+        destination,
+        ignore_bad_crc,
+        label="Unreal dependency zip",
+        request_factory=github_release_asset_request,
+        http_error_hint="Check that key.txt contains a PAT with access to EpicGames/UnrealEngine.",
+    )

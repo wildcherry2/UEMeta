@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import shutil
-import zipfile
 from os import PathLike
 from pathlib import Path
 from typing import override, Any, cast, Final
@@ -13,7 +12,8 @@ from typing import override, Any, cast, Final
 from parser.AbstractCppParser import AbstractCppParser
 from GlobalUtil import ExecuteOutputOptions, execute, log_exc
 from unreal.Constants import GIT_DEP_MAP, UE_CDN_MAP
-from unreal.Util import (CanonicalVersion, dependency_zip_cache_path, download_and_extract_release_asset,
+from unreal.Util import (CanonicalVersion, dependency_archive_cache_path, dependency_zip_cache_path,
+                         download_and_extract_archive, download_and_extract_release_asset, download_mega_public_file,
                          env_get, env_set, get_broken_gitdep_branches, get_vs2013_env, get_vs2015_env, path_from_value,
                          path_value, validate_msvc)
 
@@ -840,12 +840,23 @@ class UPG_410(UPG_412):
 
     @override
     def run_setup(self):
-        setup_path: Path = Path.cwd() / "external" / f"UE_{self.branch}_setup.zip"
-        if not setup_path.exists():
-            log_exc(f"Failed to find UE_{self.branch}_setup.zip in {setup_path}!")
-        # pyrefly: ignore [bad-argument-type]
-        with zipfile.ZipFile(setup_path, 'r') as zip_file:
-            zip_file.extractall(self.git.root)
+        branch_key = CanonicalVersion(self.branch).get_majmin()
+        if branch_key not in UE_CDN_MAP:
+            log_exc(f"No setup archive configured for Unreal branch {self.branch} ({branch_key}).")
+
+        archive_path = dependency_archive_cache_path(
+            self.driver.intermediate_path / "zips",
+            f"UE_{branch_key}_setup.tar.zst",
+        )
+        logging.info(f"Downloading and extracting UE {branch_key} setup archive...")
+        download_and_extract_archive(
+            UE_CDN_MAP[branch_key],
+            archive_path,
+            self.git.root,
+            label=f"UE {branch_key} setup archive",
+            download_factory=download_mega_public_file,
+        )
+        logging.info(f"UE {branch_key} setup archive extracted!")
 
     @override
     def patch_src(self):
