@@ -79,7 +79,7 @@ class UnrealParser(AbstractCppParser):
                                  "Use this when the standalone 2013 tools did not register the normal VS keys.")
 
     @override
-    def checkout(self, branch: str, prevent_checkout_hooks = False):
+    def checkout(self, branch: str, prevent_checkout_hooks = True):
         if branch not in self.broken_branches:
             super().checkout(branch, prevent_checkout_hooks)
             return
@@ -318,6 +318,45 @@ class DefaultUnrealProjectGenerator:
             "MSBUILDDISABLENODEREUSE": "1",
             "UseSharedCompilation": "false"
         }
+
+class UPG_58(DefaultUnrealProjectGenerator):
+    valid_for = {'5.6', '5.7', '5.8'}
+
+    @override
+    def run_generate_clang_database(self):
+        super().run_generate_clang_database()
+        if self.driver.platform != "win32":
+            return
+
+        # UE 5.6 GCD emits VS Clang's resource dir, but the parser swaps in its bundled clang-cl.
+        # Keep resource headers aligned with that frontend to avoid x86 builtin mismatches.
+        resource_dir = self.get_parser_clang_resource_dir()
+        arg = f"--additional-clang-args=-resource-dir={resource_dir.as_posix()}"
+        if arg not in self.driver.parser_additional_commands:
+            self.driver.parser_additional_commands.append(arg)
+
+    def get_parser_clang_resource_dir(self) -> Path:
+        clang_cl_path = self.get_parser_clang_path()
+        _, stdout = execute([clang_cl_path, "-print-resource-dir"],
+                            fail_msg=f"Failed to get parser clang resource dir from {clang_cl_path}",
+                            output=ExecuteOutputOptions.SILENT)
+        resource_dir = stdout.strip()
+        if len(resource_dir) == 0:
+            log_exc(f"Parser clang did not report a resource dir: {clang_cl_path}")
+        return Path(resource_dir)
+
+    def get_parser_clang_path(self) -> Path:
+        exe_name = "clang-cl.exe" if self.driver.platform == "win32" else "clang"
+        candidates = [
+            self.driver.parser_path.parent / "Clang" / exe_name,
+            self.driver.parser_path.parent.parent / "Clang" / exe_name,
+            self.driver.parser_path.parent / exe_name,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        log_exc(f"Failed to find parser clang next to parser executable {self.driver.parser_path}")
 
 class UPG_54(DefaultUnrealProjectGenerator):
     valid_for = {'5.4', '5.3'}
