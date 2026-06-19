@@ -833,24 +833,23 @@ class UPG_412(UPG_413):
         logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
 
 class UPG_Unsupported(DefaultUnrealProjectGenerator):
-    valid_for = { "4.9", "4.8", "4.7", "4.6"}
+    valid_for = { "4.8", "4.7", "4.6"}
 
     def __init__(self, branch: str, driver: UnrealParser):
         super().__init__(branch, driver)
         raise Exception(f"Version {branch} not supported!")
 
 class UPG_410(UPG_412):
-    valid_for = {"4.10"}
+    valid_for = {"4.10", "4.9"}
     _max_windows_sdk_version = (10, 0, 19041, 0)
     _sdk_dir_env = "UEMETA_WINDOWS_SDK_10_DIR"
     _sdk_version_env = "UEMETA_WINDOWS_SDK_10_VERSION"
 
     @override
     def run_setup(self):
-        setup_path: Path = Path.cwd() / "external" / "UE_4.10_setup.zip"
+        setup_path: Path = Path.cwd() / "external" / f"UE_{self.branch}_setup.zip"
         if not setup_path.exists():
-            log_exc(f"Failed to find UE_4.10_setup.zip in {setup_path}!")
-
+            log_exc(f"Failed to find UE_{self.branch}_setup.zip in {setup_path}!")
         # pyrefly: ignore [bad-argument-type]
         with zipfile.ZipFile(setup_path, 'r') as zip_file:
             zip_file.extractall(self.git.root)
@@ -882,7 +881,7 @@ class UPG_410(UPG_412):
             uht_intermediate = self.engine_path("Intermediate", "Build", self.driver.ubt_platform, "UnrealHeaderTool")
             if uht_intermediate.exists():
                 shutil.rmtree(uht_intermediate)
-                logging.info(f"Removed stale UE 4.10 UnrealHeaderTool intermediate directory: {uht_intermediate}")
+                logging.info(f"Removed stale UE {self.branch} UnrealHeaderTool intermediate directory: {uht_intermediate}")
         super().run_ubt()
 
     def engine_path(self, *parts: str) -> Path:
@@ -900,7 +899,7 @@ class UPG_410(UPG_412):
 
         sdk_root = next((path for path in map(path_from_value, sdk_root_candidates) if path is not None and path.exists()), None)
         if sdk_root is None:
-            log_exc("Failed to find Windows 10 SDK root for UE 4.10.")
+            log_exc(f"Failed to find Windows 10 SDK root for UE {self.branch}.")
 
         include_root = sdk_root / "Include"
         if not include_root.exists():
@@ -949,10 +948,9 @@ class UPG_410(UPG_412):
         if libpath_value is not None:
             env_set(env, "LIBPATH", os.pathsep.join([str(path) for path in sdk_paths["LIB"]] + ([libpath_value] if libpath_value else [])))
 
-        logging.info(f"Pinned UE 4.10 Windows SDK environment to {sdk_version}.")
+        logging.info(f"Pinned UE {self.branch} Windows SDK environment to {sdk_version}.")
 
-    @staticmethod
-    def patch_text_file(target_path: Path, sentinel: str, old: str, new: str, description: str):
+    def patch_text_file(self, target_path: Path, sentinel: str, old: str, new: str, description: str):
         if not target_path.exists():
             log_exc(f"Failed to find {target_path.name} at {target_path}")
 
@@ -960,10 +958,10 @@ class UPG_410(UPG_412):
         if sentinel in text:
             return
         if old not in text:
-            log_exc(f"Failed to patch UE 4.10 {description} in {target_path}")
+            log_exc(f"Failed to patch UE {self.branch} {description} in {target_path}")
 
         target_path.write_text(text.replace(old, new, 1), encoding="utf-8")
-        logging.info(f"Patched UE 4.10 {description}.")
+        logging.info(f"Patched UE {self.branch} {description}.")
 
     def patch_vcenv_windows_sdk_override(self):
         old = """if (Platform == CPPTargetPlatform.UWP && UWPPlatform.bBuildForStore)
@@ -1010,8 +1008,8 @@ class UPG_410(UPG_412):
     def patch_buildconfiguration_disable_pch(self):
         old = """public static void PostReset()
 		{"""
-        new = old + """
-			// UEMETA_DISABLE_PCH_FOR_VS2015: UE 4.10's shared PCH command lines do not satisfy modern VS2015 PCH validation.
+        new = old + f"""
+			// UEMETA_DISABLE_PCH_FOR_VS2015: UE {self.branch}'s shared PCH command lines do not satisfy modern VS2015 PCH validation.
 			BuildConfiguration.bUsePCHFiles = false;
 			BuildConfiguration.bUseSharedPCHs = false;
 
@@ -1023,12 +1021,12 @@ class UPG_410(UPG_412):
 
     def patch_icu_build_static_libs(self):
         old = """			EICULinkType ICULinkType = Target.IsMonolithic ? EICULinkType.Static : EICULinkType.Dynamic;"""
-        new = old + """
-			// UEMETA_FORCE_STATIC_ICU_FOR_VS2015: UE 4.10's VS2015 dependency payload can omit ICU import libs.
+        new = old + f"""
+			// UEMETA_FORCE_STATIC_ICU_FOR_VS2015: UE {self.branch}'s VS2015 dependency payload can omit ICU import libs.
 			if (!Target.IsMonolithic && !File.Exists(TargetSpecificPath + "lib/icudt.lib") && File.Exists(TargetSpecificPath + "lib/sicudt.lib"))
-			{
+			{{
 				ICULinkType = EICULinkType.Static;
-			}"""
+			}}"""
         self.patch_text_file(
             self.engine_path("Source", "ThirdParty", "ICU", "ICU.Build.cs"),
             "UEMETA_FORCE_STATIC_ICU_FOR_VS2015", old, new,
