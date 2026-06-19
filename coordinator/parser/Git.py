@@ -1,12 +1,12 @@
-import sys
 import logging
-import shutil
 import re
+import shutil
+import sys
 from functools import partial
 from os import PathLike
 from pathlib import Path
 from re import RegexFlag
-from typing import final, Iterable, cast
+from typing import final, cast
 
 from GlobalUtil import ExecuteOutputOptions, execute, ExecuteException
 
