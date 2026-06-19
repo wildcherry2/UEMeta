@@ -7,7 +7,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Final, Literal, cast
 
-from Git import Git
+from .Git import Git
 from GlobalUtil import log_exc
 
 class AbstractParser(ABC):
