@@ -833,7 +833,7 @@ class UPG_412(UPG_413):
         logging.info(f"Synthesized compile_commands.json for branch {self.branch} from {xge_tasks_path}.")
 
 class UPG_Unsupported(DefaultUnrealProjectGenerator):
-    valid_for = {"4.7", "4.6"}
+    valid_for = {"20"}
 
     def __init__(self, branch: str, driver: UnrealParser):
         super().__init__(branch, driver)
@@ -1063,6 +1063,43 @@ class UPG_49(UPG_410):
             self.engine_path("Source", "Programs", "UnrealBuildTool", "Configuration", "UEBuildConfiguration.cs"),
             "UEMETA_DISABLE_PCH_FOR_VS2015", old, new,
             "UBT to disable PCHs after configuration loading")
+
+class UPG_47(UPG_49):
+    valid_for = {"4.7", "4.6"}
+
+    @override
+    def patch_src(self):
+        super().patch_src()
+        if self.driver.platform == "win32":
+            self.patch_windows_http_use_wininet()
+
+    @override
+    def patch_icu_build_static_libs(self):
+        old = """			string VSVersionFolderName = "VS" + WindowsPlatform.GetVisualStudioCompilerVersionName();
+			TargetSpecificPath += VSVersionFolderName + "/";"""
+        new = old + f"""
+
+			// UEMETA_FORCE_STATIC_ICU_FOR_VS2013: UE {self.branch}'s VS2013 dependency payload can omit ICU import libs.
+			if (ICULinkType == EICULinkType.Dynamic && !File.Exists(TargetSpecificPath + "lib/icudt.lib") && File.Exists(TargetSpecificPath + "lib/sicudt.lib"))
+			{{
+				ICULinkType = EICULinkType.Static;
+			}}"""
+        self.patch_text_file(
+            self.engine_path("Source", "ThirdParty", "ICU", "ICU.Build.cs"),
+            "UEMETA_FORCE_STATIC_ICU_FOR_VS2013", old, new,
+            "ICU to use static libs when VS2013 import libs are missing")
+
+    def patch_windows_http_use_wininet(self):
+        old = """            if (!UnrealBuildTool.UnrealBuildTool.BuildingRocket() && !UnrealBuildTool.UnrealBuildTool.RunningRocket())
+            {
+                AddThirdPartyPrivateStaticDependencies(Target, "libcurl");
+            }"""
+        new = """            // UEMETA_DISABLE_WINDOWS_LIBCURL: UE 4.7's dependency payload can omit Windows libcurl_a.lib.
+            // WinInet is already linked above for Windows HTTP."""
+        self.patch_text_file(
+            self.engine_path("Source", "Runtime", "Online", "HTTP", "HTTP.Build.cs"),
+            "UEMETA_DISABLE_WINDOWS_LIBCURL", old, new,
+            "HTTP to use WinInet instead of missing Windows libcurl")
 
 
 class UPG_45(UPG_412):
