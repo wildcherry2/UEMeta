@@ -4,7 +4,7 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(parser LANGUAGES CXX)
+project(parser LANGUAGES C CXX)
 
 include(FetchContent)
 find_package(Python3 3.14 REQUIRED COMPONENTS Interpreter)
@@ -70,6 +70,11 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
+set(UEMETA_INIH_VERSION "r62" CACHE STRING "inih release fetched by CMake")
+set(UEMETA_INIH_GIT_TAG
+    "${UEMETA_INIH_VERSION}"
+    CACHE STRING "inih Git tag fetched by CMake"
+)
 set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
 set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
@@ -105,6 +110,14 @@ FetchContent_Declare(quill
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
 )
 
+FetchContent_Declare(inih
+    GIT_REPOSITORY https://github.com/benhoyt/inih.git
+    GIT_TAG "${UEMETA_INIH_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/inih-${UEMETA_INIH_VERSION}"
+    SOURCE_SUBDIR cmake-do-not-add
+)
+
 FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
@@ -132,6 +145,7 @@ endfunction()
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
+UEMeta_FetchContent_MakeAvailable(inih)
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
@@ -148,6 +162,38 @@ find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 
 separate_arguments(UEMETA_LLVM_DEFINITIONS UNIX_COMMAND "${LLVM_DEFINITIONS}")
+
+add_library(inih STATIC
+    "${inih_SOURCE_DIR}/ini.c"
+)
+add_library(inih::inih ALIAS inih)
+set_target_properties(inih PROPERTIES
+    C_STANDARD 99
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+target_include_directories(inih SYSTEM PUBLIC
+    "${inih_SOURCE_DIR}"
+)
+target_compile_definitions(inih PUBLIC
+    INI_ALLOW_NO_VALUE=1
+)
+
+add_library(inih_INIReader STATIC
+    "${inih_SOURCE_DIR}/cpp/INIReader.cpp"
+)
+add_library(inih::INIReader ALIAS inih_INIReader)
+set_target_properties(inih_INIReader PROPERTIES
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+target_include_directories(inih_INIReader SYSTEM PUBLIC
+    "${inih_SOURCE_DIR}/cpp"
+)
+target_link_libraries(inih_INIReader PUBLIC
+    inih::inih
+)
 
 # The Windows release archive records the release builder's DIA SDK path.
 if(MSVC AND TARGET LLVMDebugInfoPDB)
@@ -290,6 +336,7 @@ target_link_libraries(parser PRIVATE
     clangASTMatchers
     CLI11::CLI11
     quill::quill
+    inih::INIReader
     protobuf::libprotobuf
 )
 
