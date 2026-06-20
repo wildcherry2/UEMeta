@@ -314,3 +314,12 @@ message BaseSpecifier {
     optional bool isVirtual = 4;
     optional uint64 offset = 5;
 }
+
+message CompileCommands {
+    message Command {
+        string file = 1;
+        string command = 2;
+        string directory = 3;
+    }
+    repeated Command commands = 1;
+}

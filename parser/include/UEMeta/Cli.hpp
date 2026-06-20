@@ -11,33 +11,6 @@
 
 #include "UEMeta/StablePath.hpp"
 
-#ifdef WIN32
-/**
- * @brief Default bundled clang-cl executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl.exe"
-
-/**
- * @brief Default bundled clang executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang.exe"
-#else
-/**
- * @brief Default bundled clang-cl executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl"
-
-/**
- * @brief Default bundled clang executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
-#endif
-
-/**
- * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
- */
-#define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
-
 /**
  * @brief Application entry point declared so configuration and logging singletons can restrict initialization.
  */
@@ -204,6 +177,33 @@ namespace UEMeta {
         quill::Logger* logger{};
     };
 }
+
+#ifdef WIN32
+/**
+ * @brief Default bundled clang-cl executable path on Windows.
+ */
+#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl.exe"
+
+/**
+ * @brief Default bundled clang executable path on Windows.
+ */
+#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang.exe"
+#else
+/**
+ * @brief Default bundled clang-cl executable path on non-Windows platforms.
+ */
+#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl"
+
+/**
+ * @brief Default bundled clang executable path on non-Windows platforms.
+ */
+#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
+#endif
+
+/**
+ * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
+ */
+#define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
 
 /**
  * @brief Emits an informational log message through the UEMeta logger.
