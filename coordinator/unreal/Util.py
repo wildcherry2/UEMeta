@@ -11,7 +11,7 @@ import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 from re import RegexFlag
-from typing import Callable, Final
+from typing import Callable, Final, Any
 
 import compression.zstd as zstd
 
@@ -44,26 +44,31 @@ def get_broken_gitdep_branches():
 
     return out
 
-class CanonicalVersion: #todo cache by branch
-    def __init__(self, branch: str):
-        match = CANONICAL_BRANCH_RE.match(branch)
-        if match is None:
-            # we could add custom mappings for certain branches/tags here
-            raise Exception(f"Failed to parse CanonicalBranch: {branch}")
-        match = match.groupdict()
-        self.branch = branch
-        self.version: Final[str] = match['version']
-        self.major: Final[str] = match['major']
-        self.minor: Final[str] = match['minor']
-        if "patch" in match:
-            self.patch: Final[str | None] = match["patch"]
-        else:
-            self.patch: Final[str | None] = None
+class CanonicalVersion:
+    __dict_cache: dict[str, dict[str, str | Any]] = {}
 
-        if "label" in match:
-            self.label: Final[str | None] = match["label"]
+    def __init__(self, branch: str):
+        self.branch = branch
+        if branch in CanonicalVersion.__dict_cache:
+            cached = CanonicalVersion.__dict_cache[branch]
+            self.version = cached["version"]
+            self.major = cached["major"]
+            self.minor = cached["minor"]
+            self.patch = cached.get("patch", None)
+            self.label = cached.get("label", None)
         else:
-            self.patch: Final[str | None] = None
+            match = CANONICAL_BRANCH_RE.match(branch)
+            if match is None:
+                # we could add custom mappings for certain branches/tags here if needed
+                raise Exception(f"Failed to parse CanonicalBranch: {branch}")
+            match = match.groupdict()
+
+            self.version: Final[str] = match['version']
+            self.major: Final[str] = match['major']
+            self.minor: Final[str] = match['minor']
+            self.patch = match.get("patch", None)
+            self.label = match.get("label", None)
+            CanonicalVersion.__dict_cache[branch] = match
 
     def __eq__(self, value, /) -> bool:
         if isinstance(value, CanonicalVersion):
