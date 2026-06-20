@@ -18,21 +18,16 @@ from unreal.Util import (CanonicalVersion, dependency_archive_cache_path, depend
                          path_value, set_github_pat, validate_msvc)
 
 # note: long paths can be an issue regardless of git/windows configs
-class UnrealParser(AbstractCppParser):
+class UnrealParserWindows(AbstractCppParser):
     def __init__(self, config: CoordinatorConfig):
         super().__init__(config)
+        if self.platform != "win32":
+            raise Exception(f"Unsupported platform for UnrealParserWindows: {self.platform}")
+
         set_github_pat(config.git_pat)
         self.project_generator: DefaultUnrealProjectGenerator | None = None
-        match self.platform:
-            case "linux":
-                self.platform_shell_ext = "sh"
-            case "darwin":
-                self.platform_shell_ext = "command"
-            case "win32":
-                self.platform_shell_ext = "bat"
-                validate_msvc()
-            case _:
-                raise Exception(f"Unsupported platform: {self.platform}")
+        self.platform_shell_ext = "bat"
+        validate_msvc()
 
         self.public_dependency_module_names = config.public_dependency_module_names
         self.headers: list[str] = config.headers
@@ -54,7 +49,7 @@ class UnrealParser(AbstractCppParser):
         self.project_generator.run_generate_project_files()
         self.project_generator.write_build_config()
         self.project_generator.run_ubt()
-        self.project_generator.run_generate_clang_database() #todo may not need this if we can find the same files present in ue4 builds
+        self.project_generator.run_generate_clang_database()
         compile_commands = self.git.root / "compile_commands.json"
         if not compile_commands.exists():
             log_exc(f"Failed to find generated compile_commands.json for branch {branch}!")
@@ -83,7 +78,7 @@ class UnrealParser(AbstractCppParser):
         shutil.copy2(file, target)
 
 
-def make_generator(branch: str, driver: UnrealParser) -> DefaultUnrealProjectGenerator:
+def make_generator(branch: str, driver: UnrealParserWindows) -> DefaultUnrealProjectGenerator:
     canonical = CanonicalVersion(branch)
     matches: dict[str, type[DefaultUnrealProjectGenerator] | None] = {
         "exact": None,
@@ -108,7 +103,7 @@ def make_generator(branch: str, driver: UnrealParser) -> DefaultUnrealProjectGen
 
 class DefaultUnrealProjectGenerator:
     valid_for: set[str] = set()
-    def __init__(self, branch: str, driver: UnrealParser):
+    def __init__(self, branch: str, driver: UnrealParserWindows):
         super().__init__()
         self.branch = branch
         self.driver = driver
@@ -169,7 +164,7 @@ class DefaultUnrealProjectGenerator:
                     }
                 """
 
-    def get_mh_build_cs(self, module_names: str)->str: #todo remove pch usage
+    def get_mh_build_cs(self, module_names: str)->str:
         return f"""
             using UnrealBuildTool;
             public class MetadataHarness : ModuleRules
@@ -519,7 +514,7 @@ class UPG_423(UPG_427):
                             }
                         }
                     }
-                """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition) #todo should only do this if win32
+                """.replace("__WIN10_GE_DEFINITION__", self._win10_ge_definition)
 
     @override
     def get_build_config(self):

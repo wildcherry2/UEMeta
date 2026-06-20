@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from CoordinatorConfig import load_config
-from unreal.UnrealParser import UnrealParser
+from unreal.UnrealParserWindows import UnrealParserWindows
 
 def main():
     parser = argparse.ArgumentParser()
@@ -16,7 +16,7 @@ def main():
     config = load_config(args.config, args.git_pat)
     match config.mode.casefold():
         case "unreal":
-            driver = UnrealParser(config)
+            driver = UnrealParserWindows(config)
             driver.start()
         case _:
             raise Exception(f"Unknown mode: {config.mode}")
