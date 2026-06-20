@@ -2,6 +2,11 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
+#include <ranges>
+#include <string_view>
+#include <unordered_map>
+#include "mini/ini.h"
 #include <google/protobuf/util/json_util.h>
 #include "parser.pb.h"
 
@@ -95,4 +100,71 @@ static std::string ValidateCompileCommands(const std::string& in) {
     } catch (const std::exception& e) {
         return fmtquill::format("Invalid compile_commands file (exception): {}", e.what());
     }
+}
+
+class IniStruct : public mINI::INIStructure {
+public:
+    std::string get(const std::string& section, const std::string& key, const std::string& default_value = "") {
+        if (has(section)) {
+            if (auto& section_map = (*this)[section]; section_map.has(key)) {
+                return section_map[key];
+            }
+            return default_value;
+        }
+        throw std::runtime_error("Ini parser: Section " + section + " does not exist!");
+    }
+
+    UEMeta::StablePath getP(const std::string& section, const std::string& key, const UEMeta::StablePath& default_value) {
+        if (has(section)) {
+            if (auto& section_map = (*this)[section]; section_map.has(key)) {
+                return UEMeta::StablePath(section_map[key]);
+            }
+            return default_value;
+        }
+        throw std::runtime_error("Ini parser: Section " + section + " does not exist!");
+    }
+
+    template<std::convertible_to<std::string>... Args>
+    std::vector<std::string> getL(const std::string& section, const std::string& key, Args... defaults) {
+        if (has(section)) {
+            auto& section_map = (*this)[section];
+            if (section_map.has(key)) {
+                std::string_view raw = section_map[key];
+                auto range = raw | std::views::split(' ') | std::views::transform([](auto&& subrange) -> std::string_view {
+                    auto left = std::ranges::find_if_not(subrange, [](unsigned char ch) { return std::isspace(ch); });
+                    auto right = std::ranges::find_if_not(subrange | std::views::reverse, [](unsigned char ch) { return std::isspace(ch); }).base();
+                    if (left >= right) return "";
+                    return {left, right};
+                }) | std::views::filter([](std::string_view sv) { return !sv.empty(); });
+                return std::ranges::to<std::vector<std::string>>(range);
+            }
+            return {defaults...};
+        }
+        throw std::runtime_error("Ini parser: Section " + section + " does not exist!");
+    }
+
+    template<std::convertible_to<std::string>... Args>
+    void getL(std::vector<std::string>& append_to, const std::string& section, const std::string& key, Args... defaults) {
+        auto extra = getL(section, key, defaults...);
+        append_to.insert(append_to.end(), extra.begin(), extra.end());
+    }
+
+    bool getB(const std::string& section, const std::string& key, bool default_value) {
+        if (has(section)) {
+            auto& section_map = (*this)[section];
+            if (section_map.has(key)) {
+
+            }
+            return default_value;
+        }
+        throw std::runtime_error("Ini parser: Section " + section + " does not exist!");
+    }
+};
+
+static std::unordered_map<std::string, std::string> ParseIni(const UEMeta::StablePath& path) {
+    std::unordered_map<std::string, std::string> out{};
+    mINI::INIFile file{path.UnderlyingPath()};
+    IniStruct ini{};
+    file.read(ini);
+    return out;
 }

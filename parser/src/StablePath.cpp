@@ -29,15 +29,14 @@ void UEMeta::StablePath::Assign(const std::filesystem::path& raw_path) noexcept 
             path = raw_path;
         }
         else {
-            std::error_code ec{};
             // try to convert to absolute canonical, will fail if it doesn't exist
-            path = std::filesystem::canonical(raw_path, ec);
-            if (ec) {
-                ec.clear();
+            path = std::filesystem::canonical(raw_path, last_error);
+            if (last_error) {
+                last_error.clear();
                 // try to convert to weakly absolute canonical if normal failed, can fail for OS reasons
-                path = std::filesystem::weakly_canonical(raw_path, ec);
-                if (ec) {
-                    ec.clear();
+                path = std::filesystem::weakly_canonical(raw_path, last_error);
+                if (last_error) {
+                    last_error.clear();
                     // when all else fails, just make it lexically normal
                     path = raw_path.lexically_normal();
                 }

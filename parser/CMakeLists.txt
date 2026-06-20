@@ -4,7 +4,7 @@ if(POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(parser LANGUAGES C CXX)
+project(parser LANGUAGES CXX)
 
 include(FetchContent)
 find_package(Python3 3.14 REQUIRED COMPONENTS Interpreter)
@@ -70,10 +70,10 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
-set(UEMETA_INIH_VERSION "r62" CACHE STRING "inih release fetched by CMake")
-set(UEMETA_INIH_GIT_TAG
-    "${UEMETA_INIH_VERSION}"
-    CACHE STRING "inih Git tag fetched by CMake"
+set(UEMETA_MINI_VERSION "0.9.18" CACHE STRING "mINI release fetched by CMake")
+set(UEMETA_MINI_GIT_TAG
+    "${UEMETA_MINI_VERSION}"
+    CACHE STRING "mINI Git tag fetched by CMake"
 )
 set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
 set(UEMETA_PROTOBUF_GIT_TAG
@@ -110,11 +110,11 @@ FetchContent_Declare(quill
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
 )
 
-FetchContent_Declare(inih
-    GIT_REPOSITORY https://github.com/benhoyt/inih.git
-    GIT_TAG "${UEMETA_INIH_GIT_TAG}"
+FetchContent_Declare(mini
+    GIT_REPOSITORY https://github.com/metayeti/mINI.git
+    GIT_TAG "${UEMETA_MINI_GIT_TAG}"
     GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/inih-${UEMETA_INIH_VERSION}"
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/mINI-${UEMETA_MINI_VERSION}"
     SOURCE_SUBDIR cmake-do-not-add
 )
 
@@ -145,7 +145,7 @@ endfunction()
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
-UEMeta_FetchContent_MakeAvailable(inih)
+UEMeta_FetchContent_MakeAvailable(mini)
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
@@ -163,36 +163,11 @@ find_package(Clang REQUIRED CONFIG)
 
 separate_arguments(UEMETA_LLVM_DEFINITIONS UNIX_COMMAND "${LLVM_DEFINITIONS}")
 
-add_library(inih STATIC
-    "${inih_SOURCE_DIR}/ini.c"
-)
-add_library(inih::inih ALIAS inih)
-set_target_properties(inih PROPERTIES
-    C_STANDARD 99
-    C_STANDARD_REQUIRED ON
-    C_EXTENSIONS OFF
-)
-target_include_directories(inih SYSTEM PUBLIC
-    "${inih_SOURCE_DIR}"
-)
-target_compile_definitions(inih PUBLIC
-    INI_ALLOW_NO_VALUE=1
-)
-
-add_library(inih_INIReader STATIC
-    "${inih_SOURCE_DIR}/cpp/INIReader.cpp"
-)
-add_library(inih::INIReader ALIAS inih_INIReader)
-set_target_properties(inih_INIReader PROPERTIES
-    CXX_STANDARD 11
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
-)
-target_include_directories(inih_INIReader SYSTEM PUBLIC
-    "${inih_SOURCE_DIR}/cpp"
-)
-target_link_libraries(inih_INIReader PUBLIC
-    inih::inih
+add_library(mINI INTERFACE)
+add_library(mINI::mINI ALIAS mINI)
+target_compile_features(mINI INTERFACE cxx_std_17)
+target_include_directories(mINI SYSTEM INTERFACE
+    "${mini_SOURCE_DIR}/src"
 )
 
 # The Windows release archive records the release builder's DIA SDK path.
@@ -336,12 +311,13 @@ target_link_libraries(parser PRIVATE
     clangASTMatchers
     CLI11::CLI11
     quill::quill
-    inih::INIReader
+    mINI::mINI
     protobuf::libprotobuf
 )
 
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
 set(PARSER_BUNDLE_CLANG_DIR "${PARSER_BUNDLE_DIR}/Clang")
+set(PARSER_DEFAULT_CONFIG_PATH "${PROJECT_SOURCE_DIR}/parser-default.ini")
 set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
 target_compile_definitions(parser PRIVATE
     QUILL_DISABLE_FUNCTION_NAME
@@ -363,9 +339,12 @@ add_custom_command(TARGET parser POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "$<TARGET_FILE:parser>"
         "${PARSER_BUNDLE_DIR}/$<TARGET_FILE_NAME:parser>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${PARSER_DEFAULT_CONFIG_PATH}"
+        "${PARSER_BUNDLE_DIR}/parser-default.ini"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${PARSER_LLVM_BIN_DIR}"
         "${PARSER_BUNDLE_CLANG_DIR}"
-    COMMENT "Bundling parser executable and LLVM/Clang binaries"
+    COMMENT "Bundling parser executable, default config, and LLVM/Clang binaries"
     VERBATIM
 )

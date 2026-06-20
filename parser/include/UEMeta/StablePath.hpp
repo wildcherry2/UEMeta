@@ -151,7 +151,12 @@ namespace UEMeta {
             return path.end();
         }
 
+        operator bool() const noexcept {
+            return !last_error;
+        }
+
     private:
         std::filesystem::path path{};
+        std::error_code last_error{};
     };
 }
