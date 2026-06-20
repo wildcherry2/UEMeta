@@ -4,6 +4,7 @@ from GlobalUtil import execute
 from pathlib import Path
 from abc import abstractmethod
 from parser.AbstractParser import AbstractParser
+from unreal.Util import CanonicalVersion
 
 
 class AbstractCppParser(AbstractParser):
@@ -16,14 +17,15 @@ class AbstractCppParser(AbstractParser):
         pass
 
     def parse(self, branch: str):
+        canon = CanonicalVersion(branch)
         cc = self.make_compile_commands(branch)
         target_cpp = self.get_target_cpp()
-        parser_working_dir = self.parser_out / branch
+        parser_working_dir = self.parser_out / canon.version
         parser_working_dir.mkdir(exist_ok=True, parents=True)
         execute(AbstractCppParser.__generate_parse_command(self.parser_path, target_cpp, cc, parser_working_dir,
                                         self.parser_additional_commands),
-                        success_msg=f"Parsing complete for branch {branch}",
-                        fail_msg=f"Parsing failed for branch {branch}", cwd=self.parser_path.parent,
+                        success_msg=f"Parsing complete for branch {canon.version}",
+                        fail_msg=f"Parsing failed for branch {canon.version}", cwd=self.parser_path.parent,
                         output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     @staticmethod

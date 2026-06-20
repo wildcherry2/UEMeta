@@ -44,7 +44,7 @@ def get_broken_gitdep_branches():
 
     return out
 
-class CanonicalVersion:
+class CanonicalVersion: #todo cache by branch
     def __init__(self, branch: str):
         match = CANONICAL_BRANCH_RE.match(branch)
         if match is None:

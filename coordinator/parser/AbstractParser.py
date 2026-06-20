@@ -33,8 +33,8 @@ class AbstractParser(ABC):
 
         self.__started = False
 
-    def checkout(self, branch: str, prevent_checkout_hooks = False):
-        self.git.checkout(branch, prevent_hooks=prevent_checkout_hooks, force=True)
+    def checkout(self, branch: str, prevent_checkout_hooks: bool = False, is_tag: bool = False):
+        self.git.checkout(branch, prevent_hooks=prevent_checkout_hooks, force=True, is_tag=is_tag)
 
     @abstractmethod
     def parse(self, branch: str):

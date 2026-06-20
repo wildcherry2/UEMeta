@@ -86,7 +86,7 @@ class Git:
         return execute(["git", "reset", "--hard"], cwd=self.root, output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT)
 
     # Checkout or clone the branch from the url Git was constructed with.
-    def checkout(self, branch: str, *, force: bool = False, prevent_hooks: bool = False):
+    def checkout(self, branch: str, *, force: bool = False, prevent_hooks: bool = False, is_tag: bool = False):
         self.__assert_branch_exists(branch)
 
         # if we haven't initialized...
@@ -106,7 +106,7 @@ class Git:
                 # if the checked out repo belongs to the url we have, ensure that the branch is checked out
                 else:
                     logging.info(f"Repo is the same as remote at {self.url}, checking out {branch}...")
-                    self.__checkout(branch, True, prevent_hooks)
+                    self.__checkout(branch, True, prevent_hooks, is_tag)
 
             # there isn't a git repo in the root directory, so clone
             else:
@@ -116,7 +116,7 @@ class Git:
         # we're initialized, so just checkout
         else:
             logging.info(f"Checking out {branch}...")
-            self.__checkout(branch, force, prevent_hooks)
+            self.__checkout(branch, force, prevent_hooks, is_tag)
 
     # Helper to configure git to use long paths. Repo must be initialized.
     def __config_long_paths_if_needed(self):
@@ -186,7 +186,7 @@ class Git:
         self.__long_paths_configured = True
         return out
 
-    def __checkout(self, branch: str, force: bool, prevent_hooks: bool):
+    def __checkout(self, branch: str, force: bool, prevent_hooks: bool, is_tag: bool):
         if self.remote is None:
             raise CheckoutException(branch, self.root, "Failed to checkout because the remote is not set!")
         self.reset()
@@ -194,7 +194,7 @@ class Git:
         self.__config_long_paths_if_needed()
         if force or self.current_branch() != branch:
             fr = execute(["git", "fetch", "--progress", "--depth", "1", self.remote,
-                          f"+refs/heads/{branch}:refs/remotes/{self.remote}/{branch}"], cwd=self.root,
+                          f"+refs/{"tags" if is_tag else "heads"}/{branch}:refs/remotes/{self.remote}/{branch}"], cwd=self.root,
                          output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT,
                          raise_on_error=ex)
             if fr[0] != 0:

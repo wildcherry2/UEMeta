@@ -67,9 +67,10 @@ class UnrealParser(AbstractCppParser):
         return self.project_generator.project_src / "MetadataAnalysis.cpp"
 
     @override
-    def checkout(self, branch: str, prevent_checkout_hooks = True):
+    def checkout(self, branch: str, prevent_checkout_hooks: bool = True, is_tag: bool = False):
+        tag = True if CanonicalVersion(branch).label is not None else False
         if branch not in self.broken_gitdep_branches:
-            super().checkout(branch, prevent_checkout_hooks)
+            super().checkout(branch, prevent_checkout_hooks, tag)
             return
 
         file = self.broken_gitdep_branches[branch]
@@ -78,24 +79,32 @@ class UnrealParser(AbstractCppParser):
             logging.error(f"Failed to handle bad branch {branch}!")
             return
 
-        super().checkout(branch, True)
+        super().checkout(branch, True, tag)
         shutil.copy2(file, target)
 
 
 def make_generator(branch: str, driver: UnrealParser) -> DefaultUnrealProjectGenerator:
     canonical = CanonicalVersion(branch)
-    def gen_helper(cls: type[DefaultUnrealProjectGenerator]) -> DefaultUnrealProjectGenerator | None:
+    matches: dict[str, type[DefaultUnrealProjectGenerator] | None] = {
+        "exact": None,
+        "major": None
+    }
+    def gen_helper(cls: type[DefaultUnrealProjectGenerator], matches: dict[str, type[DefaultUnrealProjectGenerator] | None]) -> bool :
         subclasses: list[type[DefaultUnrealProjectGenerator]] = cls.__subclasses__()
         for subclass in subclasses:
-            if canonical.get_majmin() in subclass.valid_for:
-                return subclass(branch, driver)
-            else:
-                child_gen = gen_helper(subclass)
-                if child_gen is not None:
-                    return child_gen
-        return None
-    gen = gen_helper(DefaultUnrealProjectGenerator)
-    return gen if gen is not None else DefaultUnrealProjectGenerator(branch, driver)
+            if canonical.version in subclass.valid_for:
+                matches['exact'] = subclass
+                return True
+            elif canonical.get_majmin() in subclass.valid_for:
+                matches['major'] = subclass
+
+            child_gen = gen_helper(subclass, matches)
+            if child_gen:
+                return True
+        return False
+    gen_helper(DefaultUnrealProjectGenerator, matches)
+    return matches['exact'](branch, driver) if matches['exact'] is not None \
+        else matches['major'](branch, driver) if matches['major'] is not None else DefaultUnrealProjectGenerator(branch, driver)
 
 class DefaultUnrealProjectGenerator:
     valid_for: set[str] = set()
@@ -1109,6 +1118,7 @@ class UPG_45(UPG_412):
         cache_root = self.driver.intermediate_path / "zips" / branch_key
         ignore_bad_crc = True
         logging.info(f"Downloading and unzipping dependencies...")
+        # Match Epic's historical Required_1ofN.zip dependency filenames.
         for index, url in enumerate(deps, start=1):
             zip_path = dependency_zip_cache_path(cache_root, index, len(deps))
             download_and_extract_release_asset(url, zip_path, self.git.root, ignore_bad_crc)
@@ -1120,7 +1130,7 @@ class UPG_45(UPG_412):
         pass
 
 class UPG_44(UPG_45):
-    valid_for = {'4.4', '4.3', '4.2', '4.1'}
+    valid_for = {'4.4', '4.3', '4.2', '4.1', '4.0'}
 
     @override
     def get_uproject(self) -> dict[str, Any]:
