@@ -1,0 +1,316 @@
+syntax = "proto3";
+
+package ParseResult;
+
+enum RecordKind {
+    RECORD_KIND_UNSPECIFIED = 0;
+    RECORD_KIND_CLASS = 1;
+    RECORD_KIND_STRUCT = 2;
+    RECORD_KIND_UNION = 3;
+}
+
+enum ForwardDeclarationKind {
+    FORWARD_DECLARATION_KIND_UNSPECIFIED = 0;
+    FORWARD_DECLARATION_KIND_CLASS = 1;
+    FORWARD_DECLARATION_KIND_STRUCT = 2;
+    FORWARD_DECLARATION_KIND_UNION = 3;
+    FORWARD_DECLARATION_KIND_ENUM = 4;
+}
+
+// The unscoped value also represents the absence of a scoped enum keyword.
+enum EnumScope {
+    ENUM_SCOPE_UNSCOPED = 0;
+    ENUM_SCOPE_CLASS = 1;
+    ENUM_SCOPE_STRUCT = 2;
+}
+
+enum ReferenceQualifier {
+    REFERENCE_QUALIFIER_NONE = 0;
+    REFERENCE_QUALIFIER_LVALUE = 1;
+    REFERENCE_QUALIFIER_RVALUE = 2;
+}
+
+enum StorageClass {
+    STORAGE_CLASS_UNSPECIFIED = 0;
+    STORAGE_CLASS_EXTERN = 1;
+    STORAGE_CLASS_STATIC = 2;
+    STORAGE_CLASS_PRIVATE_EXTERN = 3;
+    STORAGE_CLASS_AUTO = 4;
+    STORAGE_CLASS_REGISTER = 5;
+}
+
+enum AccessSpecifier {
+    ACCESS_SPECIFIER_UNSPECIFIED = 0;
+    ACCESS_SPECIFIER_PUBLIC = 1;
+    ACCESS_SPECIFIER_PROTECTED = 2;
+    ACCESS_SPECIFIER_PRIVATE = 3;
+}
+
+// Static member functions have a distinct kind, so no separate isStatic flag
+// is needed in FunctionDetails.
+enum FunctionKind {
+    FUNCTION_KIND_UNSPECIFIED = 0;
+    FUNCTION_KIND_FREE = 1;
+    FUNCTION_KIND_CONSTRUCTOR = 2;
+    FUNCTION_KIND_MEMBER = 3;
+    FUNCTION_KIND_STATIC_MEMBER = 4;
+    FUNCTION_KIND_DESTRUCTOR = 5;
+    FUNCTION_KIND_CONVERSION = 6;
+}
+
+enum FunctionDefinitionKind {
+    FUNCTION_DEFINITION_NORMAL = 0;
+    FUNCTION_DEFINITION_DELETED = 1;
+    FUNCTION_DEFINITION_DEFAULTED = 2;
+}
+
+enum FunctionVirtuality {
+    FUNCTION_VIRTUALITY_NONE = 0;
+    FUNCTION_VIRTUALITY_VIRTUAL = 1;
+    FUNCTION_VIRTUALITY_PURE = 2;
+}
+
+enum ConstantEvaluationKind {
+    CONSTANT_EVALUATION_NONE = 0;
+    CONSTANT_EVALUATION_CONSTEXPR = 1;
+    CONSTANT_EVALUATION_CONSTEVAL = 2;
+}
+
+enum TemplateParameterKind {
+    TEMPLATE_PARAMETER_KIND_UNSPECIFIED = 0;
+    TEMPLATE_PARAMETER_KIND_TYPENAME = 1;
+    TEMPLATE_PARAMETER_KIND_CLASS = 2;
+    TEMPLATE_PARAMETER_KIND_NON_TYPE = 3;
+    TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE = 4;
+    TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE = 5;
+}
+
+// NONE represents a primary template. The containing TemplateDetails message is
+// absent for declarations which are not templates.
+enum TemplateSpecializationKind {
+    TEMPLATE_SPECIALIZATION_NONE = 0;
+    TEMPLATE_SPECIALIZATION_PARTIAL = 1;
+    TEMPLATE_SPECIALIZATION_EXPLICIT = 2;
+    TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION = 3;
+    TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION = 4;
+}
+
+enum ExceptionSpec {
+    EXCEPTION_SPEC_NONE = 0;
+    EXCEPTION_SPEC_THROW_EMPTY = 1;
+    EXCEPTION_SPEC_THROW_ANY = 2;
+    EXCEPTION_SPEC_DECLSPEC_NOTHROW = 3;
+    EXCEPTION_SPEC_NOEXCEPT = 4;
+    EXCEPTION_SPEC_NOEXCEPT_DEPENDENT = 5;
+    EXCEPTION_SPEC_NOEXCEPT_FALSE = 6;
+    EXCEPTION_SPEC_NOEXCEPT_TRUE = 7;
+    EXCEPTION_SPEC_UNEVALUATED = 8;
+    EXCEPTION_SPEC_UNINSTANTIATED = 9;
+    EXCEPTION_SPEC_UNPARSED = 10;
+}
+
+// Root payload for --split-strategy file output.
+message ParserMetadata {
+    FileMetadata file = 1;
+    repeated Declaration declarations = 2;
+}
+
+// Also used directly for the .file payload emitted by declaration splitting.
+message FileMetadata {
+    string path = 1;
+    string hash = 2;
+    message Include {
+        string path = 1;
+        uint32 occurrenceIndex = 2;
+    }
+    repeated Include includes = 3;
+}
+
+// Source fields shared by declarations and their child entities.
+message SourceMetadata {
+    string file = 1;
+    repeated string scope = 2;
+    optional string documentation = 3;
+}
+
+message DeclarationMetadata {
+    optional string name = 1;
+    optional string qualifiedName = 2;
+    SourceMetadata source = 3;
+    optional string hash = 4;
+    optional uint32 occurrenceIndex = 5;
+    optional bool isAnonymous = 6;
+}
+
+// The selected oneof member is the declaration-kind discriminator.
+message Declaration {
+    oneof value {
+        RecordDeclaration record = 1;
+        EnumDeclaration enumDeclaration = 2;
+        ForwardDeclaration forwardDeclaration = 3;
+        AliasDeclaration alias = 4;
+        FreeFunctionDeclaration function = 5;
+        GlobalDeclaration variable = 6;
+    }
+}
+
+message NestedDeclaration {
+    oneof value {
+        RecordDeclaration record = 1;
+        EnumDeclaration enumDeclaration = 2;
+        ForwardDeclaration forwardDeclaration = 3;
+        AliasDeclaration alias = 4;
+    }
+}
+
+// Shared by record, function, variable, alias, and forward-declaration
+// templates. specializationKind == NONE identifies a primary template.
+message TemplateDetails {
+    repeated TemplateParameter parameters = 1;
+    optional TemplateSpecializationKind specializationKind = 2;
+    optional string primaryTemplateQualifiedName = 3;
+    repeated string arguments = 4;
+}
+
+message TemplateParameter {
+    TemplateParameterKind kind = 1;
+    optional string name = 2;
+    optional string documentation = 3;
+    optional string type = 4;
+    optional bool isParameterPack = 5;
+    repeated TemplateParameter parameters = 6;
+}
+
+// Class, struct, and union payloads differ only by kind and by which repeated
+// member groups are populated.
+message RecordDeclaration {
+    DeclarationMetadata metadata = 1;
+    RecordKind kind = 2;
+    optional TemplateDetails templateDetails = 3;
+    optional bool isCompleteDefinition = 4;
+    optional uint64 sizeBytes = 5;
+    optional uint64 alignBytes = 6;
+    repeated Field fields = 7;
+    repeated NestedDeclaration nested = 8;
+    repeated BaseSpecifier bases = 9;
+    repeated VariableMetadata staticVariables = 10;
+    repeated FunctionMetadata methods = 11;
+}
+
+message EnumDetails {
+    optional string underlyingType = 1;
+    optional EnumScope scope = 2;
+}
+
+message EnumDeclaration {
+    DeclarationMetadata metadata = 1;
+    optional EnumDetails details = 2;
+    repeated Enumerator enumerators = 3;
+}
+
+message ForwardDeclaration {
+    DeclarationMetadata metadata = 1;
+    ForwardDeclarationKind kind = 2;
+    optional TemplateDetails templateDetails = 3;
+    // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
+    optional EnumDetails enumDetails = 4;
+}
+
+message AliasDeclaration {
+    DeclarationMetadata metadata = 1;
+    optional TemplateDetails templateDetails = 2;
+    string aliasedType = 3;
+}
+
+message FreeFunctionDeclaration {
+    DeclarationMetadata metadata = 1;
+    FunctionDetails details = 2;
+}
+
+message GlobalDeclaration {
+    DeclarationMetadata metadata = 1;
+    VariableDetails details = 2;
+}
+
+message FunctionMetadata {
+    string name = 1;
+    optional string qualifiedName = 2;
+    SourceMetadata source = 3;
+    FunctionDetails details = 4;
+}
+
+message FunctionDetails {
+    FunctionKind kind = 1;
+    string type = 2;
+    optional string returnType = 3;
+    optional AccessSpecifier access = 4;
+    optional StorageClass storageClass = 5;
+    optional bool isConst = 6;
+    optional bool isVolatile = 7;
+    optional FunctionVirtuality virtuality = 8;
+    optional ConstantEvaluationKind constantEvaluation = 9;
+    optional bool isInline = 10;
+    optional FunctionDefinitionKind definition = 11;
+    optional bool isExplicit = 12;
+    optional ReferenceQualifier refQualifier = 13;
+    optional ExceptionSpec exceptionSpec = 14;
+    optional TemplateDetails templateDetails = 15;
+    repeated Parameter parameters = 16;
+    optional VTableIndex vtableIndex = 17;
+}
+
+message Parameter {
+    optional string name = 1;
+    string type = 2;
+    string declaration = 3;
+    optional string documentation = 4;
+}
+
+message VTableIndex {
+    uint64 index = 1;
+    uint64 offset = 2;
+}
+
+message VariableMetadata {
+    string name = 1;
+    optional string qualifiedName = 2;
+    SourceMetadata source = 3;
+    VariableDetails details = 4;
+}
+
+message VariableDetails {
+    optional TemplateDetails templateDetails = 1;
+    string type = 2;
+    string declaration = 3;
+    optional AccessSpecifier access = 4;
+    optional StorageClass storageClass = 5;
+    optional bool isConstexpr = 6;
+    optional bool isInline = 7;
+    optional bool isThreadLocal = 8;
+}
+
+message Enumerator {
+    string name = 1;
+    string value = 2;
+    SourceMetadata source = 3;
+}
+
+message Field {
+    optional string name = 1;
+    SourceMetadata source = 2;
+    string type = 3;
+    string declaration = 4;
+    optional AccessSpecifier access = 5;
+    optional bool isMutable = 6;
+    optional bool isBitfield = 7;
+    optional uint64 bitWidth = 8;
+    optional uint64 offsetBits = 9;
+}
+
+message BaseSpecifier {
+    string type = 1;
+    optional string qualifiedName = 2;
+    optional AccessSpecifier access = 3;
+    optional bool isVirtual = 4;
+    optional uint64 offset = 5;
+}
