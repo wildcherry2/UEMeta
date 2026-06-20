@@ -59,11 +59,6 @@ set(UEMETA_LLVM_PREBUILT_URL_HASH
     "${UEMETA_LLVM_DEFAULT_PREBUILT_URL_HASH}"
     CACHE STRING "LLVM binary release archive hash"
 )
-set(UEMETA_GLAZE_VERSION "7.3.3" CACHE STRING "Glaze release fetched by CMake")
-set(UEMETA_GLAZE_GIT_TAG
-    "dbf6caec935b768546587a413e45d033480c4483"
-    CACHE STRING "Glaze Git commit fetched by CMake"
-)
 set(UEMETA_CLI11_VERSION "2.6.2" CACHE STRING "CLI11 release fetched by CMake")
 set(UEMETA_CLI11_GIT_TAG
     "37bb6edc5317e99af72ef48405e65d9ca5218861"
@@ -93,13 +88,6 @@ FetchContent_Declare(llvm_prebuilt
     DOWNLOAD_NO_PROGRESS FALSE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/${UEMETA_LLVM_PACKAGE}"
     SOURCE_SUBDIR cmake-do-not-add
-)
-
-FetchContent_Declare(glaze
-    GIT_REPOSITORY https://github.com/stephenberry/glaze.git
-    GIT_TAG "${UEMETA_GLAZE_GIT_TAG}"
-    GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/glaze-${UEMETA_GLAZE_VERSION}"
 )
 
 FetchContent_Declare(cli11
@@ -141,7 +129,6 @@ function(UEMeta_FetchContent_MakeAvailable name)
 endfunction()
 
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
-UEMeta_FetchContent_MakeAvailable(glaze)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
 UEMeta_FetchContent_MakeAvailable(indicators)
@@ -188,7 +175,6 @@ endif()
 
 add_executable(parser src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
-        src/JsonHelpers.cpp
         src/MakeTool.cpp
         src/StablePath.cpp)
 
@@ -241,7 +227,6 @@ target_link_libraries(parser PRIVATE
     clangTooling
     clangFrontend
     clangASTMatchers
-    glaze::glaze
     CLI11::CLI11
     quill::quill
     indicators::indicators
@@ -276,24 +261,3 @@ add_custom_command(TARGET parser POST_BUILD
     COMMENT "Bundling parser executable and LLVM/Clang binaries"
     VERBATIM
 )
-
-enable_testing()
-find_program(UEMETA_POWERSHELL NAMES pwsh powershell)
-if(UEMETA_POWERSHELL)
-    if(WIN32)
-        set(UEMETA_SMOKE_CLANG "${PARSER_LLVM_BIN_DIR}/clang++.exe")
-        set(UEMETA_POWERSHELL_POLICY -ExecutionPolicy Bypass)
-    else()
-        set(UEMETA_SMOKE_CLANG "${PARSER_LLVM_BIN_DIR}/clang++")
-        set(UEMETA_POWERSHELL_POLICY)
-    endif()
-
-    add_test(NAME split_strategy_smoke
-        COMMAND "${UEMETA_POWERSHELL}" -NoProfile ${UEMETA_POWERSHELL_POLICY}
-            -File "${PROJECT_SOURCE_DIR}/tests/smoke_split_strategy.ps1"
-            -ParserExe "$<TARGET_FILE:parser>"
-            -ClangExe "${UEMETA_SMOKE_CLANG}"
-            -WorkingRoot "${CMAKE_CURRENT_BINARY_DIR}/smoke/split_strategy"
-    )
-    set_tests_properties(split_strategy_smoke PROPERTIES DEPENDS parser)
-endif()

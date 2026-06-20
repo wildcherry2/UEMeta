@@ -2,7 +2,6 @@
 #include <string_view>
 #include <utility>
 #include <atomic>
-#include <map>
 
 #include "UEMeta/Cli.hpp"
 #include "CLI/CLI.hpp"
@@ -11,12 +10,6 @@
 #include "quill/sinks/ConsoleSink.h"
 #include "quill/sinks/FileSink.h"
 #include "indicators/progress_spinner.hpp"
-
-/// @brief CLI11 transformer map from split strategy option text to enum values.
-static const std::map<std::string, UEMeta::SplitStrategy> SplitStrategyMap{
-    {"file", UEMeta::SplitStrategy::ByFile},
-    {"decl", UEMeta::SplitStrategy::ByDecl}
-};
 
 /// @brief Console sink that interprets tagged trace messages as spinner controls.
 class ConsoleSinkWithSpinner : public quill::ConsoleSink {
@@ -143,18 +136,6 @@ const UEMeta::StablePath& UEMeta::Config::CcPath() const {
     return cc_path;
 }
 
-/// @brief Returns the configured output directory path.
-const UEMeta::StablePath& UEMeta::Config::OutPath() const {
-    AssertInitialized();
-    return out_path;
-}
-
-/// @brief Returns the configured JSON file split strategy.
-UEMeta::SplitStrategy UEMeta::Config::GetSplitStrategy() const {
-    AssertInitialized();
-    return split_strategy;
-}
-
 /// @brief Returns the configured Clang executable path.
 const UEMeta::StablePath& UEMeta::Config::ClangPath() const {
     AssertInitialized();
@@ -171,30 +152,6 @@ const std::vector<std::string>& UEMeta::Config::AdditionalClangArgs() const {
 const std::vector<std::string>& UEMeta::Config::StripArgs() const {
     AssertInitialized();
     return strip_args;
-}
-
-/// @brief Returns delimiter tokens used to trim output file paths.
-const std::vector<std::string>& UEMeta::Config::PathDelimiters() const {
-    AssertInitialized();
-    return path_delimiters;
-}
-
-/// @brief Returns blacklist tokens replaced in output file paths.
-const std::vector<std::string>& UEMeta::Config::PathBlacklist() const {
-    AssertInitialized();
-    return path_blacklist;
-}
-
-/// @brief Returns blacklist tokens used to filter header paths.
-const std::vector<std::string> & UEMeta::Config::HeaderBlacklist() const {
-    AssertInitialized();
-    return header_blacklist;
-}
-
-/// @brief Returns whitelist tokens used to filter header paths.
-const std::vector<std::string> & UEMeta::Config::HeaderWhitelist() const {
-    AssertInitialized();
-    return header_whitelist;
 }
 
 /// @brief Returns the process-wide configuration singleton.
@@ -217,13 +174,12 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return 0;
     }
 
-    CLI::App app{"Dumps a simplified AST of a translation unit in an Unreal project.", "UEMeta"};
+    CLI::App app{"Parses a translation unit in an Unreal project.", "UEMeta"};
     app.allow_windows_style_options();
     argv = app.ensure_utf8(argv);
 
     std::string cpp_path{};
     std::string cc_path{};
-    std::string out_path{};
     std::string clang_path{};
 
     app.add_option("-f,--file", cpp_path, "Path of the cpp file that drives the translation unit to dump.")
@@ -235,35 +191,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         ->required()->check([](const auto& opt) -> std::string {
             return ValidateFile(opt, "compile_commands.json");
         });
-
-    app.add_option("-o,--out", out_path, "Directory to output JSON files to.")
-        ->required()->check([](const auto& opt) -> std::string {
-            const std::filesystem::path temp_path{opt};
-            std::error_code ec{};
-
-            if (std::filesystem::exists(temp_path, ec)) {
-                if (!std::filesystem::is_directory(temp_path, ec)) {
-                    return "Output path is not a directory!";
-                }
-                return "";
-            }
-
-            if (ec) {
-                return fmtquill::format("Failed to check output directory existence: {}", ec.message());
-            }
-
-            if (!std::filesystem::create_directory(opt, ec)) {
-                return fmtquill::format("Failed to create output directory: {}", ec.message());
-            }
-
-            return "";
-        });
-
-    app.add_option("--split-strategy", cfg.split_strategy,
-        "Required output split strategy. Use 'file' to keep one JSON file per source file, "
-        "or 'decl' to write one JSON file per top-level declaration.")
-        ->required()
-        ->transform(CLI::CheckedTransformer(SplitStrategyMap, CLI::ignore_case));
 
     auto opt_parse_as_linux = app.add_flag("-p,--parse-as-linux", cfg.no_cl,
         "Uses clang instead of clang-cl. Assumes that the --compile-commands is appropriate "
@@ -286,26 +213,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.add_option("--additional-clang-args", cfg.additional_clang_args,
         "Additional arguments to pass to the clang executable.");
 
-    app.add_option("--path-delimiters", cfg.path_delimiters,
-        "Highest level roots allowed in paths in generated JSON files. "
-        "If a path delimiter is found in a path in the JSON output, every directory/file above it is stripped from the path "
-        "string. If multiple delimiters are found, the most specific root is chosen. "
-        "This is for protecting PII when releasing JSONs publicly."
-        "Defaults: 'Unreal', 'UnrealEngine', 'MetadataHarness' (forced)");
-
-    app.add_option("--path-blacklist", cfg.path_blacklist,
-        "Substrings to strip in paths in generated JSON files."
-        "Found substrings will be replaced with the string 'removed'. "
-        "This is for protecting PII when releasing JSONs publicly.");
-
-    app.add_option("--header-whitelist", cfg.header_whitelist,
-        "If a header's path does not contain at least one token in the header-whitelist, the header will "
-        "be excluded from JSON generation. If blacklist tokens are also given, the whitelist runs before the blacklist.");
-
-    app.add_option("--header-blacklist", cfg.header_blacklist,
-        "If a header's path contains at least one token in the header-blacklist, the header will be "
-        "excluded from JSON generation. If whitelist tokens are also given, the whitelist runs before the blacklist.");
-
     try {
         app.parse(argc, argv);
     } catch (const CLI::CallForHelp& ex) {
@@ -324,7 +231,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     try {
         cfg.cpp_path.Assign(std::string_view{cpp_path});
         cfg.cc_path.Assign(std::string_view{cc_path});
-        cfg.out_path.Assign(std::string_view{out_path});
 
         if (clang_path.empty()) {
             cfg.clang_path.Assign(cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH);
@@ -339,7 +245,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         }
 
         cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
-        cfg.path_delimiters.emplace_back("MetadataHarness");
         cfg.additional_clang_args.emplace_back("/clang:-mwaitpkg");
         cfg.additional_clang_args.emplace_back("/clang:-fno-access-control");
         cfg.initialized.test_and_set();

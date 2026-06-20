@@ -1,39 +1,49 @@
-#include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/ArgumentsAdjusters.h>
+#include <clang/Tooling/CompilationDatabase.h>
+#include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
-#include <glaze/glaze.hpp>
 #include <compare>
-#include <fstream>
-#include <iterator>
+#include <exception>
 #include <optional>
-#include <string_view>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "UEMeta/MakeTool.hpp"
 #include "UEMeta/Cli.hpp"
+#include "UEMeta/StablePath.hpp"
 
 using namespace clang::tooling;
 
-/// @brief Minimal compile_commands.json entry shape needed to rebuild a one-file database.
-struct CompileCommandEntry {
-    std::string file;
-    std::optional<std::string> command;
-    std::optional<std::string> directory;
-    std::optional<std::string> output;
-};
+/// @brief One-entry compilation database used after locating the configured source file.
+class SingleCommandCompilationDatabase final : public CompilationDatabase {
+public:
+    /// @brief Stores the compile command selected from compile_commands.json.
+    explicit SingleCommandCompilationDatabase(CompileCommand command) : command(std::move(command)) {}
 
-/// @brief Glaze metadata for the compile command fields read from compile_commands.json.
-template <>
-struct glz::meta<CompileCommandEntry> {
-    using T = CompileCommandEntry;
+    /// @brief Returns the stored command when Clang asks for the configured source file.
+    std::vector<CompileCommand> getCompileCommands(llvm::StringRef file_path) const override {
+        const UEMeta::StablePath requested{file_path.str()};
+        const UEMeta::StablePath stored{command.Filename};
+        if (!std::is_eq(requested <=> stored)) {
+            return {};
+        }
 
-    static constexpr auto value = object(
-        "file", &T::file,
-        "command", &T::command,
-        "directory", &T::directory,
-        "output", &T::output
-    );
+        return {command};
+    }
+
+    /// @brief Returns the single file covered by this database.
+    std::vector<std::string> getAllFiles() const override {
+        return {command.Filename};
+    }
+
+    /// @brief Returns the single compile command covered by this database.
+    std::vector<CompileCommand> getAllCompileCommands() const override {
+        return {command};
+    }
+
+private:
+    CompileCommand command;
 };
 
 /// @brief Removes configured Unreal build arguments before Clang parses the translation unit.
@@ -70,113 +80,55 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
     return out;
 }
 
-/// @brief Loads compile_commands.json and rewrites the configured source entry to use the configured Clang path.
-static std::string FixupCommand(const std::string& cc_path) {
+/// @brief Loads compile_commands.json and selects the entry for the configured source file.
+static std::optional<CompileCommand> LoadCompileCommand(const std::string& cc_path) {
     try {
-        auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
-        auto cpp_path_string = UEMeta::Config::GetConfig().CppPath().string();
+        const auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
+        const auto cpp_path_string = cpp_path.string();
 
-        std::ifstream in{cc_path, std::ios::binary};
-        if (!in) {
-            UEM_ERROR("(fs) Failed to open compile commands at \"{}\"", cc_path);
-            return "";
+        std::string error{};
+        auto db = JSONCompilationDatabase::loadFromFile(cc_path, error, JSONCommandLineSyntax::AutoDetect);
+        if (!db) {
+            UEM_ERROR("(llvm) Failed to load compile commands at \"{}\": {}", cc_path, error);
+            return std::nullopt;
         }
 
-        const std::string json{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-        std::vector<CompileCommandEntry> entries;
-        constexpr auto read_options = glz::opts{.error_on_unknown_keys = false};
-        if (const auto error = glz::read<read_options>(entries, json)) {
-            UEM_ERROR("(glaze) Failed to parse compile commands at \"{}\": {}",
-                      cc_path, glz::format_error(error, json));
-            return "";
-        }
-
-        for (const auto& entry : entries) {
-            const UEMeta::StablePath candidate_path{entry.file};
-            if (!std::is_eq(candidate_path <=> cpp_path))
+        for (auto command : db->getAllCompileCommands()) {
+            const UEMeta::StablePath candidate_path{command.Filename};
+            if (!std::is_eq(candidate_path <=> cpp_path)) {
                 continue;
-
-            if (!entry.command) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path_string);
-                return "";
             }
 
-            const auto& command = *entry.command;
-            const auto cmd_start = command.find_first_not_of(" \t");
-            if (cmd_start == std::string::npos || cmd_start == command.size() - 1) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
-                return "";
+            if (command.CommandLine.empty()) {
+                UEM_ERROR("(llvm) Found command for file \"{}\", but its command line is empty.", cpp_path_string);
+                return std::nullopt;
             }
 
-            std::size_t cmd_end{};
-            if (command[cmd_start] == '\"') {
-                cmd_end = command.find_first_of('\"', cmd_start + 1);
-                if (cmd_end == std::string::npos) {
-                    UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
-                    return "";
-                }
-                ++cmd_end;
-            } else {
-                cmd_end = command.find_first_of(" \t", cmd_start);
-            }
-
-            if (cmd_end == std::string::npos || cmd_end == command.size()) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
-                return "";
-            }
-            auto keep = command.substr(cmd_end);
-            std::string new_command = UEMeta::Config::GetConfig().ClangPath().string() + keep;
-
-            if (!entry.directory) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path_string);
-                return "";
-            }
-
-            const auto transformed = std::vector{
-                CompileCommandEntry{
-                    .file = entry.file,
-                    .command = std::move(new_command),
-                    .directory = entry.directory,
-                    .output = entry.output
-                }
-            };
-
-            std::string out;
-            if (const auto error = glz::write_json(transformed, out)) {
-                UEM_ERROR("(glaze) Failed to build transformed compile_commands for file \"{}\": {}",
-                          cpp_path_string, glz::format_error(error, out));
-                return "";
-            }
-            return out;
+            return command;
         }
 
-        UEM_ERROR("(glaze) Failed to find matching entry in compile_commands.json for file {}", cpp_path_string);
+        UEM_ERROR("(llvm) Failed to find matching entry in compile_commands.json for file {}", cpp_path_string);
     } catch (std::exception& ex) {
-        UEM_ERROR("(glaze) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what());
+        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what());
     } catch (...) {
-        UEM_ERROR("(glaze) Failed to load compile commands at \"{}\" with unknown error!", cc_path);
+        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with unknown error.", cc_path);
     }
-    return "";
+    return std::nullopt;
 }
 
 /// @brief Creates the ClangTool and argument adjusters for the configured translation unit.
 std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
     try {
-        std::string error{};
-        const auto cc_as_string = FixupCommand(Config::GetConfig().CcPath().string());
+        auto command = LoadCompileCommand(Config::GetConfig().CcPath().string());
 
-        if (cc_as_string.empty()) return nullptr;
-        UEM_INFO("Using compile_commands.json entry as {}", cc_as_string);
+        if (!command) return nullptr;
+        UEM_INFO("Using compile_commands.json entry for {}", command->Filename);
 
-        std::unique_ptr<JSONCompilationDatabase> json_db = JSONCompilationDatabase::loadFromBuffer(cc_as_string, error, JSONCommandLineSyntax::AutoDetect);
-        if (!json_db) {
-            UEM_ERROR("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string);
-            return nullptr;
-        }
-
-        std::unique_ptr<CompilationDatabase> db = expandResponseFiles(std::move(json_db), llvm::vfs::getRealFileSystem());
+        std::unique_ptr<CompilationDatabase> selected_db =
+            std::make_unique<SingleCommandCompilationDatabase>(std::move(*command));
+        std::unique_ptr<CompilationDatabase> db = expandResponseFiles(std::move(selected_db), llvm::vfs::getRealFileSystem());
         if (!db) {
-            UEM_ERROR("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string);
+            UEM_ERROR("(llvm) Failed to expand response files from the selected compile command.");
             return nullptr;
         }
 
@@ -184,7 +136,13 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
         auto tool = std::make_unique<ToolData>(ClangTool{*db, sources}, std::move(db));
 
         tool->clang_tool.appendArgumentsAdjuster([](const CommandLineArguments& args,...) {
-            auto out = StripUnneededUnrealBuildArgs(args);
+            auto adjusted = args;
+            if (adjusted.empty()) {
+                UEM_WARN("Selected compile command has no arguments.");
+                return adjusted;
+            }
+            adjusted.front() = Config::GetConfig().ClangPath().string();
+            auto out = StripUnneededUnrealBuildArgs(adjusted);
             out.insert_range(out.end(), Config::GetConfig().AdditionalClangArgs());
             return out;
         });

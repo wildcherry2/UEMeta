@@ -7,8 +7,6 @@
 #include <llvm/ADT/DenseSet.h>
 #include <thread>
 
-#include "UEMeta/JsonBuilders.hpp"
-
 namespace clang::tooling {
     /**
      * @brief Forward declaration of Clang's command-line tool driver.
@@ -153,8 +151,6 @@ namespace UEMeta {
         void EndTranslationUnit(clang::ASTContext& ctx);
 
         clang::ASTContext* context{};
-        JsonTopLevelDeclarations declarations{};
-        std::vector<JsonIncludeOrder> include_order{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
         llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
         std::jthread ticker_thread{};

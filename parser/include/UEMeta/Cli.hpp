@@ -45,22 +45,7 @@ int main(int argc, char** argv);
 
 namespace UEMeta {
     /**
-     * @brief Strategy used to partition generated declaration JSON files.
-     */
-    enum class SplitStrategy {
-        /**
-         * @brief Groups emitted declarations by their source file.
-         */
-        ByFile,
-
-        /**
-         * @brief Writes each emitted top-level declaration to its own JSON file.
-         */
-        ByDecl
-    };
-
-    /**
-     * @brief Process-wide CLI configuration used by tool setup, path scrubbing, and JSON emission.
+     * @brief Process-wide CLI configuration used by tool setup.
      */
     class Config {
     public:
@@ -73,16 +58,6 @@ namespace UEMeta {
          * @brief Returns the compile_commands.json path.
          */
         [[nodiscard]] const StablePath& CcPath() const;
-
-        /**
-         * @brief Returns the output directory path.
-         */
-        [[nodiscard]] const StablePath& OutPath() const;
-
-        /**
-         * @brief Returns the configured JSON file split strategy.
-         */
-        [[nodiscard]] SplitStrategy GetSplitStrategy() const;
 
         /**
          * @brief Returns the clang or clang-cl executable path.
@@ -100,37 +75,14 @@ namespace UEMeta {
         [[nodiscard]] const std::vector<std::string>& StripArgs() const;
 
         /**
-         * @brief Returns path delimiter tokens used to trim generated file paths.
-         */
-        [[nodiscard]] const std::vector<std::string>& PathDelimiters() const;
-
-        /**
-         * @brief Returns path blacklist tokens replaced in generated file paths.
-         */
-        [[nodiscard]] const std::vector<std::string>& PathBlacklist() const;
-
-        /**
-         * @brief Returns header blacklist tokens used to exclude declarations and include edges.
-         */
-        [[nodiscard]] const std::vector<std::string>& HeaderBlacklist() const;
-
-        /**
-         * @brief Returns header whitelist tokens used to include declarations and include edges.
-         */
-        [[nodiscard]] const std::vector<std::string>& HeaderWhitelist() const;
-
-        /**
          * @brief Writes a human-readable configuration summary to a stream.
          */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
-            return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}"
-                                     "\nsplit_strategy={}\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
-                                     "strip_args={}\npath_delimiters={}\npath_blacklist={}\n"
-                                     "header_blacklist={}\nheader_whitelist={}",
-                obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(),
-                obj.split_strategy == SplitStrategy::ByFile ? "file" : "decl",
-                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args,
-                obj.path_delimiters, obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
+            return os << fmtquill::format("cpp_path={}\ncc_path={}"
+                                     "\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
+                                     "strip_args={}",
+                obj.cpp_path.string(), obj.cc_path.string(),
+                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args);
         }
 
         /**
@@ -180,16 +132,11 @@ namespace UEMeta {
          */
         static int Initialize(int argc, char** argv);
 
-        StablePath cpp_path{}, cc_path{}, out_path{};
+        StablePath cpp_path{}, cc_path{};
         StablePath clang_path{};
         bool no_cl = false;
-        SplitStrategy split_strategy{SplitStrategy::ByFile};
         std::vector<std::string> additional_clang_args{};
         std::vector<std::string> strip_args{};
-        std::vector<std::string> path_delimiters{"UnrealEngine"}; //replace with set?
-        std::vector<std::string> path_blacklist{}; //replace with set?
-        std::vector<std::string> header_whitelist{};
-        std::vector<std::string> header_blacklist{};
 
         std::atomic_flag initialized{};
     };
