@@ -66,29 +66,33 @@ static std::string ValidateNonEmptyFile(const std::string& path, const std::stri
 
 /// @brief Validates a compile commands file or JSON literal using its protobuf shape.
 static std::string ValidateCompileCommands(const std::string& in) {
-    if (in.empty()) return "";
-    const auto IsValidCCJson = [](const std::string& in) -> std::string {
-        ParseResult::CompileCommands compileCommands;
-        google::protobuf::util::JsonParseOptions options;
-        options.ignore_unknown_fields = true; 
+    try {
+        if (in.empty()) return "";
+        const auto IsValidCCJson = [](const std::string& in) -> std::string {
+            ParseResult::CompileCommands compileCommands;
+            google::protobuf::util::JsonParseOptions options;
+            options.ignore_unknown_fields = true;
 
-        auto status = google::protobuf::util::JsonStringToMessage(in, &compileCommands, options);
+            auto status = google::protobuf::util::JsonStringToMessage(in, &compileCommands, options);
 
-        if (!status.ok()) {
-            return fmtquill::format("Invalid compileCommands file: {}, error: ", in.c_str(), status.ToString());
+            if (!status.ok()) {
+                return fmtquill::format("Invalid compile_commands file: {}, error: ", in.c_str(), status.ToString());
+            }
+
+            return "";
+        };
+
+        if (in.ends_with(".json")) {
+            auto test = ValidateNonEmptyFile(in, "compile_commands.json");
+            if (!test.empty()) return test;
+            std::ifstream ifs{in};
+            std::stringstream buffer;
+            buffer << ifs.rdbuf();
+            return IsValidCCJson(buffer.str());
         }
 
-        return "";
-    };
-
-    if (in.ends_with(".json")) {
-        auto test = ValidateNonEmptyFile(in, "compile_commands.json");
-        if (!test.empty()) return test;
-        std::ifstream ifs{in};
-        std::stringstream buffer;
-        buffer << ifs.rdbuf();
-        return IsValidCCJson(buffer.str());
+        return IsValidCCJson(in);
+    } catch (const std::exception& e) {
+        return fmtquill::format("Invalid compile_commands file (exception): {}", e.what());
     }
-
-    return IsValidCCJson(in);
 }
