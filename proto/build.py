@@ -44,11 +44,11 @@ if not buf_path.exists():
 
 # parse arguments for language and output directory
 parser = ArgumentParser()
-parser.add_argument("--language", type=str, default="cpp",
+parser.add_argument("--language", type=str, required=True,
                     help="The language to generate code for. E.g. 'cpp', 'python', 'java', etc.")
-parser.add_argument("--output", type=Path, default="parser/intermediate/generated",
+parser.add_argument("--output", type=Path, required=True,
                     help="The directory to output the generated code to.")
-parser.add_argument("--modules", type=str, nargs="+", default=["parser"], choices=["parser", "union"],
+parser.add_argument("--modules", type=str, nargs="+", required=True, choices=["parser", "union"],
                     help="The protos you need to compile.")
 args = parser.parse_args()
 

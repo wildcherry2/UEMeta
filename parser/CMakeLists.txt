@@ -7,6 +7,7 @@ endif()
 project(parser LANGUAGES CXX)
 
 include(FetchContent)
+find_package(Python3 3.14 REQUIRED COMPONENTS Interpreter)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(FETCHCONTENT_QUIET OFF CACHE BOOL "Show FetchContent population progress" FORCE)
@@ -74,6 +75,11 @@ set(UEMETA_INDICATORS_GIT_TAG
     "v2.3"
     CACHE STRING "indicators Git tag fetched by CMake"
 )
+set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
+set(UEMETA_PROTOBUF_GIT_TAG
+    "v${UEMETA_PROTOBUF_VERSION}"
+    CACHE STRING "Protobuf Git tag fetched by CMake"
+)
 set(UEMETA_MSVC_DISABLED_WARNINGS
     /wd4100 # unreferenced formal parameter
     /wd4244 # conversion, possible loss of data
@@ -111,6 +117,13 @@ FetchContent_Declare(indicators
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/indicators-${UEMETA_INDICATORS_VERSION}"
 )
 
+FetchContent_Declare(protobuf
+    GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+    GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protobuf-${UEMETA_PROTOBUF_VERSION}"
+)
+
 function(UEMeta_FetchContent_MakeAvailable name)
     string(TOLOWER "${name}" name_lc)
     FetchContent_GetProperties(${name})
@@ -132,6 +145,14 @@ UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
 UEMeta_FetchContent_MakeAvailable(indicators)
+
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_LIBPROTOC OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
+set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+UEMeta_FetchContent_MakeAvailable(protobuf)
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
@@ -173,10 +194,60 @@ if(MSVC AND TARGET LLVMDebugInfoPDB)
     endif()
 endif()
 
-add_executable(parser src/main.cpp src/ClangHandler.cpp
+set(UEMETA_PROTO_ROOT "${PROJECT_SOURCE_DIR}/../proto")
+set(UEMETA_PROTO_BUILD_SCRIPT "${UEMETA_PROTO_ROOT}/build.py")
+set(UEMETA_PROTO_GENERATED_DIR "${PROJECT_SOURCE_DIR}/intermediate/generated")
+
+file(GLOB UEMETA_PROTO_INPUTS CONFIGURE_DEPENDS "${UEMETA_PROTO_ROOT}/files/*.proto")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${UEMETA_PROTO_BUILD_SCRIPT}"
+    "${UEMETA_PROTO_ROOT}/buf.yaml"
+    ${UEMETA_PROTO_INPUTS}
+)
+
+message(STATUS "Generating parser protobuf C++ sources")
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${UEMETA_PROTO_BUILD_SCRIPT}"
+        --language cpp
+        --output parser/intermediate/generated
+        --modules parser
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/.."
+    RESULT_VARIABLE UEMETA_PROTO_BUILD_RESULT
+    OUTPUT_VARIABLE UEMETA_PROTO_BUILD_OUTPUT
+    ERROR_VARIABLE UEMETA_PROTO_BUILD_ERROR
+)
+
+if(NOT UEMETA_PROTO_BUILD_RESULT EQUAL 0)
+    message(FATAL_ERROR
+        "Failed to generate parser protobuf C++ sources.\n"
+        "stdout:\n${UEMETA_PROTO_BUILD_OUTPUT}\n"
+        "stderr:\n${UEMETA_PROTO_BUILD_ERROR}"
+    )
+endif()
+
+file(GLOB UEMETA_PROTO_GENERATED_SOURCES CONFIGURE_DEPENDS
+    "${UEMETA_PROTO_GENERATED_DIR}/*.cc"
+)
+file(GLOB UEMETA_PROTO_GENERATED_HEADERS CONFIGURE_DEPENDS
+    "${UEMETA_PROTO_GENERATED_DIR}/*.h"
+)
+
+if(NOT UEMETA_PROTO_GENERATED_SOURCES OR NOT UEMETA_PROTO_GENERATED_HEADERS)
+    message(FATAL_ERROR "Expected generated protobuf C++ files in ${UEMETA_PROTO_GENERATED_DIR}")
+endif()
+
+source_group("Generated\\Protobuf" FILES
+    ${UEMETA_PROTO_GENERATED_SOURCES}
+    ${UEMETA_PROTO_GENERATED_HEADERS}
+)
+
+add_executable(parser
+        src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
         src/MakeTool.cpp
-        src/StablePath.cpp)
+        src/StablePath.cpp
+        ${UEMETA_PROTO_GENERATED_SOURCES}
+        ${UEMETA_PROTO_GENERATED_HEADERS})
 
 set_target_properties(parser PROPERTIES
     CXX_STANDARD 23
@@ -185,7 +256,10 @@ set_target_properties(parser PROPERTIES
     RUNTIME_OUTPUT_NAME parser
 )
 
-target_include_directories(parser PRIVATE "${PROJECT_SOURCE_DIR}/include")
+target_include_directories(parser PRIVATE
+    "${PROJECT_SOURCE_DIR}/include"
+    "${UEMETA_PROTO_GENERATED_DIR}"
+)
 
 target_include_directories(parser SYSTEM PRIVATE
     ${LLVM_INCLUDE_DIRS}
@@ -230,6 +304,7 @@ target_link_libraries(parser PRIVATE
     CLI11::CLI11
     quill::quill
     indicators::indicators
+    protobuf::libprotobuf
 )
 
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
