@@ -5,7 +5,6 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
-#include <thread>
 
 namespace clang::tooling {
     /**
@@ -137,14 +136,14 @@ namespace UEMeta {
 
     private:
         /**
-         * @brief Resets per-translation-unit state before traversal starts.
+         * @brief Logs that declaration traversal is starting.
          *
          * @param ctx AST context for the translation unit.
          */
         void BeginTranslationUnit(clang::ASTContext& ctx);
 
         /**
-         * @brief Writes collected JSON output and include-order artifacts after traversal completes.
+         * @brief Logs that declaration traversal has completed.
          *
          * @param ctx AST context for the translation unit.
          */
@@ -153,6 +152,5 @@ namespace UEMeta {
         clang::ASTContext* context{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
         llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
-        std::jthread ticker_thread{};
     };
 }

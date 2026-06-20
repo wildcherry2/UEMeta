@@ -70,11 +70,6 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
-set(UEMETA_INDICATORS_VERSION "2.3" CACHE STRING "indicators release fetched by CMake")
-set(UEMETA_INDICATORS_GIT_TAG
-    "v2.3"
-    CACHE STRING "indicators Git tag fetched by CMake"
-)
 set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
 set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
@@ -110,13 +105,6 @@ FetchContent_Declare(quill
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
 )
 
-FetchContent_Declare(indicators
-    GIT_REPOSITORY https://github.com/p-ranav/indicators.git
-    GIT_TAG "${UEMETA_INDICATORS_GIT_TAG}"
-    GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/indicators-${UEMETA_INDICATORS_VERSION}"
-)
-
 FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
@@ -144,7 +132,6 @@ endfunction()
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
-UEMeta_FetchContent_MakeAvailable(indicators)
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
@@ -303,7 +290,6 @@ target_link_libraries(parser PRIVATE
     clangASTMatchers
     CLI11::CLI11
     quill::quill
-    indicators::indicators
     protobuf::libprotobuf
 )
 

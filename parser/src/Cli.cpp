@@ -1,7 +1,7 @@
 #include <sstream>
 #include <string_view>
 #include <utility>
-#include <atomic>
+#include <iostream>
 
 #include "UEMeta/Cli.hpp"
 #include "CLI/CLI.hpp"
@@ -9,99 +9,6 @@
 #include "quill/Frontend.h"
 #include "quill/sinks/ConsoleSink.h"
 #include "quill/sinks/FileSink.h"
-#include "indicators/progress_spinner.hpp"
-
-/// @brief Console sink that interprets tagged trace messages as spinner controls.
-class ConsoleSinkWithSpinner : public quill::ConsoleSink {
-public:
-    /// @brief Constructs a console sink with Quill's console sink configuration.
-    ConsoleSinkWithSpinner(quill::ConsoleSinkConfig const& config = quill::ConsoleSinkConfig{}) : ConsoleSink(config) {}
-
-    /// @brief Writes ordinary log records and handles spinner control records.
-    void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
-                   std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
-                   quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
-                   const std::vector<std::pair<std::string, std::string>> *named_args, std::string_view log_message,
-                   std::string_view log_statement) override {
-
-        if (log_level != quill::LogLevel::TraceL1 || !log_metadata || !log_metadata->tags()) {
-            if (spinner) {
-                std::cout << "\r\33[2K\r" << std::flush;
-                ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
-                    logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
-
-                tick_count = (tick_count + 1) % 8;
-                return spinner->set_progress(tick_count);
-            }
-
-            return ConsoleSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
-                logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
-        }
-
-        auto ooo_msg = [] (std::string_view ctrl){ std::cerr << fmtquill::format("Out-of-order spinner control message '{}' received!", ctrl) << std::endl; };
-        if (auto tag = std::string_view(log_metadata->tags()); tag.contains(UEM_START_SPINNER_TAG)) {
-            if (spinner) return ooo_msg(tag);
-            spinner = std::make_unique<indicators::ProgressSpinner>(
-                    indicators::option::PostfixText(log_message),
-                    indicators::option::ForegroundColor{indicators::Color::white},
-                    indicators::option::SpinnerStates{std::vector<std::string>{"|", "/", "-", "\\", "|", "/", "-", "\\"}},
-                    indicators::option::FontStyles{std::vector{indicators::FontStyle::bold}},
-                    indicators::option::ShowPercentage(false));
-            tick_count = 0;
-        }
-        else if (tag.contains(UEM_TICK_SPINNER_TAG)) {
-            if (!spinner) return ooo_msg(tag);
-            tick_count = (tick_count + 1) % 8;
-            std::cout << '\r' << std::flush;
-            spinner->set_progress(tick_count);
-        }
-        else if (tag.contains(UEM_UPDATE_SPINNER_TAG)) {
-            if (!spinner) return ooo_msg(tag);
-            spinner->set_option(indicators::option::PostfixText(log_message));
-            tick_count = (tick_count + 1) % 8;
-            std::cout << '\r' << std::flush;
-            spinner->set_progress(tick_count);
-        }
-        else if (tag.contains(UEM_STOP_SPINNER_TAG)) {
-            if (!spinner) return;
-            spinner->set_option(indicators::option::PostfixText(log_message));
-            std::cout << "\r\33[2K\r" << std::flush;
-            spinner->mark_as_completed();
-            spinner = nullptr;
-        }
-    }
-
-private:
-    std::unique_ptr<indicators::ProgressSpinner> spinner{};
-    size_t tick_count = 0;
-};
-
-/// @brief File sink that records spinner start/stop messages but suppresses spinner tick noise.
-class FileSinkWithSpinner : public quill::FileSink {
-public:
-    /// @brief Constructs a file sink with Quill's file sink configuration.
-    FileSinkWithSpinner(std::filesystem::path const &filename, quill::FileSinkConfig const& config = quill::FileSinkConfig{})
-        : FileSink(filename, config) {}
-
-    /// @brief Writes regular log records and converts spinner control records to readable file log entries.
-    void write_log(const quill::MacroMetadata *log_metadata, uint64_t log_timestamp, std::string_view thread_id,
-                   std::string_view thread_name, const std::string &process_id, std::string_view logger_name,
-                   quill::LogLevel log_level, std::string_view log_level_description, std::string_view log_level_short_code,
-                   const std::vector<std::pair<std::string, std::string>> *named_args, std::string_view log_message,
-                   std::string_view log_statement) override {
-
-        if (log_level != quill::LogLevel::TraceL1 || !log_metadata || !log_metadata->tags()) {
-            return FileSink::write_log(log_metadata, log_timestamp, thread_id,thread_name, process_id,
-                logger_name,log_level, log_level_description, log_level_short_code,named_args, log_message,log_statement);
-        }
-        if (auto tag = std::string_view(log_metadata->tags()).substr(1);
-            tag.contains(UEM_TICK_SPINNER_TAG) || tag.contains(UEM_UPDATE_SPINNER_TAG)) return;
-
-        const quill::MacroMetadata metadata{log_metadata->source_location(), log_metadata->caller_function(), log_metadata->message_format(), "", quill::LogLevel::Info, log_metadata->event()};
-        return FileSink::write_log(&metadata, log_timestamp, thread_id,thread_name, process_id,
-                logger_name, quill::LogLevel::Info, log_level_description, log_level_short_code,named_args, log_message,log_statement);
-    }
-};
 
 /// @brief Validates that a CLI path names an existing non-empty file, optionally with a required filename.
 static std::string ValidateFile(const std::string& path, const std::string& assertFileName = "") {
@@ -294,7 +201,7 @@ void UEMeta::Logger::AssertInitialized() const {
     throw std::runtime_error{"Tried to use Logger before it was initialized!."};
 }
 
-/// @brief Initializes Quill backend, console/file sinks, spinner handling, and the main logger.
+/// @brief Initializes Quill backend, console/file sinks, and the main logger.
 int UEMeta::Logger::Initialize() {
     try {
         auto& logger = GetLogger();
@@ -310,8 +217,8 @@ int UEMeta::Logger::Initialize() {
         console_sink_config.set_colours(colours);
         console_sink_config.set_override_pattern_formatter_options(formatter_options);
         file_sink_config.set_override_pattern_formatter_options(formatter_options);
-        auto console_sink = quill::Frontend::create_or_get_sink<ConsoleSinkWithSpinner>("console_main", console_sink_config);
-        auto file_sink = quill::Frontend::create_or_get_sink<FileSinkWithSpinner>("uemeta.log", file_sink_config);
+        auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console_main", console_sink_config);
+        auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>("uemeta.log", file_sink_config);
 
         if (!console_sink || !file_sink) {
             UEM_ERROR("Failed to initialize logger sinks.");

@@ -2,11 +2,10 @@
 #include "UEMeta/ClangHandler.hpp"
 
 #include <atomic>
-#include <chrono>
 #include <exception>
 #include <filesystem>
+#include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 
 #include <clang/AST/ASTContext.h>
@@ -72,17 +71,17 @@ int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
     return 1;
 }
 
-/// @brief Starts declaration traversal progress reporting.
+/// @brief Logs the start of declaration traversal.
 void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext&) {
     GuardClangCallback("BeginTranslationUnit", [] {
-        UEM_SPINNER_START("Traversing AST");
+        UEM_INFO("Starting AST traversal...");
     });
 }
 
-/// @brief Stops declaration traversal progress reporting.
+/// @brief Logs the end of declaration traversal.
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     GuardClangCallback("EndTranslationUnit", [] {
-        UEM_SPINNER_STOP("Finished traversing AST");
+        UEM_INFO("Finished traversing AST");
     });
 }
 
@@ -108,36 +107,22 @@ bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl*) { retur
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance&,
                                                                             llvm::StringRef file) {
     try {
-        const auto tu_name = std::filesystem::path(file.str()).filename().string();
-        UEM_SPINNER_START(fmtquill::format("Parsing TU '{}' (this may take a moment)",
-                                           tu_name.empty() ? file.str() : tu_name));
-        ticker_thread = std::jthread([tu_name](std::stop_token token) {
-            GuardClangCallback("translation unit spinner", [&] {
-                while (true) {
-                    if (token.stop_requested()) {
-                        UEM_SPINNER_STOP(fmtquill::format("TU '{}' parsed!", tu_name));
-                        return;
-                    }
-                    UEM_SPINNER_TICK;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-            });
-        });
+        const auto input_name = file.str();
+        const auto file_name = std::filesystem::path(input_name).filename().string();
+        const auto tu_name = file_name.empty() ? input_name : file_name;
+        UEM_INFO("Parsing TU '{}' (this may take a moment)", tu_name);
 
         /// @brief AST consumer that drives traversal once Clang finishes parsing a translation unit.
         class Consumer : public clang::ASTConsumer {
         public:
             /// @brief Creates a consumer tied to the owning ClangHandler.
-            explicit Consumer(ClangHandler* owner) : owner(owner) {}
+            explicit Consumer(ClangHandler* owner, std::string tu_name)
+                : owner(owner), tu_name(std::move(tu_name)) {}
 
-            /// @brief Stops the TU spinner and traverses declarations.
+            /// @brief Traverses declarations after Clang finishes parsing the translation unit.
             void HandleTranslationUnit(clang::ASTContext& ctx) override {
                 GuardClangCallback("HandleTranslationUnit", [&] {
-                    if (owner->ticker_thread.joinable()) {
-                        owner->ticker_thread.request_stop();
-                        owner->ticker_thread.join();
-                    }
-                    UEM_INFO("Starting AST traversal...");
+                    UEM_INFO("TU '{}' parsed!", tu_name);
                     owner->BeginTranslationUnit(ctx);
                     if (!owner->TraverseDecl(ctx.getTranslationUnitDecl())) {
                         UEM_ERROR("(clang) AST traversal aborted due to an earlier exception.");
@@ -149,9 +134,10 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
 
         private:
             ClangHandler* owner;
+            std::string tu_name;
         };
 
-        return std::make_unique<Consumer>(this);
+        return std::make_unique<Consumer>(this, tu_name);
     } catch (const std::exception& ex) {
         LogClangException("CreateASTConsumer", ex);
     } catch (...) {
