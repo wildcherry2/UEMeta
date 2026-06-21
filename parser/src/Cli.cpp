@@ -61,16 +61,9 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return 0;
     }
 
-    auto defaults = ParseIni(StablePath(std::string_view{"./parser-default.ini"}));
-
     CLI::App app{"Parses a translation unit with clang tools and outputs a flattened AST of top level declarations.", "UEMeta"};
     app.allow_windows_style_options();
     argv = app.ensure_utf8(argv);
-
-    std::string cfg_path{};
-
-    app.add_option("--config", cfg_path, CONFIG_HELP)
-        ->check(CLI::ExistingFile);
 
     const auto TryCliParse = [&] {
         try {
@@ -90,17 +83,10 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return 0;
     };
 
-    auto result = TryCliParse();
-    if (result) return result;
-    if (!cfg_path.empty()) {
-        MergeParsedArgsLeft(defaults, ParseIni(StablePath(cfg_path)));
-    }
-
-    app.clear();
     ParsedArgs args{};
     app.add_flag("--prefer-clang", args.prefer_clang, PREFER_CLANG_HELP);
     app.add_option("--compile-commands", args.compile_commands, COMPILE_COMMANDS_HELP)
-        ->check(ValidateCompileCommands)->required(!defaults.compile_commands);
+        ->check(ValidateCompileCommands)->required();
     app.add_option("--clang-path", args.clang_path, CLANG_PATH_HELP)
         ->check(CLI::ExistingFile); // todo if not given, respect --prefer-clang and use bundled binaries
     app.add_option("--strip-commands", args.strip_commands, STRIP_COMMANDS_HELP);
@@ -111,7 +97,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.add_option("-f,--format", args.format, FORMAT_HELP)
         ->transform(CLI::CheckedTransformer(format_map, CLI::ignore_case));
 
-    result = TryCliParse();
+    auto result = TryCliParse();
     if (result) return result;
 
     try {

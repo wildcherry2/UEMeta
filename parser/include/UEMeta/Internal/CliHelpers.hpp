@@ -7,7 +7,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <optional>
-#include "mini/ini.h"
 #include <google/protobuf/util/json_util.h>
 #include "parser.pb.h"
 
@@ -47,10 +46,6 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
                              "according to protobuf's default implementation.\n\tThis is the smallest and fastest format "
                              "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
                              "\n\tGood for debugging.";
-
-constexpr auto CONFIG_HELP = "Path to config file to use\n"
-                             "Command line arguments take precedence over all config files, and the given config "
-                             " takes precedence over the default config.";
 
 /// @brief Validates that a CLI path names an existing non-empty file, optionally with a required filename.
 static std::string ValidateNonEmptyFile(const std::string& path, const std::string& assertFileName = "") {
@@ -111,70 +106,6 @@ static std::string ValidateFormat(const std::string& in) {
     return fmtquill::format("Invalid format value: {}", in);
 }
 
-class IniStruct : public mINI::INIStructure {
-public:
-    std::optional<std::string> get(const std::string& section, const std::string& key,
-        const std::function<std::string(const std::string&)>& validator = {}) {
-        if (has(section)) {
-            if (auto& section_map = (*this)[section]; section_map.has(key)) {
-                if (validator && validator(section_map[key]).empty()) {
-                    return std::nullopt;
-                }
-                return section_map[key];
-            }
-            return std::nullopt;
-        }
-        return std::nullopt;
-    }
-
-    std::optional<UEMeta::StablePath> getP(const std::string& section, const std::string& key) {
-        if (has(section)) {
-            if (auto& section_map = (*this)[section]; section_map.has(key)) {
-                return UEMeta::StablePath(section_map[key]);
-            }
-            return std::nullopt;
-        }
-        return std::nullopt;
-    }
-
-    std::optional<std::unordered_set<std::string>> getL(const std::string& section, const std::string& key) {
-        if (has(section)) {
-            auto& section_map = (*this)[section];
-            if (section_map.has(key)) {
-                std::string_view raw = section_map[key]; //todo account for quotes
-                auto range = raw | std::views::split(' ') | std::views::transform([](auto&& subrange) -> std::string_view {
-                    auto left = std::ranges::find_if_not(subrange, [](unsigned char ch) { return std::isspace(ch); });
-                    auto right = std::ranges::find_if_not(subrange | std::views::reverse, [](unsigned char ch) { return std::isspace(ch); }).base();
-                    if (left >= right) return "";
-                    return {left, right};
-                }) | std::views::filter([](std::string_view sv) { return !sv.empty(); });
-                return std::ranges::to<std::unordered_set<std::string>>(range);
-            }
-            return std::nullopt;
-        }
-        throw std::runtime_error("Ini parser: Section " + section + " does not exist!");
-    }
-
-    void getL(std::unordered_set<std::string>& append_to, const std::string& section, const std::string& key) {
-        if (const auto extra = getL(section, key)) {
-            append_to.insert_range(extra.value());
-        }
-    }
-
-    std::optional<bool> getB(const std::string& section, const std::string& key) {
-        if (has(section)) {
-            if (auto& section_map = (*this)[section]; section_map.has(key)) {
-                const std::string_view raw = section_map[key];
-                if (raw == "true" || raw == "True" || raw == "1") return true;
-                if (raw == "false" || raw == "false" || raw == "0") return false;
-                return std::nullopt;
-            }
-            return std::nullopt;
-        }
-        return std::nullopt;
-    }
-};
-
 enum class Format {
     json,
     binary
@@ -196,55 +127,3 @@ struct ParsedArgs {
     std::optional<UEMeta::StablePath> log;
     std::optional<UEMeta::StablePath> output_directory;
 };
-
-static void MergeParsedArgsLeft(ParsedArgs& l, const ParsedArgs& r) {
-    if (r.compile_commands) l.compile_commands = r.compile_commands;
-    if (r.prefer_clang) l.prefer_clang = r.prefer_clang;
-    if (r.strip_commands) {
-        if (l.strip_commands) l.strip_commands.value().insert_range(r.strip_commands.value());
-        else l.strip_commands = r.strip_commands;
-    }
-    if (r.output_directory) l.output_directory = r.output_directory;
-    if (r.path_begin) {
-        if (l.path_begin) l.path_begin.value().insert_range(r.path_begin.value());
-        else l.path_begin = r.path_begin;
-    }
-    if (r.format) l.format = r.format;
-    if (r.clang_path) l.clang_path = r.clang_path;
-    if (r.log) l.log = r.log;
-    if (r.additional_clang_args) {
-        if (l.additional_clang_args) l.additional_clang_args.value().insert_range(r.additional_clang_args.value());
-        else l.additional_clang_args = r.additional_clang_args;
-    }
-}
-
-static ParsedArgs ParseIni(const UEMeta::StablePath& path) {
-    ParsedArgs out{};
-    const mINI::INIFile file{path.UnderlyingPath()};
-    IniStruct ini{};
-    file.read(ini);
-
-    out.compile_commands = ini.get("parser-input", "compile_commands", ValidateCompileCommands);
-    out.prefer_clang = ini.getB("parser-input", "prefer_clang");
-    out.strip_commands = ini.getL("parser-input", "strip_commands");
-    out.additional_clang_args = ini.getL("parser-input", "additional_clang_args");
-    out.path_begin = ini.getL("parser-output", "path_begin");
-    out.format = ini.get("parser-output", "format", ValidateFormat).transform([](const std::string& in) {
-        return in == "json" ? Format::json : Format::binary;
-    });
-    out.clang_path = ini.get("parser-input", "clang_path").and_then([](const std::string& in) -> std::optional<UEMeta::StablePath> {
-        if (ValidateNonEmptyFile(in).empty()) {
-            auto path = UEMeta::StablePath(in);
-            if (path.UnderlyingPath().filename().string().starts_with("clang")) return path;
-        }
-        return std::nullopt;
-    });
-    out.log = ini.get("parser-output", "log").transform([](const std::string& in) {
-        return UEMeta::StablePath(in);
-    });
-    out.output_directory = ini.get("parser-output", "output_directory").transform([](const std::string& in) {
-        return UEMeta::StablePath(in);
-    });
-
-    return out;
-}

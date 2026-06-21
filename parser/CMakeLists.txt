@@ -70,11 +70,6 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
-set(UEMETA_MINI_VERSION "0.9.18" CACHE STRING "mINI release fetched by CMake")
-set(UEMETA_MINI_GIT_TAG
-    "${UEMETA_MINI_VERSION}"
-    CACHE STRING "mINI Git tag fetched by CMake"
-)
 set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
 set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
@@ -110,14 +105,6 @@ FetchContent_Declare(quill
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
 )
 
-FetchContent_Declare(mini
-    GIT_REPOSITORY https://github.com/metayeti/mINI.git
-    GIT_TAG "${UEMETA_MINI_GIT_TAG}"
-    GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/mINI-${UEMETA_MINI_VERSION}"
-    SOURCE_SUBDIR cmake-do-not-add
-)
-
 FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
@@ -145,7 +132,6 @@ endfunction()
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
-UEMeta_FetchContent_MakeAvailable(mini)
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
@@ -162,13 +148,6 @@ find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 
 separate_arguments(UEMETA_LLVM_DEFINITIONS UNIX_COMMAND "${LLVM_DEFINITIONS}")
-
-add_library(mINI INTERFACE)
-add_library(mINI::mINI ALIAS mINI)
-target_compile_features(mINI INTERFACE cxx_std_17)
-target_include_directories(mINI SYSTEM INTERFACE
-    "${mini_SOURCE_DIR}/src"
-)
 
 # The Windows release archive records the release builder's DIA SDK path.
 if(MSVC AND TARGET LLVMDebugInfoPDB)
@@ -311,13 +290,11 @@ target_link_libraries(parser PRIVATE
     clangASTMatchers
     CLI11::CLI11
     quill::quill
-    mINI::mINI
     protobuf::libprotobuf
 )
 
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
 set(PARSER_BUNDLE_CLANG_DIR "${PARSER_BUNDLE_DIR}/Clang")
-set(PARSER_DEFAULT_CONFIG_PATH "${PROJECT_SOURCE_DIR}/parser-default.ini")
 set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
 target_compile_definitions(parser PRIVATE
     QUILL_DISABLE_FUNCTION_NAME
@@ -339,12 +316,9 @@ add_custom_command(TARGET parser POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "$<TARGET_FILE:parser>"
         "${PARSER_BUNDLE_DIR}/$<TARGET_FILE_NAME:parser>"
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        "${PARSER_DEFAULT_CONFIG_PATH}"
-        "${PARSER_BUNDLE_DIR}/parser-default.ini"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory
         "${PARSER_LLVM_BIN_DIR}"
         "${PARSER_BUNDLE_CLANG_DIR}"
-    COMMENT "Bundling parser executable, default config, and LLVM/Clang binaries"
+    COMMENT "Bundling parser executable and LLVM/Clang binaries"
     VERBATIM
 )
