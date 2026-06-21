@@ -91,16 +91,30 @@ bool UEMeta::StablePath::IsEmptyContents(std::error_code& ec) const noexcept {
     return std::filesystem::is_empty(path, ec);
 }
 
+UEMeta::StablePath UEMeta::StablePath::current_program_directory() noexcept {
+    auto current_path = current_program_path();
+    if (current_path && current_path.path.has_parent_path()) {
+        return StablePath(current_path.path.parent_path());
+    }
+    current_path.last_error.assign(1, std::system_category());
+    UEM_ERROR("StablePath::current_program_directory failed!");
+    return current_path;
+}
+
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
     wchar_t path[MAX_PATH];
     if (GetModuleFileNameW(NULL, path, MAX_PATH) > 0) {
-        return StablePath(std::filesystem::path(path));
+        if (auto out = StablePath(std::filesystem::path(path)))
+            return out;
+        else
+            UEM_ERROR("StablePath::current_program_path failed with error: {}!", out.last_error.value());
     }
     auto out = StablePath();
     out.last_error.assign(GetLastError(), std::system_category());
+    UEM_ERROR("StablePath::current_program_path failed with error: {}!", out.last_error.value());
     return out;
 }
 
@@ -111,6 +125,7 @@ UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
     if (ec) {
         auto out = StablePath();
         out.last_error = ec;
+        UEM_ERROR("StablePath::current_program_path failed with error: {}!", out.last_error.value());
         return out;
     }
     return StablePath(path);
