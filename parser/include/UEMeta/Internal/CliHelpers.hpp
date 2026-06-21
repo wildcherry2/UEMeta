@@ -141,7 +141,7 @@ public:
         if (has(section)) {
             auto& section_map = (*this)[section];
             if (section_map.has(key)) {
-                std::string_view raw = section_map[key];
+                std::string_view raw = section_map[key]; //todo account for quotes
                 auto range = raw | std::views::split(' ') | std::views::transform([](auto&& subrange) -> std::string_view {
                     auto left = std::ranges::find_if_not(subrange, [](unsigned char ch) { return std::isspace(ch); });
                     auto right = std::ranges::find_if_not(subrange | std::views::reverse, [](unsigned char ch) { return std::isspace(ch); }).base();
@@ -180,10 +180,15 @@ enum class Format {
     binary
 };
 
+inline std::map<std::string, Format> format_map = {
+    {"json", Format::json},
+    {"binary", Format::binary}
+};
+
 struct ParsedArgs {
     std::optional<std::string> compile_commands;
     std::optional<bool> prefer_clang;
-    std::optional<std::unordered_set<std::string>> strip_commands;
+    std::optional<std::unordered_set<std::string>> strip_commands; //todo may need to change to vectors for cli
     std::optional<std::unordered_set<std::string>> additional_clang_args;
     std::optional<std::unordered_set<std::string>> path_begin;
     std::optional<Format> format;

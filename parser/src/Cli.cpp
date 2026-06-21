@@ -67,13 +67,10 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.allow_windows_style_options();
     argv = app.ensure_utf8(argv);
 
-    std::string cpp_path{};
-    std::string cc_path{};
-    std::string clang_path{};
     std::string cfg_path{};
 
     app.add_option("--config", cfg_path, CONFIG_HELP)
-        ->check([](const std::string& in){return ValidateNonEmptyFile(in); });
+        ->check(CLI::ExistingFile);
 
     const auto TryCliParse = [&] {
         try {
@@ -94,32 +91,38 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     };
 
     auto result = TryCliParse();
-    if (!result) return result;
+    if (result) return result;
     if (!cfg_path.empty()) {
         MergeParsedArgsLeft(defaults, ParseIni(StablePath(cfg_path)));
     }
 
     app.clear();
+    ParsedArgs args{};
+    app.add_flag("--prefer-clang", args.prefer_clang, PREFER_CLANG_HELP);
+    app.add_option("--compile-commands", args.compile_commands, COMPILE_COMMANDS_HELP)
+        ->check(ValidateCompileCommands)->required(!defaults.compile_commands);
+    app.add_option("--clang-path", args.clang_path, CLANG_PATH_HELP)
+        ->check(CLI::ExistingFile); // todo if not given, respect --prefer-clang and use bundled binaries
+    app.add_option("--strip-commands", args.strip_commands, STRIP_COMMANDS_HELP);
+    app.add_option("--clang-args", args.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP);
+    app.add_option("-l,--log", args.log, LOG_HELP);
+    app.add_option("--path-begin", args.path_begin, PATH_BEGIN_HELP);
+    app.add_option("--output", args.output_directory, OUTPUT_DIRECTORY_HELP);
+    app.add_option("-f,--format", args.format, FORMAT_HELP)
+        ->transform(CLI::CheckedTransformer(format_map, CLI::ignore_case));
 
-
+    result = TryCliParse();
+    if (result) return result;
 
     try {
-        cfg.cpp_path.Assign(std::string_view{cpp_path});
-        cfg.cc_path.Assign(std::string_view{cc_path});
 
-        if (clang_path.empty()) {
-            cfg.clang_path.Assign(cfg.no_cl ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH);
-        } else {
-            cfg.clang_path.Assign(std::string_view{clang_path});
-        }
 
 
 
         cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
-        cfg.additional_clang_args.emplace_back("/clang:-mwaitpkg");
+        cfg.additional_clang_args.emplace_back("/clang:-mwaitpkg"); //todo get non cl equivalents and use if path is clang
         cfg.additional_clang_args.emplace_back("/clang:-fno-access-control");
         cfg.initialized.test_and_set();
-
         std::ostringstream config_stream;
         config_stream << cfg;
         UEM_INFO("Using config:\n{}", config_stream.str());
