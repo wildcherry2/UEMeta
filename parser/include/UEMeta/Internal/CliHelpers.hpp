@@ -101,29 +101,37 @@ static std::string ValidateCompileCommands(const std::string& in) {
     }
 }
 
-static std::string ValidateFormat(const std::string& in) {
-    if (in.empty() || in == "json" || in == "binary") return "";
-    return fmtquill::format("Invalid format value: {}", in);
-}
+#ifdef WIN32
+/**
+ * @brief Default bundled clang-cl executable path on Windows.
+ */
+#define UEM_DEFAULT_CLANG_CL_PATH UEMeta::StablePath::current_program_directory() / "Clang" / "clang-cl.exe"
 
-enum class Format {
-    json,
-    binary
-};
+/**
+ * @brief Default bundled clang executable path on Windows.
+ */
+#define UEM_DEFAULT_CLANG_PATH UEMeta::StablePath::current_program_directory() / "Clang" / "clang.exe"
+#else
+/**
+ * @brief Default bundled clang-cl executable path on non-Windows platforms.
+ */
+#define UEM_DEFAULT_CLANG_CL_PATH UEMeta::StablePath::current_program_directory() / "Clang" / "clang-cl"
 
-inline std::map<std::string, Format> format_map = {
-    {"json", Format::json},
-    {"binary", Format::binary}
-};
+/**
+ * @brief Default bundled clang executable path on non-Windows platforms.
+ */
+#define UEM_DEFAULT_CLANG_PATH UEMeta::StablePath::current_program_directory() / "Clang" / "clang"
+#endif
 
-struct ParsedArgs {
-    std::optional<std::string> compile_commands;
-    std::optional<bool> prefer_clang;
-    std::optional<std::unordered_set<std::string>> strip_commands; //todo may need to change to vectors for cli
-    std::optional<std::unordered_set<std::string>> additional_clang_args;
-    std::optional<std::unordered_set<std::string>> path_begin;
-    std::optional<Format> format;
-    std::optional<UEMeta::StablePath> clang_path;
-    std::optional<UEMeta::StablePath> log;
-    std::optional<UEMeta::StablePath> output_directory;
-};
+/**
+ * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
+ */
+#define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
+#define UEM_DEFAULT_CLANG_ADDL_ARGS std::vector<std::string>{"-mwaitpkg", "-fno-access-control"}
+#define UEM_DEFAULT_CLANG_CL_ADDL_ARGS std::vector<std::string>{"/clang:-mwaitpkg", "/clang:-fno-access-control"}
+
+#ifdef NDEBUG
+#define UEM_DEFAULT_FORMAT ::UEMeta::Config::SerializationFormat::json
+#else
+#define UEM_DEFAULT_FORMAT ::UEMeta::Config::SerializationFormat::json
+#endif

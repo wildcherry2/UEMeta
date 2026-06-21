@@ -11,16 +11,11 @@
 #include "quill/sinks/ConsoleSink.h"
 #include "quill/sinks/FileSink.h"
 
-/// @brief Returns the configured C++ translation unit path.
-const UEMeta::StablePath& UEMeta::Config::CppPath() const {
-    AssertInitialized();
-    return cpp_path;
-}
 
 /// @brief Returns the configured compile_commands.json path.
-const UEMeta::StablePath& UEMeta::Config::CcPath() const {
+const UEMeta::StablePath& UEMeta::Config::CompileCommands() const {
     AssertInitialized();
-    return cc_path;
+    return compile_commands;
 }
 
 /// @brief Returns the configured Clang executable path.
@@ -30,15 +25,40 @@ const UEMeta::StablePath& UEMeta::Config::ClangPath() const {
 }
 
 /// @brief Returns arguments appended to the filtered compile command before invoking Clang.
-const std::vector<std::string>& UEMeta::Config::AdditionalClangArgs() const {
+const std::unordered_set<std::string>& UEMeta::Config::AdditionalClangArgs() const {
     AssertInitialized();
     return additional_clang_args;
 }
 
 /// @brief Returns compile command arguments stripped before invoking Clang.
-const std::vector<std::string>& UEMeta::Config::StripArgs() const {
+const std::unordered_set<std::string>& UEMeta::Config::StripArgs() const {
     AssertInitialized();
-    return strip_args;
+    return strip_commands;
+}
+
+bool UEMeta::Config::PrefersClang() const {
+    AssertInitialized();
+    return prefer_clang;
+}
+
+UEMeta::Config::SerializationFormat UEMeta::Config::Format() const {
+    AssertInitialized();
+    return format;
+}
+
+const std::unordered_set<std::string> & UEMeta::Config::PathBegin() const {
+    AssertInitialized();
+    return path_begin;
+}
+
+const UEMeta::StablePath & UEMeta::Config::Log() {
+    AssertInitialized();
+    return log;
+}
+
+const UEMeta::StablePath & UEMeta::Config::OutputDirectory() const {
+    AssertInitialized();
+    return output_directory;
 }
 
 /// @brief Returns the process-wide configuration singleton.
@@ -83,42 +103,45 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return 0;
     };
 
-    ParsedArgs args{};
-    app.add_flag("--prefer-clang", args.prefer_clang, PREFER_CLANG_HELP);
-    app.add_option("--compile-commands", args.compile_commands, COMPILE_COMMANDS_HELP)
-        ->check(ValidateCompileCommands)->required();
-    app.add_option("--clang-path", args.clang_path, CLANG_PATH_HELP)
-        ->check(CLI::ExistingFile); // todo if not given, respect --prefer-clang and use bundled binaries
-    app.add_option("--strip-commands", args.strip_commands, STRIP_COMMANDS_HELP);
-    app.add_option("--clang-args", args.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP);
-    app.add_option("-l,--log", args.log, LOG_HELP);
-    app.add_option("--path-begin", args.path_begin, PATH_BEGIN_HELP);
-    app.add_option("--output", args.output_directory, OUTPUT_DIRECTORY_HELP);
-    app.add_option("-f,--format", args.format, FORMAT_HELP)
-        ->transform(CLI::CheckedTransformer(format_map, CLI::ignore_case));
+    std::string cc_temp{};
 
-    auto result = TryCliParse();
-    if (result) return result;
+    app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
+        ->default_val(false);
+    app.add_option("--compile-commands", cc_temp, COMPILE_COMMANDS_HELP)
+        ->check(ValidateCompileCommands)
+        ->required();
+    app.add_option("--clang-path", cfg.clang_path, CLANG_PATH_HELP)
+        ->check(CLI::ExistingFile);
+    app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP);
+    app.add_option("--clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP);
+    app.add_option("-l,--log", cfg.log, LOG_HELP);
+    app.add_option("--path-begin", cfg.path_begin, PATH_BEGIN_HELP);
+    app.add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP)
+        ->default_val(StablePath::current_program_directory() / "Output");
+    app.add_option("-f,--format", cfg.format, FORMAT_HELP)
+        ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
+        ->default_val(UEM_DEFAULT_FORMAT);
 
-    try {
+    if (const auto result = TryCliParse()) return result;
 
-
-
-
-        cfg.strip_args.insert_range(cfg.strip_args.end(), UEM_DEFAULT_STRIP_LIST);
-        cfg.additional_clang_args.emplace_back("/clang:-mwaitpkg"); //todo get non cl equivalents and use if path is clang
-        cfg.additional_clang_args.emplace_back("/clang:-fno-access-control");
-        cfg.initialized.test_and_set();
-        std::ostringstream config_stream;
-        config_stream << cfg;
-        UEM_INFO("Using config:\n{}", config_stream.str());
-    } catch (const std::exception& ex) {
-        UEM_ERROR("Config initialization failed after CLI parse: {}", ex.what());
-        return -1;
-    } catch (...) {
-        UEM_ERROR("Config initialization failed after CLI parse with unknown exception");
-        return -1;
+    if (cfg.clang_path.UnderlyingPath().empty()) {
+        cfg.clang_path = cfg.prefer_clang ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH;
     }
+
+    cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
+    cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+
+    if (cc_temp.ends_with(".json")) {
+        cfg.compile_commands = StablePath(cc_temp);
+    }
+    else {
+        cfg.compile_commands = StablePath::current_program_directory() / "compile_commands.json";
+        std::ofstream cc_file{cfg.compile_commands.UnderlyingPath()};
+        cc_file << cc_temp;
+        cc_file.close();
+    }
+
+    cfg.initialized.test_and_set();
     return 0;
 }
 

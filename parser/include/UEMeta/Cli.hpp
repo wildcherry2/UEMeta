@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <atomic>
+#include <map>
+#include <unordered_set>
 
 #include "quill/Logger.h"
 #include "quill/LogMacros.h"
@@ -22,15 +24,15 @@ namespace UEMeta {
      */
     class Config {
     public:
-        /**
-         * @brief Returns the C++ translation unit path.
-         */
-        [[nodiscard]] const StablePath& CppPath() const;
+        enum class SerializationFormat {
+            json,
+            binary
+        };
 
         /**
-         * @brief Returns the compile_commands.json path.
+         * @brief Returns the compile_commands.json path or literal.
          */
-        [[nodiscard]] const StablePath& CcPath() const;
+        [[nodiscard]] const StablePath& CompileCommands() const;
 
         /**
          * @brief Returns the clang or clang-cl executable path.
@@ -40,22 +42,47 @@ namespace UEMeta {
         /**
          * @brief Returns compiler arguments appended after compile command filtering.
          */
-        [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
+        [[nodiscard]] const std::unordered_set<std::string>& AdditionalClangArgs() const;
 
         /**
          * @brief Returns compile command arguments that should be stripped before invoking Clang.
          */
-        [[nodiscard]] const std::vector<std::string>& StripArgs() const;
+        [[nodiscard]] const std::unordered_set<std::string>& StripArgs() const;
+
+        /**
+         * @brief Returns true when the user prefers `clang` over `clang-cl`.
+         */
+        [[nodiscard]] bool PrefersClang() const;
+
+        /**
+         * @brief Returns the output format.
+         */
+        [[nodiscard]] SerializationFormat Format() const;
+
+        /**
+         * @brief Returns the set of potential starting points for output paths.
+         */
+        [[nodiscard]] const std::unordered_set<std::string>& PathBegin() const;
+
+        /**
+         * @brief Returns the path to the log file. If empty, no log file should be written to.
+         */
+        [[nodiscard]] const StablePath& Log();
+
+        /**
+         * @brief Returns the directory to output serialized ASTs to.
+         */
+        [[nodiscard]] const StablePath& OutputDirectory() const;
 
         /**
          * @brief Writes a human-readable configuration summary to a stream.
          */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
-            return os << fmtquill::format("cpp_path={}\ncc_path={}"
-                                     "\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
-                                     "strip_args={}",
-                obj.cpp_path.string(), obj.cc_path.string(),
-                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args);
+            return os << fmtquill::format("compile_commands={}\nprefer_clang={}\nstrip_commands={}\n"
+                                          "additional_clang_args={}\npath_begin={}\nformat={}\nclang_path={}\n"
+                                          "log={}\noutput_directory={}", obj.compile_commands.string(), obj.prefer_clang, obj.strip_commands,
+                                          obj.additional_clang_args, obj.path_begin, format_string_map.at(obj.format), obj.clang_path.string(), obj.log.string(),
+                                          obj.output_directory.string());
         }
 
         /**
@@ -105,13 +132,27 @@ namespace UEMeta {
          */
         static int Initialize(int argc, char** argv);
 
-        StablePath cpp_path{}, cc_path{};
+        bool prefer_clang{};
+        std::unordered_set<std::string> strip_commands{};
+        std::unordered_set<std::string> additional_clang_args{};
+        std::unordered_set<std::string> path_begin{};
+        SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
         StablePath clang_path{};
-        bool no_cl = false;
-        std::vector<std::string> additional_clang_args{};
-        std::vector<std::string> strip_args{};
+        StablePath log{};
+        StablePath output_directory{};
+        StablePath compile_commands{};
 
         std::atomic_flag initialized{};
+
+        inline static const std::map<std::string, SerializationFormat> string_format_map = {
+            {"json", SerializationFormat::json},
+            {"binary", SerializationFormat::binary}
+        };
+
+        inline static const std::map<SerializationFormat, std::string> format_string_map = {
+            {SerializationFormat::json, "json"},
+            {SerializationFormat::binary, "binary"}
+        };
     };
 
     /**
@@ -177,33 +218,6 @@ namespace UEMeta {
         quill::Logger* logger{};
     };
 }
-
-#ifdef WIN32
-/**
- * @brief Default bundled clang-cl executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl.exe"
-
-/**
- * @brief Default bundled clang executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang.exe"
-#else
-/**
- * @brief Default bundled clang-cl executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl"
-
-/**
- * @brief Default bundled clang executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
-#endif
-
-/**
- * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
- */
-#define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
 
 /**
  * @brief Emits an informational log message through the UEMeta logger.

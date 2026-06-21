@@ -151,6 +151,21 @@ namespace UEMeta {
             return path.end();
         }
 
+        StablePath& operator=(const std::string& other) {
+            Assign(std::string_view{other});
+            return *this;
+        }
+
+        StablePath& operator=(const std::string_view& other) {
+            Assign(other);
+            return *this;
+        }
+
+        StablePath& operator=(const std::filesystem::path& other) {
+            Assign(other);
+            return *this;
+        }
+
         operator bool() const noexcept {
             return !last_error;
         }

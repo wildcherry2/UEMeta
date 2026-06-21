@@ -2,49 +2,16 @@
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
-#include <compare>
+#include <algorithm>
 #include <exception>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "UEMeta/MakeTool.hpp"
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/StablePath.hpp"
 
 using namespace clang::tooling;
-
-/// @brief One-entry compilation database used after locating the configured source file.
-class SingleCommandCompilationDatabase final : public CompilationDatabase {
-public:
-    /// @brief Stores the compile command selected from compile_commands.json.
-    explicit SingleCommandCompilationDatabase(CompileCommand command) : command(std::move(command)) {}
-
-    /// @brief Returns the stored command when Clang asks for the configured source file.
-    std::vector<CompileCommand> getCompileCommands(llvm::StringRef file_path) const override {
-        const UEMeta::StablePath requested{file_path.str()};
-        const UEMeta::StablePath stored{command.Filename};
-        if (!std::is_eq(requested <=> stored)) {
-            return {};
-        }
-
-        return {command};
-    }
-
-    /// @brief Returns the single file covered by this database.
-    std::vector<std::string> getAllFiles() const override {
-        return {command.Filename};
-    }
-
-    /// @brief Returns the single compile command covered by this database.
-    std::vector<CompileCommand> getAllCompileCommands() const override {
-        return {command};
-    }
-
-private:
-    CompileCommand command;
-};
 
 /// @brief Removes configured Unreal build arguments before Clang parses the translation unit.
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
@@ -80,59 +47,58 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
     return out;
 }
 
-/// @brief Loads compile_commands.json and selects the entry for the configured source file.
-static std::optional<CompileCommand> LoadCompileCommand(const std::string& cc_path) {
+/// @brief Loads the already-filtered compile_commands.json.
+static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::string& cc_path) {
     try {
-        const auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
-        const auto cpp_path_string = cpp_path.string();
-
         std::string error{};
         auto db = JSONCompilationDatabase::loadFromFile(cc_path, error, JSONCommandLineSyntax::AutoDetect);
         if (!db) {
             UEM_ERROR("(llvm) Failed to load compile commands at \"{}\": {}", cc_path, error);
-            return std::nullopt;
+            return nullptr;
         }
 
-        for (auto command : db->getAllCompileCommands()) {
-            const UEMeta::StablePath candidate_path{command.Filename};
-            if (!std::is_eq(candidate_path <=> cpp_path)) {
-                continue;
-            }
-
+        const auto commands = db->getAllCompileCommands();
+        if (commands.empty()) {
+            UEM_ERROR("(llvm) compile_commands.json at \"{}\" does not contain any compile commands.", cc_path);
+            return nullptr;
+        }
+        for (const auto& command : commands) {
             if (command.CommandLine.empty()) {
-                UEM_ERROR("(llvm) Found command for file \"{}\", but its command line is empty.", cpp_path_string);
-                return std::nullopt;
+                UEM_ERROR("(llvm) Found compile command for file \"{}\", but its command line is empty.", command.Filename);
+                return nullptr;
             }
-
-            return command;
         }
 
-        UEM_ERROR("(llvm) Failed to find matching entry in compile_commands.json for file {}", cpp_path_string);
+        return db;
     } catch (std::exception& ex) {
         UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what());
     } catch (...) {
         UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with unknown error.", cc_path);
     }
-    return std::nullopt;
+    return nullptr;
 }
 
-/// @brief Creates the ClangTool and argument adjusters for the configured translation unit.
+/// @brief Creates the ClangTool and argument adjusters for the configured compile commands.
 std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
     try {
-        auto command = LoadCompileCommand(Config::GetConfig().CcPath().string());
+        const auto compile_commands_path = Config::GetConfig().CompileCommands().string();
+        auto db = LoadCompileDatabase(compile_commands_path);
 
-        if (!command) return nullptr;
-        UEM_INFO("Using compile_commands.json entry for {}", command->Filename);
+        if (!db) return nullptr;
+        UEM_INFO("Using filtered compile_commands.json at {}", compile_commands_path);
 
-        std::unique_ptr<CompilationDatabase> selected_db =
-            std::make_unique<SingleCommandCompilationDatabase>(std::move(*command));
-        std::unique_ptr<CompilationDatabase> db = expandResponseFiles(std::move(selected_db), llvm::vfs::getRealFileSystem());
+        db = expandResponseFiles(std::move(db), llvm::vfs::getRealFileSystem());
         if (!db) {
-            UEM_ERROR("(llvm) Failed to expand response files from the selected compile command.");
+            UEM_ERROR("(llvm) Failed to expand response files from the compile commands.");
             return nullptr;
         }
 
-        const auto sources = std::vector{Config::GetConfig().CppPath().string()};
+        const auto sources = db->getAllFiles();
+        if (sources.empty()) {
+            UEM_ERROR("(llvm) compile_commands.json at \"{}\" does not contain any source files.", compile_commands_path);
+            return nullptr;
+        }
+
         auto tool = std::make_unique<ToolData>(ClangTool{*db, sources}, std::move(db));
 
         tool->clang_tool.appendArgumentsAdjuster([](const CommandLineArguments& args,...) {
