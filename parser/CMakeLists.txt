@@ -81,6 +81,15 @@ set(UEMETA_MSVC_DISABLED_WARNINGS
     /wd4189 # local variable initialized but not referenced
     /wd4702 # unreachable code
 )
+set(UEMETA_PROTOBUF_ABSL_MSVC_DISABLED_WARNINGS
+    /wd4018 # signed/unsigned mismatch
+    /wd4201 # nonstandard extension used: nameless struct/union
+    /wd4267 # conversion from size_t, possible loss of data
+    /wd4324 # structure was padded due to alignment specifier
+    /wd4458 # declaration hides class member
+    /wd4624 # destructor was implicity defined as deleted
+    /wd4715 # not all control paths return a value
+)
 
 FetchContent_Declare(llvm_prebuilt
     URL "${UEMETA_LLVM_PREBUILT_URL}"
@@ -129,6 +138,30 @@ function(UEMeta_FetchContent_MakeAvailable name)
     set(${name_lc}_POPULATED "${${name_lc}_POPULATED}" PARENT_SCOPE)
 endfunction()
 
+function(UEMeta_ConfigureMSVCDependencyTargets directory runtime_library)
+    get_property(_uemeta_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+
+    foreach(_uemeta_target IN LISTS _uemeta_targets)
+        get_target_property(_uemeta_imported "${_uemeta_target}" IMPORTED)
+        get_target_property(_uemeta_type "${_uemeta_target}" TYPE)
+
+        if(NOT _uemeta_imported
+            AND NOT _uemeta_type STREQUAL "INTERFACE_LIBRARY"
+            AND NOT _uemeta_type STREQUAL "UTILITY")
+            set_target_properties("${_uemeta_target}" PROPERTIES
+                MSVC_RUNTIME_LIBRARY "${runtime_library}"
+            )
+            target_compile_options("${_uemeta_target}" PRIVATE ${ARGN})
+        endif()
+    endforeach()
+
+    get_property(_uemeta_subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+
+    foreach(_uemeta_subdirectory IN LISTS _uemeta_subdirectories)
+        UEMeta_ConfigureMSVCDependencyTargets("${_uemeta_subdirectory}" "${runtime_library}" ${ARGN})
+    endforeach()
+endfunction()
+
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
@@ -140,6 +173,18 @@ set(protobuf_BUILD_LIBPROTOC OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "" FORCE)
 set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
 UEMeta_FetchContent_MakeAvailable(protobuf)
+
+if(MSVC)
+    # The official LLVM Windows archive is release-built with /MT and STL debug
+    # iterators disabled, so every static dependency in the final binary must
+    # use the same runtime even for the Debug preset.
+    set(UEMETA_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    UEMeta_ConfigureMSVCDependencyTargets(
+        "${protobuf_SOURCE_DIR}"
+        "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+        ${UEMETA_PROTOBUF_ABSL_MSVC_DISABLED_WARNINGS}
+    )
+endif()
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
@@ -242,6 +287,12 @@ set_target_properties(parser PROPERTIES
     CXX_EXTENSIONS OFF
     RUNTIME_OUTPUT_NAME parser
 )
+
+if(MSVC)
+    set_target_properties(parser PROPERTIES
+        MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+    )
+endif()
 
 target_include_directories(parser PRIVATE
     "${PROJECT_SOURCE_DIR}/include"

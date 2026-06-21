@@ -70,7 +70,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
             app.parse(argc, argv);
         } catch (const CLI::CallForHelp& ex) {
             app.exit(ex);
-            return -1;
+            return 0;
         } catch(const CLI::ParseError& ex) {
             return app.exit(ex);
         } catch (const std::exception& ex) {

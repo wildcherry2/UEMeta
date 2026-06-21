@@ -155,6 +155,8 @@ namespace UEMeta {
             return !last_error;
         }
 
+        static StablePath current_program_path() noexcept;
+
     private:
         std::filesystem::path path{};
         std::error_code last_error{};

@@ -90,3 +90,37 @@ bool UEMeta::StablePath::IsEmptyPath() const noexcept {
 bool UEMeta::StablePath::IsEmptyContents(std::error_code& ec) const noexcept {
     return std::filesystem::is_empty(path, ec);
 }
+
+#ifdef WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
+    wchar_t path[MAX_PATH];
+    if (GetModuleFileNameW(NULL, path, MAX_PATH) > 0) {
+        return StablePath(std::filesystem::path(path));
+    }
+    auto out = StablePath();
+    out.last_error.assign(GetLastError(), std::system_category());
+    return out;
+}
+
+#elifdef __linux__
+UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
+    std::error_code ec{};
+    auto path = std::filesystem::read_symlink("/proc/self/exe", ec);
+    if (ec) {
+        auto out = StablePath();
+        out.last_error = ec;
+        return out;
+    }
+    return StablePath(path);
+}
+
+#else
+UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
+    UEM_ERROR("StablePath::current_program_path not implemented for platform (WIN32 and __linux__ only!)");
+    auto out = StablePath();
+    out.last_error.assign(1, std::system_category());
+    return out;
+}
+#endif
