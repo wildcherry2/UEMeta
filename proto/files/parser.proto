@@ -109,37 +109,33 @@ enum ExceptionSpec {
     EXCEPTION_SPEC_UNPARSED = 10;
 }
 
-// Root payload for --split-strategy file output.
-message ParserMetadata {
-    FileMetadata file = 1;
-    repeated Declaration declarations = 2;
-}
-
-// Also used directly for the .file payload emitted by declaration splitting.
+// Used directly for the .file payload emitted by declaration splitting.
 message FileMetadata {
     string path = 1;
-    string hash = 2;
+    uint64 contentHash = 2;
+    uint64 pathHash = 3;
     message Include {
         string path = 1;
         uint32 occurrenceIndex = 2;
     }
-    repeated Include includes = 3;
+    repeated Include includes = 4;
 }
 
 // Source fields shared by declarations and their child entities.
 message SourceMetadata {
-    string file = 1;
+    uint64 filePathHash = 1;
     repeated string scope = 2;
     optional string documentation = 3;
 }
 
 message DeclarationMetadata {
-    optional string name = 1;
-    optional string qualifiedName = 2;
+    string name = 1;
+    string qualifiedName = 2;
     SourceMetadata source = 3;
-    optional string hash = 4;
-    optional uint32 occurrenceIndex = 5;
-    optional bool isAnonymous = 6;
+    uint64 qualifiedNameHash = 4;
+    uint64 contentHash = 5;
+    uint32 occurrenceIndex = 6;
+    optional bool isAnonymous = 7;
 }
 
 // The selected oneof member is the declaration-kind discriminator.
@@ -164,7 +160,7 @@ message NestedDeclaration {
 }
 
 // Shared by record, function, variable, alias, and forward-declaration
-// templates. specializationKind == NONE identifies a primary template.
+// templates. specializationKind == NONE identifies a primary (unspecialized) template.
 message TemplateDetails {
     repeated TemplateParameter parameters = 1;
     optional TemplateSpecializationKind specializationKind = 2;
@@ -172,23 +168,32 @@ message TemplateDetails {
     repeated string arguments = 4;
 }
 
+// Represents a single template parameter.
+// Ex: With `template<typename T, int N = 5> struct A...`, `typename T` and `int N` are each Template parameters.
+//      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, name = "T", and the rest of the fields are empty.
+//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, name = "N", type = "int", "defaultValue" = "5", and the rest of the fields are empty.
+// Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
     TemplateParameterKind kind = 1;
+    // May be empty for unnamed template parameters (rare).
     optional string name = 2;
     optional string documentation = 3;
     optional string type = 4;
     optional bool isParameterPack = 5;
-    repeated TemplateParameter parameters = 6;
+    optional string defaultValue = 6;
+    repeated TemplateParameter parameters = 7;
+    string asString = 8;
 }
 
-// Class, struct, and union payloads differ only by kind and by which repeated
-// member groups are populated.
+// Top level record declaration (class/struct/union).
 message RecordDeclaration {
     DeclarationMetadata metadata = 1;
     RecordKind kind = 2;
     optional TemplateDetails templateDetails = 3;
     optional bool isCompleteDefinition = 4;
+    // may be missing if the size is unknown (e.g. templates)
     optional uint64 sizeBytes = 5;
+    // may be missing if the align is unknown (e.g. templates)
     optional uint64 alignBytes = 6;
     repeated Field fields = 7;
     repeated NestedDeclaration nested = 8;
@@ -198,43 +203,53 @@ message RecordDeclaration {
 }
 
 message EnumDetails {
+    // int, unsigned, long, etc. If missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values).
     optional string underlyingType = 1;
+
+    // enum class/struct, if missing then the enum is unscoped.
     optional EnumScope scope = 2;
 }
 
+// Top level enum declaration
 message EnumDeclaration {
     DeclarationMetadata metadata = 1;
     optional EnumDetails details = 2;
     repeated Enumerator enumerators = 3;
 }
 
+// Top level forward declaration
 message ForwardDeclaration {
     DeclarationMetadata metadata = 1;
     ForwardDeclarationKind kind = 2;
     optional TemplateDetails templateDetails = 3;
     // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
     optional EnumDetails enumDetails = 4;
+    string asString = 5;
 }
 
+// Top level alias declaration, including typedefs and using declarations.
 message AliasDeclaration {
     DeclarationMetadata metadata = 1;
     optional TemplateDetails templateDetails = 2;
     string aliasedType = 3;
+    string asString = 4;
 }
 
+// Top level free function declaration, excluding static member functions.
 message FreeFunctionDeclaration {
     DeclarationMetadata metadata = 1;
     FunctionDetails details = 2;
 }
 
-message GlobalDeclaration {
+// Top level variable declaration, static member variables.
+message GlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
     VariableDetails details = 2;
 }
 
 message FunctionMetadata {
     string name = 1;
-    optional string qualifiedName = 2;
+    string qualifiedName = 2;
     SourceMetadata source = 3;
     FunctionDetails details = 4;
 }
@@ -267,8 +282,8 @@ message Parameter {
 }
 
 message VTableIndex {
-    uint64 index = 1;
-    uint64 offset = 2;
+    uint32 index = 1;
+    uint32 offset = 2;
 }
 
 message VariableMetadata {
@@ -315,6 +330,7 @@ message BaseSpecifier {
     optional uint64 offset = 5;
 }
 
+// Used to validate compile_commands.json
 message CompileCommands {
     message Command {
         string file = 1;
