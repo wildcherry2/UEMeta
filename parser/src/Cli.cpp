@@ -61,6 +61,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return 0;
     }
 
+    auto defaults = ParseIni(StablePath(std::string_view{"./parser-default.ini"}));
+
     CLI::App app{"Parses a translation unit with clang tools and outputs a flattened AST of top level declarations.", "UEMeta"};
     app.allow_windows_style_options();
     argv = app.ensure_utf8(argv);
@@ -68,26 +70,38 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     std::string cpp_path{};
     std::string cc_path{};
     std::string clang_path{};
+    std::string cfg_path{};
 
-    app.add_option("-c,--compile-commands", cc_path, COMPILE_COMMANDS_HELP)
-        ->check(ValidateCompileCommands);
+    app.add_option("--config", cfg_path, CONFIG_HELP)
+        ->check([](const std::string& in){return ValidateNonEmptyFile(in); });
 
+    const auto TryCliParse = [&] {
+        try {
+            app.parse(argc, argv);
+        } catch (const CLI::CallForHelp& ex) {
+            app.exit(ex);
+            return -1;
+        } catch(const CLI::ParseError& ex) {
+            return app.exit(ex);
+        } catch (const std::exception& ex) {
+            UEM_ERROR("CLI parse error: {}", ex.what());
+            return -1;
+        } catch (...) {
+            UEM_ERROR("Unknown CLI parse error!");
+            return -1;
+        }
+        return 0;
+    };
 
-
-    try {
-        app.parse(argc, argv);
-    } catch (const CLI::CallForHelp& ex) {
-        app.exit(ex);
-        return -1;
-    } catch(const CLI::ParseError& ex) {
-        return app.exit(ex);
-    } catch (const std::exception& ex) {
-        UEM_ERROR("CLI parse error: {}", ex.what());
-        return -1;
-    } catch (...) {
-        UEM_ERROR("Unknown CLI parse error!");
-        return -1;
+    auto result = TryCliParse();
+    if (!result) return result;
+    if (!cfg_path.empty()) {
+        MergeParsedArgsLeft(defaults, ParseIni(StablePath(cfg_path)));
     }
+
+    app.clear();
+
+
 
     try {
         cfg.cpp_path.Assign(std::string_view{cpp_path});

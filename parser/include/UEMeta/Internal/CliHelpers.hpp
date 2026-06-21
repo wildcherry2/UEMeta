@@ -48,6 +48,9 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
                              "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
                              "\n\tGood for debugging.";
 
+constexpr auto CONFIG_HELP = "Path to config file to use\n"
+                             "Command line arguments take precedence over all config files, and the given config "
+                             " takes precedence over the default config.";
 
 /// @brief Validates that a CLI path names an existing non-empty file, optionally with a required filename.
 static std::string ValidateNonEmptyFile(const std::string& path, const std::string& assertFileName = "") {
@@ -177,7 +180,7 @@ enum class Format {
     binary
 };
 
-struct ParsedIni {
+struct ParsedArgs {
     std::optional<std::string> compile_commands;
     std::optional<bool> prefer_clang;
     std::optional<std::unordered_set<std::string>> strip_commands;
@@ -189,8 +192,29 @@ struct ParsedIni {
     std::optional<UEMeta::StablePath> output_directory;
 };
 
-static ParsedIni ParseIni(const UEMeta::StablePath& path) {
-    ParsedIni out{};
+static void MergeParsedArgsLeft(ParsedArgs& l, const ParsedArgs& r) {
+    if (r.compile_commands) l.compile_commands = r.compile_commands;
+    if (r.prefer_clang) l.prefer_clang = r.prefer_clang;
+    if (r.strip_commands) {
+        if (l.strip_commands) l.strip_commands.value().insert_range(r.strip_commands.value());
+        else l.strip_commands = r.strip_commands;
+    }
+    if (r.output_directory) l.output_directory = r.output_directory;
+    if (r.path_begin) {
+        if (l.path_begin) l.path_begin.value().insert_range(r.path_begin.value());
+        else l.path_begin = r.path_begin;
+    }
+    if (r.format) l.format = r.format;
+    if (r.clang_path) l.clang_path = r.clang_path;
+    if (r.log) l.log = r.log;
+    if (r.additional_clang_args) {
+        if (l.additional_clang_args) l.additional_clang_args.value().insert_range(r.additional_clang_args.value());
+        else l.additional_clang_args = r.additional_clang_args;
+    }
+}
+
+static ParsedArgs ParseIni(const UEMeta::StablePath& path) {
+    ParsedArgs out{};
     const mINI::INIFile file{path.UnderlyingPath()};
     IniStruct ini{};
     file.read(ini);
