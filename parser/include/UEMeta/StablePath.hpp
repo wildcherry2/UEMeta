@@ -155,19 +155,19 @@ namespace UEMeta {
             return !last_error;
         }
 
-        [nodiscard] StablePath operator/(const std::string& other) const {
+        [[nodiscard]] StablePath operator/(const std::string& other) const {
             return StablePath(path / other);
         }
 
-        [nodiscard] StablePath operator/(const std::string_view& other) const {
+        [[nodiscard]] StablePath operator/(const std::string_view& other) const {
             return StablePath(path / other);
         }
 
-        [nodiscard] StablePath operator/(const char* other) const {
+        [[nodiscard]] StablePath operator/(const char* other) const {
             return StablePath(path / other);
         }
 
-        [nodiscard] StablePath operator/(const std::filesystem::path& other) const {
+        [[nodiscard]] StablePath operator/(const std::filesystem::path& other) const {
             return StablePath(path / other);
         }
 
