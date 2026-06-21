@@ -181,10 +181,9 @@ void UEMeta::Logger::AssertInitialized() const {
 int UEMeta::Logger::Initialize() {
     try {
         auto& logger = GetLogger();
+        auto& cfg = Config::GetConfig();
 
         quill::Backend::start();
-        quill::FileSinkConfig file_sink_config{};
-        file_sink_config.set_filename_append_option(quill::FilenameAppendOption::StartDateTime);
         quill::ConsoleSinkConfig console_sink_config{};
         quill::ConsoleSinkConfig::Colours colours{};
         quill::PatternFormatterOptions formatter_options{};
@@ -192,23 +191,34 @@ int UEMeta::Logger::Initialize() {
         colours.assign_colour_to_log_level(quill::LogLevel::Info, quill::ConsoleSinkConfig::Colours::white);
         console_sink_config.set_colours(colours);
         console_sink_config.set_override_pattern_formatter_options(formatter_options);
-        file_sink_config.set_override_pattern_formatter_options(formatter_options);
         auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("console_main", console_sink_config);
-        auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>("uemeta.log", file_sink_config);
 
-        if (!console_sink || !file_sink) {
+        if (auto& log_path = cfg.Log().UnderlyingPath(); !log_path.empty()) {
+            quill::FileSinkConfig file_sink_config{};
+            file_sink_config.set_filename_append_option(quill::FilenameAppendOption::StartDateTime);
+            file_sink_config.set_override_pattern_formatter_options(formatter_options);
+            auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>(log_path.string(), file_sink_config);
+            if (!console_sink || !file_sink) {
+                UEM_ERROR("Failed to initialize logger sinks.");
+                return -1;
+            }
+            logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink), std::move(file_sink)});
+            logger.logger->set_log_level(quill::LogLevel::TraceL1);
+            return 0;
+        }
+
+        if (!console_sink) {
             UEM_ERROR("Failed to initialize logger sinks.");
             return -1;
         }
 
-        logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink), std::move(file_sink)});
+        logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink)});
+        logger.logger->set_log_level(quill::LogLevel::TraceL1);
 
         if (!logger.logger) {
             UEM_ERROR("Failed to initialize logger.");
             return -1;
         }
-
-        logger.logger->set_log_level(quill::LogLevel::TraceL1);
     } catch (const std::exception& ex) {
         UEM_ERROR("Failed to initialize logger with exception: {}", ex.what());
         return -1;

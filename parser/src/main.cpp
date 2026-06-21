@@ -5,12 +5,12 @@
 /// @brief Initializes logging/configuration, builds the Clang tool, and runs the AST extraction pass.
 int main(int argc, char** argv) {
     try {
-        if (const auto log_init_result = UEMeta::Logger::Initialize()) {
-            return log_init_result;
-        }
-
         if (const auto cfg_init_result = UEMeta::Config::Initialize(argc, argv)) {
             return cfg_init_result;
+        }
+
+        if (const auto log_init_result = UEMeta::Logger::Initialize()) {
+            return log_init_result;
         }
 
         const auto tool = UEMeta::MakeTool();
