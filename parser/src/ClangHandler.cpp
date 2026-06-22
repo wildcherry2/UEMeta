@@ -11,7 +11,9 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
+#include <google/protobuf/arena.h>
 
+#include "parser.pb.h"
 #include "UEMeta/Cli.hpp"
 
 /// @brief Tracks whether any guarded Clang callback caught an exception.
@@ -103,6 +105,8 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl*) { return true; }
 
 bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl*) { return true; }
 
+UEMeta::ClangHandler::ClangHandler() : arena(std::make_unique<google::protobuf::Arena>()){}
+
 /// @brief Creates the AST consumer for one translation unit.
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance&,
                                                                             llvm::StringRef file) {
@@ -140,9 +144,9 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         return std::make_unique<Consumer>(this, tu_name);
     } catch (const std::exception& ex) {
         LogClangException("CreateASTConsumer", ex);
+        throw;
     } catch (...) {
         LogClangUnknownException("CreateASTConsumer");
+        throw;
     }
-
-    return std::make_unique<clang::ASTConsumer>();
 }

@@ -6,6 +6,14 @@
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
 
+namespace ParseResult {
+    class Declaration;
+}
+
+namespace google::protobuf {
+    class Arena;
+}
+
 namespace clang::tooling {
     /**
      * @brief Forward declaration of Clang's command-line tool driver.
@@ -124,6 +132,8 @@ namespace UEMeta {
          */
         bool VisitVarTemplateDecl(clang::VarTemplateDecl* decl);
 
+        ClangHandler();
+
     protected:
         /**
          * @brief Creates the AST consumer and preprocessor callbacks for one translation unit.
@@ -152,5 +162,7 @@ namespace UEMeta {
         clang::ASTContext* context{};
         llvm::DenseSet<const clang::Decl*> visited_decls{};
         llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
+        std::vector<ParseResult::Declaration*> results{};
+        std::unique_ptr<google::protobuf::Arena> arena{};
     };
 }

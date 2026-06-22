@@ -187,11 +187,10 @@ enum ExceptionSpec {
 message Identifier {
     string name = 1;
     string qualifiedName = 2;
-    uint64 nameHash = 3;
-    uint64 qualifiedNameHash = 4;
-    uint64 filePathHash = 5;
-    repeated string scope = 6;
-    optional string documentation = 7;
+    uint64 qualifiedNameHash = 3;
+    uint64 filePathHash = 4;
+    repeated string scope = 5;
+    optional string documentation = 6;
 }
 
 // Identity, source, and file-splitting metadata shared by independently tracked
