@@ -2,6 +2,75 @@ syntax = "proto3";
 
 package ParseResult;
 
+// Used directly for the .file payload emitted by declaration splitting.
+message TLFileData {
+    string path = 1;
+    uint64 contentHash = 2;
+    uint64 pathHash = 3;
+    message Include {
+        string path = 1;
+        // The index of this include relative to the other declarations in the same file
+        uint32 occurrenceIndex = 2;
+    }
+    repeated Include includes = 4;
+}
+
+// Top-level record declaration (class/struct/union).
+message TLRecordDeclaration {
+    DeclarationMetadata metadata = 1;
+    RecordKind kind = 2;
+    optional TemplateDetails templateDetails = 3;
+    optional bool isCompleteDefinition = 4;
+    // May be missing if the size is unknown (e.g. templates).
+    optional uint64 sizeBytes = 5;
+    // May be missing if the alignment is unknown (e.g. templates).
+    optional uint64 alignBytes = 6;
+    repeated Field fields = 7;
+    repeated NestedDeclaration nested = 8;
+    repeated BaseSpecifier bases = 9;
+    repeated StaticField staticFields = 10;
+    repeated MemberFunction methods = 11;
+}
+
+// Top-level enum declaration.
+message TLEnumDeclaration {
+    DeclarationMetadata metadata = 1;
+    optional EnumDetails details = 2;
+    repeated Enumerator enumerators = 3;
+}
+
+// Top-level forward declaration.
+message TLForwardDeclaration {
+    DeclarationMetadata metadata = 1;
+    ForwardDeclarationKind kind = 2;
+    optional TemplateDetails templateDetails = 3;
+    // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
+    optional EnumDetails enumDetails = 4;
+    string asString = 5;
+}
+
+// Top-level alias declaration, including typedefs and using declarations.
+message TLAliasDeclaration {
+    DeclarationMetadata metadata = 1;
+    optional TemplateDetails templateDetails = 2;
+    string aliasedType = 3;
+    string asString = 4;
+}
+
+// An independently tracked top-level free-function declaration.
+message TLFreeFunctionDeclaration {
+    DeclarationMetadata metadata = 1;
+    FunctionDetails details = 2;
+    string asString = 3;
+}
+
+// An independently tracked top-level global-variable declaration.
+message TLGlobalVariableDeclaration {
+    DeclarationMetadata metadata = 1;
+    VariableDetails details = 2;
+    string asString = 3;
+}
+
 enum RecordKind {
     RECORD_KIND_UNSPECIFIED = 0;
     RECORD_KIND_CLASS = 1;
@@ -110,25 +179,12 @@ enum ExceptionSpec {
     EXCEPTION_SPEC_UNPARSED = 10;
 }
 
-// Used directly for the .file payload emitted by declaration splitting.
-message FileMetadata {
-    string path = 1;
-    uint64 contentHash = 2;
-    uint64 pathHash = 3;
-    message Include {
-        string path = 1;
-        // The index of this include relative to the other declarations in the same file
-        uint32 occurrenceIndex = 2;
-    }
-    repeated Include includes = 4;
-}
-
 // Identity and source context shared by declarations and their named child
 // entities.
 // Producers must generate deterministic names for constructs that are unnamed in
 // source. A parameter's qualifiedName includes its owning function's qualified
 // name and a parameter-specific suffix.
-message EntityMetadata {
+message Identifier {
     string name = 1;
     string qualifiedName = 2;
     uint64 nameHash = 3;
@@ -140,10 +196,10 @@ message EntityMetadata {
 
 // Identity, source, and file-splitting metadata shared by independently tracked
 // Declaration variants, including declarations nested in records. contentHash
-// is kept here rather than in EntityMetadata because it changes when the
+// is kept here rather than in Identifier because it changes when the
 // declaration changes.
 message DeclarationMetadata {
-    EntityMetadata entity = 1;
+    Identifier identifier = 1;
     uint64 contentHash = 2;
     // The index of this declaration relative to the other declarations in the same file
     uint32 occurrenceIndex = 3;
@@ -153,21 +209,21 @@ message DeclarationMetadata {
 // The selected oneof member is the declaration-kind discriminator.
 message Declaration {
     oneof value {
-        RecordDeclaration record = 1;
-        EnumDeclaration enumDeclaration = 2;
-        ForwardDeclaration forwardDeclaration = 3;
-        AliasDeclaration alias = 4;
-        FreeFunctionDeclaration function = 5;
-        GlobalVariableDeclaration variable = 6;
+        TLRecordDeclaration record = 1;
+        TLEnumDeclaration enumDeclaration = 2;
+        TLForwardDeclaration forwardDeclaration = 3;
+        TLAliasDeclaration alias = 4;
+        TLFreeFunctionDeclaration function = 5;
+        TLGlobalVariableDeclaration variable = 6;
     }
 }
 
 message NestedDeclaration {
     oneof value {
-        RecordDeclaration record = 1;
-        EnumDeclaration enumDeclaration = 2;
-        ForwardDeclaration forwardDeclaration = 3;
-        AliasDeclaration alias = 4;
+        TLRecordDeclaration record = 1;
+        TLEnumDeclaration enumDeclaration = 2;
+        TLForwardDeclaration forwardDeclaration = 3;
+        TLAliasDeclaration alias = 4;
     }
 }
 
@@ -182,34 +238,17 @@ message TemplateDetails {
 
 // Represents a single template parameter.
 // Ex: With `template<typename T, int N = 5> struct A...`, `typename T` and `int N` are each Template parameters.
-//      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, metadata.name = "T", and the detail fields are empty.
-//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, metadata.name = "N", type = "int", and defaultValue = "5".
+//      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, identifier.name = "T", and the detail fields are empty.
+//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and defaultValue = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
     TemplateParameterKind kind = 1;
-    EntityMetadata metadata = 2;
+    Identifier identifier = 2;
     optional string type = 3;
     optional bool isParameterPack = 4;
     optional string defaultValue = 5;
     repeated TemplateParameter parameters = 6;
     string asString = 7;
-}
-
-// Top level record declaration (class/struct/union).
-message RecordDeclaration {
-    DeclarationMetadata metadata = 1;
-    RecordKind kind = 2;
-    optional TemplateDetails templateDetails = 3;
-    optional bool isCompleteDefinition = 4;
-    // may be missing if the size is unknown (e.g. templates)
-    optional uint64 sizeBytes = 5;
-    // may be missing if the align is unknown (e.g. templates)
-    optional uint64 alignBytes = 6;
-    repeated Field fields = 7;
-    repeated NestedDeclaration nested = 8;
-    repeated BaseSpecifier bases = 9;
-    repeated StaticField staticFields = 10;
-    repeated MemberFunction methods = 11;
 }
 
 message EnumDetails {
@@ -220,59 +259,18 @@ message EnumDetails {
     optional EnumScope scope = 2;
 }
 
-// Top level enum declaration
-message EnumDeclaration {
-    DeclarationMetadata metadata = 1;
-    optional EnumDetails details = 2;
-    repeated Enumerator enumerators = 3;
-}
-
-// Top level forward declaration
-message ForwardDeclaration {
-    DeclarationMetadata metadata = 1;
-    ForwardDeclarationKind kind = 2;
-    optional TemplateDetails templateDetails = 3;
-    // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
-    optional EnumDetails enumDetails = 4;
-    string asString = 5;
-}
-
-// Top level alias declaration, including typedefs and using declarations.
-message AliasDeclaration {
-    DeclarationMetadata metadata = 1;
-    optional TemplateDetails templateDetails = 2;
-    string aliasedType = 3;
-    string asString = 4;
-}
-
-// An independently tracked free-function declaration. DeclarationMetadata
-// supplies its identity and indexing data; FunctionDetails supplies only its
-// function-specific type and qualifiers.
-message FreeFunctionDeclaration {
-    DeclarationMetadata metadata = 1;
-    FunctionDetails details = 2;
-    string asString = 3;
-}
-
-// An independently tracked global-variable declaration. Static data members are
-// represented by StaticField within RecordDeclaration.
-message GlobalVariableDeclaration {
-    DeclarationMetadata metadata = 1;
-    VariableDetails details = 2;
-    string asString = 3;
-}
-
-// A function owned by a RecordDeclaration, including constructors, destructors,
-// and static member functions. Unlike FreeFunctionDeclaration, a member function
-// is not independently tracked, so it has no contentHash or occurrenceIndex.
+// A function owned by a TLRecordDeclaration, including constructors,
+// destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
+// member function is not independently tracked, so it has no contentHash or
+// occurrenceIndex.
 message MemberFunction {
-    EntityMetadata metadata = 1;
+    Identifier identifier = 1;
     FunctionDetails details = 2;
     string asString = 3;
 }
 
 // Function-specific type, parameters, and qualifiers. Identity and source
-// metadata deliberately live in the containing FreeFunctionDeclaration or
+// metadata deliberately live in the containing TLFreeFunctionDeclaration or
 // MemberFunction so this payload can be shared by both contexts.
 message FunctionDetails {
     FunctionKind kind = 1;
@@ -297,7 +295,7 @@ message FunctionDetails {
 // Parameters use a deterministic synthesized identity when no name is spelled in
 // the source.
 message Parameter {
-    EntityMetadata metadata = 1;
+    Identifier identifier = 1;
     string type = 2;
     string defaultValue = 3;
     string asString = 4;
@@ -308,10 +306,10 @@ message VTableIndex {
     uint32 offset = 2;
 }
 
-// A static data member owned by a RecordDeclaration. Identity and source
+// A static data member owned by a TLRecordDeclaration. Identity and source
 // metadata live here; VariableDetails contains only variable-specific properties.
 message StaticField {
-    EntityMetadata metadata = 1;
+    Identifier identifier = 1;
     VariableDetails details = 2;
     string asString = 3;
 }
@@ -327,14 +325,14 @@ message VariableDetails {
 }
 
 message Enumerator {
-    EntityMetadata metadata = 1;
+    Identifier identifier = 1;
     string value = 2;
     string asString = 3;
 }
 
-// A non-static data member owned by a RecordDeclaration.
+// A non-static data member owned by a TLRecordDeclaration.
 message Field {
-    EntityMetadata metadata = 1;
+    Identifier identifier = 1;
     string type = 2;
     string asString = 3;
     optional AccessSpecifier access = 4;
@@ -345,7 +343,7 @@ message Field {
 }
 
 message BaseSpecifier {
-    EntityMetadata metadata = 1;
+    Identifier identifier = 1;
     optional AccessSpecifier access = 2;
     optional bool isVirtual = 3;
     optional uint64 offset = 4;
