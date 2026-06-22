@@ -261,12 +261,12 @@ message EnumDetails {
 
 // A function owned by a TLRecordDeclaration, including constructors,
 // destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
-// member function is not independently tracked, so it has no contentHash or
-// occurrenceIndex.
+// member function is not independently tracked, so it has no occurrenceIndex.
 message MemberFunction {
     Identifier identifier = 1;
     FunctionDetails details = 2;
     string asString = 3;
+    uint64 contentHash = 4;
 }
 
 // Function-specific type, parameters, and qualifiers. Identity and source
@@ -340,6 +340,7 @@ message Field {
     optional bool isBitfield = 6;
     optional uint64 bitWidth = 7;
     optional uint64 offsetBits = 8;
+    uint64 contentHash = 9;
 }
 
 message BaseSpecifier {
