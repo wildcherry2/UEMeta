@@ -37,6 +37,7 @@ enum StorageClass {
     STORAGE_CLASS_PRIVATE_EXTERN = 3;
     STORAGE_CLASS_AUTO = 4;
     STORAGE_CLASS_REGISTER = 5;
+    STORAGE_CLASS_THREAD_LOCAL = 6;
 }
 
 enum AccessSpecifier {
@@ -116,26 +117,37 @@ message FileMetadata {
     uint64 pathHash = 3;
     message Include {
         string path = 1;
+        // The index of this include relative to the other declarations in the same file
         uint32 occurrenceIndex = 2;
     }
     repeated Include includes = 4;
 }
 
-// Source fields shared by declarations and their child entities.
-message SourceMetadata {
-    uint64 filePathHash = 1;
-    repeated string scope = 2;
-    optional string documentation = 3;
-}
-
-message DeclarationMetadata {
+// Identity and source context shared by declarations and their named child
+// entities.
+// Producers must generate deterministic names for constructs that are unnamed in
+// source. A parameter's qualifiedName includes its owning function's qualified
+// name and a parameter-specific suffix.
+message EntityMetadata {
     string name = 1;
     string qualifiedName = 2;
-    SourceMetadata source = 3;
+    uint64 nameHash = 3;
     uint64 qualifiedNameHash = 4;
-    uint64 contentHash = 5;
-    uint32 occurrenceIndex = 6;
-    optional bool isAnonymous = 7;
+    uint64 filePathHash = 5;
+    repeated string scope = 6;
+    optional string documentation = 7;
+}
+
+// Identity, source, and file-splitting metadata shared by independently tracked
+// Declaration variants, including declarations nested in records. contentHash
+// is kept here rather than in EntityMetadata because it changes when the
+// declaration changes.
+message DeclarationMetadata {
+    EntityMetadata entity = 1;
+    uint64 contentHash = 2;
+    // The index of this declaration relative to the other declarations in the same file
+    uint32 occurrenceIndex = 3;
+    optional bool isAnonymous = 4;
 }
 
 // The selected oneof member is the declaration-kind discriminator.
@@ -146,7 +158,7 @@ message Declaration {
         ForwardDeclaration forwardDeclaration = 3;
         AliasDeclaration alias = 4;
         FreeFunctionDeclaration function = 5;
-        GlobalDeclaration variable = 6;
+        GlobalVariableDeclaration variable = 6;
     }
 }
 
@@ -170,19 +182,17 @@ message TemplateDetails {
 
 // Represents a single template parameter.
 // Ex: With `template<typename T, int N = 5> struct A...`, `typename T` and `int N` are each Template parameters.
-//      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, name = "T", and the rest of the fields are empty.
-//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, name = "N", type = "int", "defaultValue" = "5", and the rest of the fields are empty.
+//      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, metadata.name = "T", and the detail fields are empty.
+//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, metadata.name = "N", type = "int", and defaultValue = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
     TemplateParameterKind kind = 1;
-    // May be empty for unnamed template parameters (rare).
-    optional string name = 2;
-    optional string documentation = 3;
-    optional string type = 4;
-    optional bool isParameterPack = 5;
-    optional string defaultValue = 6;
-    repeated TemplateParameter parameters = 7;
-    string asString = 8;
+    EntityMetadata metadata = 2;
+    optional string type = 3;
+    optional bool isParameterPack = 4;
+    optional string defaultValue = 5;
+    repeated TemplateParameter parameters = 6;
+    string asString = 7;
 }
 
 // Top level record declaration (class/struct/union).
@@ -198,8 +208,8 @@ message RecordDeclaration {
     repeated Field fields = 7;
     repeated NestedDeclaration nested = 8;
     repeated BaseSpecifier bases = 9;
-    repeated VariableMetadata staticVariables = 10;
-    repeated FunctionMetadata methods = 11;
+    repeated StaticField staticFields = 10;
+    repeated MemberFunction methods = 11;
 }
 
 message EnumDetails {
@@ -235,25 +245,35 @@ message AliasDeclaration {
     string asString = 4;
 }
 
-// Top level free function declaration, excluding static member functions.
+// An independently tracked free-function declaration. DeclarationMetadata
+// supplies its identity and indexing data; FunctionDetails supplies only its
+// function-specific type and qualifiers.
 message FreeFunctionDeclaration {
     DeclarationMetadata metadata = 1;
     FunctionDetails details = 2;
+    string asString = 3;
 }
 
-// Top level variable declaration, static member variables.
+// An independently tracked global-variable declaration. Static data members are
+// represented by StaticField within RecordDeclaration.
 message GlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
     VariableDetails details = 2;
+    string asString = 3;
 }
 
-message FunctionMetadata {
-    string name = 1;
-    string qualifiedName = 2;
-    SourceMetadata source = 3;
-    FunctionDetails details = 4;
+// A function owned by a RecordDeclaration, including constructors, destructors,
+// and static member functions. Unlike FreeFunctionDeclaration, a member function
+// is not independently tracked, so it has no contentHash or occurrenceIndex.
+message MemberFunction {
+    EntityMetadata metadata = 1;
+    FunctionDetails details = 2;
+    string asString = 3;
 }
 
+// Function-specific type, parameters, and qualifiers. Identity and source
+// metadata deliberately live in the containing FreeFunctionDeclaration or
+// MemberFunction so this payload can be shared by both contexts.
 message FunctionDetails {
     FunctionKind kind = 1;
     string type = 2;
@@ -274,11 +294,13 @@ message FunctionDetails {
     optional VTableIndex vtableIndex = 17;
 }
 
+// Parameters use a deterministic synthesized identity when no name is spelled in
+// the source.
 message Parameter {
-    optional string name = 1;
+    EntityMetadata metadata = 1;
     string type = 2;
-    string declaration = 3;
-    optional string documentation = 4;
+    string defaultValue = 3;
+    string asString = 4;
 }
 
 message VTableIndex {
@@ -286,48 +308,48 @@ message VTableIndex {
     uint32 offset = 2;
 }
 
-message VariableMetadata {
-    string name = 1;
-    optional string qualifiedName = 2;
-    SourceMetadata source = 3;
-    VariableDetails details = 4;
+// A static data member owned by a RecordDeclaration. Identity and source
+// metadata live here; VariableDetails contains only variable-specific properties.
+message StaticField {
+    EntityMetadata metadata = 1;
+    VariableDetails details = 2;
+    string asString = 3;
 }
 
 message VariableDetails {
     optional TemplateDetails templateDetails = 1;
     string type = 2;
-    string declaration = 3;
+    string asString = 3;
     optional AccessSpecifier access = 4;
     optional StorageClass storageClass = 5;
     optional bool isConstexpr = 6;
     optional bool isInline = 7;
-    optional bool isThreadLocal = 8;
 }
 
 message Enumerator {
-    string name = 1;
+    EntityMetadata metadata = 1;
     string value = 2;
-    SourceMetadata source = 3;
+    string asString = 3;
 }
 
+// A non-static data member owned by a RecordDeclaration.
 message Field {
-    optional string name = 1;
-    SourceMetadata source = 2;
-    string type = 3;
-    string declaration = 4;
-    optional AccessSpecifier access = 5;
-    optional bool isMutable = 6;
-    optional bool isBitfield = 7;
-    optional uint64 bitWidth = 8;
-    optional uint64 offsetBits = 9;
+    EntityMetadata metadata = 1;
+    string type = 2;
+    string asString = 3;
+    optional AccessSpecifier access = 4;
+    optional bool isMutable = 5;
+    optional bool isBitfield = 6;
+    optional uint64 bitWidth = 7;
+    optional uint64 offsetBits = 8;
 }
 
 message BaseSpecifier {
-    string type = 1;
-    optional string qualifiedName = 2;
-    optional AccessSpecifier access = 3;
-    optional bool isVirtual = 4;
-    optional uint64 offset = 5;
+    EntityMetadata metadata = 1;
+    optional AccessSpecifier access = 2;
+    optional bool isVirtual = 3;
+    optional uint64 offset = 4;
+    string asString = 5;
 }
 
 // Used to validate compile_commands.json
