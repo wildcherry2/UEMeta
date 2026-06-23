@@ -46,33 +46,37 @@ inline std::string GetDeclAsString(clang::ASTContext* ctx, const clang::Decl* de
     return s;
 }
 
-inline void PopulateEnumDetails(const clang::ASTContext* ctx, EnumDetails* msg, const clang::EnumDecl* decl) {
-    if (!(ctx && msg && decl)) {
-        UEM_WARN("Failed to PopulateEnumDetails due to nullptr! ctx={}, details={}, decl={}", !!ctx, !!msg, !!decl);
+/// @brief Fills out an EnumDetails* from an EnumDecl*
+inline void PopulateEnumDetails(const clang::ASTContext* ctx, EnumDetails* p_msg, const clang::EnumDecl* decl) {
+    if (!(ctx && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateEnumDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!ctx, !!p_msg, !!decl);
         return;
     }
     auto underlying = decl->getIntegerType();
     if (!underlying.isNull()) {
-        msg->set_underlying_type(underlying.getAsString(ctx->getPrintingPolicy()));
+        p_msg->set_underlying_type(underlying.getAsString(ctx->getPrintingPolicy()));
     }
-    msg->set_scope(!decl->isScoped() ? ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ENUM_SCOPE_CLASS : ENUM_SCOPE_STRUCT);
+    p_msg->set_scope(!decl->isScoped() ? ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ENUM_SCOPE_CLASS : ENUM_SCOPE_STRUCT);
 }
 
-inline void PopulateDeclarationMetadata(const clang::ASTContext* ctx, DeclarationMetadata* msg, const clang::TagDecl* decl) {
-    if (!(ctx && msg && decl)) {
-        UEM_WARN("Failed to PopulateDeclarationMetadata due to nullptr! ctx={}, details={}, decl={}", !!ctx, !!msg, !!decl);
+/// @brief Fills out a DeclarationMetadata from a Decl
+inline void PopulateDeclarationMetadata(const clang::ASTContext* ctx, DeclarationMetadata* p_msg, const clang::Decl* decl) {
+    if (!(ctx && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateDeclarationMetadata due to nullptr! ctx={}, p_msg={}, decl={}", !!ctx, !!p_msg, !!decl);
         return;
     }
     //todo
 }
 
-inline void PopulateIdentifier(const clang::ASTContext* ctx, Identifier* msg, const clang::Decl* decl) {
-    if (!(ctx && msg && decl)) {
-        UEM_WARN("Failed to PopulateIdentifier due to nullptr! ctx={}, details={}, decl={}", !!ctx, !!msg, !!decl);
+/// @brief Fills out an Identifier from a Decl
+inline void PopulateIdentifier(const clang::ASTContext* ctx, Identifier* p_msg, const clang::Decl* decl) {
+    if (!(ctx && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateIdentifier due to nullptr! ctx={}, p_msg={}, decl={}", !!ctx, !!p_msg, !!decl);
         return;
     }
 }
 
+/// @brief Finalizes a top-level forward declaration.
 inline void FinalizeTL(TLForwardDeclaration* decl, google::protobuf::Arena* arena, std::vector<Declaration*>& container) {
     if (!(decl && arena)) {
         UEM_WARN("Failed to FinalizeTL due to nullptr! TLForwardDeclaration={}, arena={}", !!decl, !!arena);
@@ -83,6 +87,7 @@ inline void FinalizeTL(TLForwardDeclaration* decl, google::protobuf::Arena* aren
     container.emplace_back(decl_container);
 }
 
+/// @brief Finalizes a top-level enum declaration.
 inline void FinalizeTL(TLEnumDeclaration* decl, google::protobuf::Arena* arena, std::vector<Declaration*>& container) {
     if (!(decl && arena)) {
         UEM_WARN("Failed to FinalizeTL due to nullptr! TLEnumDeclaration={}, arena={}", !!decl, !!arena);

@@ -69,12 +69,12 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
         // and we don't know about it yet...
         if (!visited_forward_decls.insert(clang_decl).second) {
             // generate a new forward declaration message and return
-            auto* forward_decl = Arena::Create<TLForwardDeclaration>(arena.get());
-            forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
-            PopulateEnumDetails(context, forward_decl->mutable_enum_details(), clang_decl);
-            PopulateDeclarationMetadata(context, forward_decl->mutable_metadata(), clang_decl);
-            forward_decl->set_as_string(GetDeclAsString(context, clang_decl));
-            FinalizeTL(forward_decl, arena.get(), results);
+            auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(arena.get());
+            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
+            PopulateEnumDetails(context, p_forward_decl->mutable_enum_details(), clang_decl);
+            PopulateDeclarationMetadata(context, p_forward_decl->mutable_metadata(), clang_decl);
+            p_forward_decl->set_as_string(GetDeclAsString(context, clang_decl));
+            FinalizeTL(p_forward_decl, arena.get(), results);
             return true;
         }
         return true;
@@ -84,16 +84,15 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     if (!visited_decls.insert(clang_decl->getCanonicalDecl()).second) return true;
 
     // else, generate a new enum declaration
-    auto* enum_decl = Arena::Create<TLEnumDeclaration>(arena.get());
-    PopulateDeclarationMetadata(context, enum_decl->mutable_metadata(), clang_decl);
-    PopulateEnumDetails(context, enum_decl->mutable_details(), clang_decl);
+    auto* p_enum_decl = Arena::Create<TLEnumDeclaration>(arena.get());
+    PopulateDeclarationMetadata(context, p_enum_decl->mutable_metadata(), clang_decl);
+    PopulateEnumDetails(context, p_enum_decl->mutable_details(), clang_decl);
     for (auto* enumerator : clang_decl->enumerators()) {
-        auto canonical = enumerator->getCanonicalDecl();
-        auto msg_enumerator = enum_decl->add_enumerators();
-        PopulateIdentifier(context, msg_enumerator->mutable_identifier(), canonical);
-        msg_enumerator->set_value(llvm::toString(canonical->getInitVal(), 10));
+        auto p_enumerator = p_enum_decl->add_enumerators();
+        PopulateIdentifier(context, p_enumerator->mutable_identifier(), enumerator);
+        p_enumerator->set_value(llvm::toString(enumerator->getInitVal(), 10));
     }
-    FinalizeTL(enum_decl, arena.get(), results);
+    FinalizeTL(p_enum_decl, arena.get(), results);
     return true;
 }
 
