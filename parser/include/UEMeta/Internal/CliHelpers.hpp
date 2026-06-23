@@ -47,6 +47,8 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
                              "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
                              "\n\tGood for debugging.";
 
+constexpr auto STDOUT_HELP = "Overrides all output settings and dumps output to stdout.";
+
 /// @brief Validates that a CLI path names an existing non-empty file, optionally with a required filename.
 static std::string ValidateNonEmptyFile(const std::string& path, const std::string& assertFileName = "") {
     std::error_code ec{};

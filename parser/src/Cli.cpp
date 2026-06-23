@@ -107,6 +107,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
         ->default_val(false);
+    app.add_flag("--stdout", cfg.dump_to_stdout, STDOUT_HELP)
+        ->default_val(false);
     app.add_option("--compile-commands", cc_temp, COMPILE_COMMANDS_HELP)
         ->check(ValidateCompileCommands)
         ->required();
