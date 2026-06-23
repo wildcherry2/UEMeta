@@ -11,43 +11,14 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
+#include "parser.pb.h"
 #include <google/protobuf/arena.h>
 
-#include "parser.pb.h"
 #include "UEMeta/Cli.hpp"
+#include "UEMeta/Internal/ClangHelpers.hpp"
 
-/// @brief Tracks whether any guarded Clang callback caught an exception.
-static std::atomic_bool GClangExceptionCaught{false};
-
-/// @brief Records a Clang processing exception and logs the failing step.
-static void LogClangException(const std::string_view step, const std::exception& ex) noexcept {
-    GClangExceptionCaught.store(true, std::memory_order_relaxed);
-    try {
-        UEM_ERROR("(clang) {} failed with exception: {}", step, ex.what());
-    } catch (...) {
-    }
-}
-
-/// @brief Records an unknown Clang processing exception and logs the failing step.
-static void LogClangUnknownException(const std::string_view step) noexcept {
-    GClangExceptionCaught.store(true, std::memory_order_relaxed);
-    try {
-        UEM_ERROR("(clang) {} failed with unknown exception", step);
-    } catch (...) {
-    }
-}
-
-/// @brief Runs a Clang callback with exception logging and failure recording.
-template <typename Func>
-static void GuardClangCallback(const std::string_view step, Func&& func) noexcept {
-    try {
-        std::forward<Func>(func)();
-    } catch (const std::exception& ex) {
-        LogClangException(step, ex);
-    } catch (...) {
-        LogClangUnknownException(step);
-    }
-}
+using google::protobuf::Arena;
+using namespace ParseResult;
 
 /// @brief Requests traversal of template instantiations.
 bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; }
@@ -74,9 +45,10 @@ int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
 }
 
 /// @brief Logs the start of declaration traversal.
-void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext&) {
-    GuardClangCallback("BeginTranslationUnit", [] {
+void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
+    GuardClangCallback("BeginTranslationUnit", [&] {
         UEM_INFO("Starting AST traversal...");
+        context = &ctx;
     });
 }
 
@@ -91,7 +63,39 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl*) { return true; }
 
 bool UEMeta::ClangHandler::VisitClassTemplateDecl(clang::ClassTemplateDecl*) { return true; }
 
-bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl*) { return true; }
+bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
+    // if this is a forward declaration...
+    if (!clang_decl->isComplete()) {
+        // and we don't know about it yet...
+        if (!visited_forward_decls.insert(clang_decl).second) {
+            // generate a new forward declaration message and return
+            auto* forward_decl = Arena::Create<TLForwardDeclaration>(arena.get());
+            forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
+            PopulateEnumDetails(context, forward_decl->mutable_enum_details(), clang_decl);
+            PopulateDeclarationMetadata(context, forward_decl->mutable_metadata(), clang_decl);
+            forward_decl->set_as_string(GetDeclAsString(context, clang_decl));
+            FinalizeTL(forward_decl, arena.get(), results);
+            return true;
+        }
+        return true;
+    }
+
+    // if this is a complete definition that we've already seen (secondary translation unit), continue
+    if (!visited_decls.insert(clang_decl->getCanonicalDecl()).second) return true;
+
+    // else, generate a new enum declaration
+    auto* enum_decl = Arena::Create<TLEnumDeclaration>(arena.get());
+    PopulateDeclarationMetadata(context, enum_decl->mutable_metadata(), clang_decl);
+    PopulateEnumDetails(context, enum_decl->mutable_details(), clang_decl);
+    for (auto* enumerator : clang_decl->enumerators()) {
+        auto canonical = enumerator->getCanonicalDecl();
+        auto msg_enumerator = enum_decl->add_enumerators();
+        PopulateIdentifier(context, msg_enumerator->mutable_identifier(), canonical);
+        msg_enumerator->set_value(llvm::toString(canonical->getInitVal(), 10));
+    }
+    FinalizeTL(enum_decl, arena.get(), results);
+    return true;
+}
 
 bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl*) { return true; }
 
@@ -105,7 +109,9 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl*) { return true; }
 
 bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl*) { return true; }
 
-UEMeta::ClangHandler::ClangHandler() : arena(std::make_unique<google::protobuf::Arena>()){}
+UEMeta::ClangHandler::ClangHandler() : arena(std::make_unique<Arena>()) {
+    results.reserve(10000);
+}
 
 /// @brief Creates the AST consumer for one translation unit.
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance&,

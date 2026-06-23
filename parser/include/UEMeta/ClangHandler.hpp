@@ -75,10 +75,10 @@ namespace UEMeta {
         /**
          * @brief Visits enum declarations and records top-level metadata.
          *
-         * @param decl Enum declaration supplied by Clang.
+         * @param clang_decl Enum declaration supplied by Clang.
          * @return True to continue traversal.
          */
-        bool VisitEnumDecl(clang::EnumDecl* decl);
+        bool VisitEnumDecl(clang::EnumDecl* clang_decl);
 
         /**
          * @brief Visits free function declarations and records top-level metadata.

@@ -5,12 +5,12 @@ package ParseResult;
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
     string path = 1;
-    uint64 contentHash = 2;
-    uint64 pathHash = 3;
+    uint64 content_hash = 2;
+    uint64 path_hash = 3;
     message Include {
         string path = 1;
         // The index of this include relative to the other declarations in the same file
-        uint32 occurrenceIndex = 2;
+        uint32 occurrence_index = 2;
     }
     repeated Include includes = 4;
 }
@@ -19,23 +19,23 @@ message TLFileData {
 message TLRecordDeclaration {
     DeclarationMetadata metadata = 1;
     RecordKind kind = 2;
-    optional TemplateDetails templateDetails = 3;
-    optional bool isCompleteDefinition = 4;
+    optional TemplateDetails template_details = 3;
+    optional bool is_complete_definition = 4;
     // May be missing if the size is unknown (e.g. templates).
-    optional uint64 sizeBytes = 5;
+    optional uint64 size_bytes = 5;
     // May be missing if the alignment is unknown (e.g. templates).
-    optional uint64 alignBytes = 6;
+    optional uint64 align_bytes = 6;
     repeated Field fields = 7;
     repeated NestedDeclaration nested = 8;
     repeated BaseSpecifier bases = 9;
-    repeated StaticField staticFields = 10;
+    repeated StaticField static_fields = 10;
     repeated MemberFunction methods = 11;
 }
 
 // Top-level enum declaration.
 message TLEnumDeclaration {
     DeclarationMetadata metadata = 1;
-    optional EnumDetails details = 2;
+    EnumDetails details = 2;
     repeated Enumerator enumerators = 3;
 }
 
@@ -43,32 +43,32 @@ message TLEnumDeclaration {
 message TLForwardDeclaration {
     DeclarationMetadata metadata = 1;
     ForwardDeclarationKind kind = 2;
-    optional TemplateDetails templateDetails = 3;
+    optional TemplateDetails template_details = 3;
     // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
-    optional EnumDetails enumDetails = 4;
-    string asString = 5;
+    optional EnumDetails enum_details = 4;
+    string as_string = 5;
 }
 
 // Top-level alias declaration, including typedefs and using declarations.
 message TLAliasDeclaration {
     DeclarationMetadata metadata = 1;
-    optional TemplateDetails templateDetails = 2;
-    string aliasedType = 3;
-    string asString = 4;
+    optional TemplateDetails template_details = 2;
+    string aliased_type = 3;
+    string as_string = 4;
 }
 
 // An independently tracked top-level free-function declaration.
 message TLFreeFunctionDeclaration {
     DeclarationMetadata metadata = 1;
     FunctionDetails details = 2;
-    string asString = 3;
+    string as_string = 3;
 }
 
 // An independently tracked top-level global-variable declaration.
 message TLGlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
     VariableDetails details = 2;
-    string asString = 3;
+    string as_string = 3;
 }
 
 enum RecordKind {
@@ -116,7 +116,7 @@ enum AccessSpecifier {
     ACCESS_SPECIFIER_PRIVATE = 3;
 }
 
-// Static member functions have a distinct kind, so no separate isStatic flag
+// Static member functions have a distinct kind, so no separate is_static flag
 // is needed in FunctionDetails.
 enum FunctionKind {
     FUNCTION_KIND_UNSPECIFIED = 0;
@@ -182,35 +182,35 @@ enum ExceptionSpec {
 // Identity and source context shared by declarations and their named child
 // entities.
 // Producers must generate deterministic names for constructs that are unnamed in
-// source. A parameter's qualifiedName includes its owning function's qualified
+// source. A parameter's qualified_name includes its owning function's qualified
 // name and a parameter-specific suffix.
 message Identifier {
     string name = 1;
-    string qualifiedName = 2;
-    uint64 qualifiedNameHash = 3;
-    uint64 filePathHash = 4;
+    string qualified_name = 2;
+    uint64 qualified_name_hash = 3;
+    uint64 file_path_hash = 4;
     repeated string scope = 5;
     optional string documentation = 6;
 }
 
 // Identity, source, and file-splitting metadata shared by independently tracked
-// Declaration variants, including declarations nested in records. contentHash
+// Declaration variants, including declarations nested in records. content_hash
 // is kept here rather than in Identifier because it changes when the
 // declaration changes.
 message DeclarationMetadata {
     Identifier identifier = 1;
-    uint64 contentHash = 2;
+    uint64 content_hash = 2;
     // The index of this declaration relative to the other declarations in the same file
-    uint32 occurrenceIndex = 3;
-    optional bool isAnonymous = 4;
+    uint32 occurrence_index = 3;
+    optional bool is_anonymous = 4;
 }
 
 // The selected oneof member is the declaration-kind discriminator.
 message Declaration {
     oneof value {
         TLRecordDeclaration record = 1;
-        TLEnumDeclaration enumDeclaration = 2;
-        TLForwardDeclaration forwardDeclaration = 3;
+        TLEnumDeclaration enum_declaration = 2;
+        TLForwardDeclaration forward_declaration = 3;
         TLAliasDeclaration alias = 4;
         TLFreeFunctionDeclaration function = 5;
         TLGlobalVariableDeclaration variable = 6;
@@ -220,39 +220,39 @@ message Declaration {
 message NestedDeclaration {
     oneof value {
         TLRecordDeclaration record = 1;
-        TLEnumDeclaration enumDeclaration = 2;
-        TLForwardDeclaration forwardDeclaration = 3;
+        TLEnumDeclaration enum_declaration = 2;
+        TLForwardDeclaration forward_declaration = 3;
         TLAliasDeclaration alias = 4;
     }
 }
 
 // Shared by record, function, variable, alias, and forward-declaration
-// templates. specializationKind == NONE identifies a primary (unspecialized) template.
+// templates. specialization_kind == NONE identifies a primary (unspecialized) template.
 message TemplateDetails {
     repeated TemplateParameter parameters = 1;
-    optional TemplateSpecializationKind specializationKind = 2;
-    optional string primaryTemplateQualifiedName = 3;
+    optional TemplateSpecializationKind specialization_kind = 2;
+    optional string primary_template_qualified_name = 3;
     repeated string arguments = 4;
 }
 
 // Represents a single template parameter.
 // Ex: With `template<typename T, int N = 5> struct A...`, `typename T` and `int N` are each Template parameters.
 //      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, identifier.name = "T", and the detail fields are empty.
-//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and defaultValue = "5".
+//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and default_value = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
     TemplateParameterKind kind = 1;
     Identifier identifier = 2;
     optional string type = 3;
-    optional bool isParameterPack = 4;
-    optional string defaultValue = 5;
+    optional bool is_parameter_pack = 4;
+    optional string default_value = 5;
     repeated TemplateParameter parameters = 6;
-    string asString = 7;
+    string as_string = 7;
 }
 
 message EnumDetails {
     // int, unsigned, long, etc. If missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values).
-    optional string underlyingType = 1;
+    optional string underlying_type = 1;
 
     // enum class/struct, if missing then the enum is unscoped.
     optional EnumScope scope = 2;
@@ -260,12 +260,12 @@ message EnumDetails {
 
 // A function owned by a TLRecordDeclaration, including constructors,
 // destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
-// member function is not independently tracked, so it has no occurrenceIndex.
+// member function is not independently tracked, so it has no occurrence_index.
 message MemberFunction {
     Identifier identifier = 1;
     FunctionDetails details = 2;
-    string asString = 3;
-    uint64 contentHash = 4;
+    string as_string = 3;
+    uint64 content_hash = 4;
 }
 
 // Function-specific type, parameters, and qualifiers. Identity and source
@@ -274,21 +274,21 @@ message MemberFunction {
 message FunctionDetails {
     FunctionKind kind = 1;
     string type = 2;
-    optional string returnType = 3;
+    optional string return_type = 3;
     optional AccessSpecifier access = 4;
-    optional StorageClass storageClass = 5;
-    optional bool isConst = 6;
-    optional bool isVolatile = 7;
+    optional StorageClass storage_class = 5;
+    optional bool is_const = 6;
+    optional bool is_volatile = 7;
     optional FunctionVirtuality virtuality = 8;
-    optional ConstantEvaluationKind constantEvaluation = 9;
-    optional bool isInline = 10;
+    optional ConstantEvaluationKind constant_evaluation = 9;
+    optional bool is_inline = 10;
     optional FunctionDefinitionKind definition = 11;
-    optional bool isExplicit = 12;
-    optional ReferenceQualifier refQualifier = 13;
-    optional ExceptionSpec exceptionSpec = 14;
-    optional TemplateDetails templateDetails = 15;
+    optional bool is_explicit = 12;
+    optional ReferenceQualifier ref_qualifier = 13;
+    optional ExceptionSpec exception_spec = 14;
+    optional TemplateDetails template_details = 15;
     repeated Parameter parameters = 16;
-    optional VTableIndex vtableIndex = 17;
+    optional VTableIndex vtable_index = 17;
 }
 
 // Parameters use a deterministic synthesized identity when no name is spelled in
@@ -296,8 +296,8 @@ message FunctionDetails {
 message Parameter {
     Identifier identifier = 1;
     string type = 2;
-    string defaultValue = 3;
-    string asString = 4;
+    string default_value = 3;
+    string as_string = 4;
 }
 
 message VTableIndex {
@@ -310,44 +310,43 @@ message VTableIndex {
 message StaticField {
     Identifier identifier = 1;
     VariableDetails details = 2;
-    string asString = 3;
+    string as_string = 3;
 }
 
 message VariableDetails {
-    optional TemplateDetails templateDetails = 1;
+    optional TemplateDetails template_details = 1;
     string type = 2;
-    string asString = 3;
+    string as_string = 3;
     optional AccessSpecifier access = 4;
-    optional StorageClass storageClass = 5;
-    optional bool isConstexpr = 6;
-    optional bool isInline = 7;
+    optional StorageClass storage_class = 5;
+    optional bool is_constexpr = 6;
+    optional bool is_inline = 7;
 }
 
 message Enumerator {
     Identifier identifier = 1;
     string value = 2;
-    string asString = 3;
 }
 
 // A non-static data member owned by a TLRecordDeclaration.
 message Field {
     Identifier identifier = 1;
     string type = 2;
-    string asString = 3;
+    string as_string = 3;
     optional AccessSpecifier access = 4;
-    optional bool isMutable = 5;
-    optional bool isBitfield = 6;
-    optional uint64 bitWidth = 7;
-    optional uint64 offsetBits = 8;
-    uint64 contentHash = 9;
+    optional bool is_mutable = 5;
+    optional bool is_bitfield = 6;
+    optional uint64 bit_width = 7;
+    optional uint64 offset_bits = 8;
+    uint64 content_hash = 9;
 }
 
 message BaseSpecifier {
     Identifier identifier = 1;
     optional AccessSpecifier access = 2;
-    optional bool isVirtual = 3;
+    optional bool is_virtual = 3;
     optional uint64 offset = 4;
-    string asString = 5;
+    string as_string = 5;
 }
 
 // Used to validate compile_commands.json
