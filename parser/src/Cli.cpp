@@ -41,6 +41,11 @@ bool UEMeta::Config::PrefersClang() const {
     return prefer_clang;
 }
 
+bool UEMeta::Config::DumpToStdout() const {
+    AssertInitialized();
+    return dump_to_stdout;
+}
+
 UEMeta::Config::SerializationFormat UEMeta::Config::Format() const {
     AssertInitialized();
     return format;

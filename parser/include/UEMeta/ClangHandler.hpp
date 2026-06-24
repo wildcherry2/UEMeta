@@ -166,6 +166,8 @@ namespace UEMeta {
          */
         void EndTranslationUnit(clang::ASTContext& ctx);
 
+        void Serialize();
+
         TransientData transient_data{};
     };
 }

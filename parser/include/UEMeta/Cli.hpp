@@ -55,6 +55,11 @@ namespace UEMeta {
         [[nodiscard]] bool PrefersClang() const;
 
         /**
+         * @brief Returns true when the user wants to dump to stdout. Implies SerializationFormat::json.
+         */
+        [[nodiscard]] bool DumpToStdout() const;
+
+        /**
          * @brief Returns the output format.
          */
         [[nodiscard]] SerializationFormat Format() const;

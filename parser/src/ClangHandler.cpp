@@ -139,6 +139,7 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
                         UEM_ERROR("(clang) AST traversal aborted due to an earlier exception.");
                         return;
                     }
+                    owner->Serialize();
                     owner->EndTranslationUnit(ctx);
                 });
             }
@@ -155,5 +156,18 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
     } catch (...) {
         LogClangUnknownException("CreateASTConsumer");
         throw;
+    }
+}
+
+void UEMeta::ClangHandler::Serialize() {
+    // only going to worry about stdout for now
+
+    auto& cfg = Config::GetConfig();
+    if (cfg.DumpToStdout()) {
+        for (auto* msg : transient_data.results) {
+            auto str = msg->DebugString();
+            std::cout << str;
+            std::cout.flush();
+        }
     }
 }
