@@ -138,6 +138,7 @@ namespace UEMeta {
             llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
             std::vector<ParseResult::Declaration*> results{};
             google::protobuf::Arena arena{};
+            size_t occurrence_index = 0;
         };
 
     protected:

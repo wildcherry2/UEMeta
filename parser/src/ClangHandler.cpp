@@ -74,6 +74,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
             PopulateDeclarationMetadata(transient_data, p_forward_decl->mutable_metadata(), clang_decl);
             p_forward_decl->set_as_string(GetDeclAsString(transient_data, clang_decl));
             FinalizeTL(transient_data, p_forward_decl);
+            ++transient_data.occurrence_index;
             return true;
         }
         return true;
@@ -92,6 +93,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
         p_enumerator->set_value(llvm::toString(enumerator->getInitVal(), 10));
     }
     FinalizeTL(transient_data, p_enum_decl);
+    ++transient_data.occurrence_index;
     return true;
 }
 
@@ -112,9 +114,10 @@ UEMeta::ClangHandler::ClangHandler() {
 }
 
 /// @brief Creates the AST consumer for one translation unit.
-std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance&,
+std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
                                                                             llvm::StringRef file) {
     try {
+        compiler.getLangOpts().CommentOpts.ParseAllComments = true;
         const auto input_name = file.str();
         const auto file_name = std::filesystem::path(input_name).filename().string();
         const auto tu_name = file_name.empty() ? input_name : file_name;
