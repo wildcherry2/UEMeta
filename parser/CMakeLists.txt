@@ -389,12 +389,24 @@ string(CONCAT UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON
     "\"file\":\"${UEMETA_PLAYGROUND_SOURCE_JSON}\""
     "}]"
 )
+set(UEMETA_PLAYGROUND_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/RunPlayground.cmake")
+string(CONCAT UEMETA_PLAYGROUND_LAUNCHER_CONTENT
+    "execute_process(\n"
+    "    COMMAND \"$<TARGET_FILE:parser>\"\n"
+    "        --compile-commands [===[${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}]===]\n"
+    "        --clang-path [===[${PARSER_BUNDLE_CLANG_DIR}/clang-cl.exe]===]\n"
+    "        --stdout\n"
+    "        -l pg.log\n"
+    "    RESULT_VARIABLE UEMETA_PLAYGROUND_RESULT\n"
+    ")\n"
+    "if(NOT UEMETA_PLAYGROUND_RESULT EQUAL 0)\n"
+    "    message(FATAL_ERROR \"playground parser run failed with exit code \${UEMETA_PLAYGROUND_RESULT}\")\n"
+    "endif()\n"
+)
+file(GENERATE OUTPUT "${UEMETA_PLAYGROUND_LAUNCHER}" CONTENT "${UEMETA_PLAYGROUND_LAUNCHER_CONTENT}")
 
 add_custom_target(playground
-    COMMAND "$<TARGET_FILE:parser>"
-        --compile-commands "${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}"
-        --clang-path "${PARSER_BUNDLE_CLANG_DIR}/clang-cl.exe"
-        --stdout
+    COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_PLAYGROUND_LAUNCHER}"
     DEPENDS parser "${UEMETA_PLAYGROUND_SOURCE}"
     COMMENT "Running parser over playground/pg.cpp"
     USES_TERMINAL
