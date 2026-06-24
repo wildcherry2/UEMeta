@@ -12,7 +12,6 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
 #include "parser.pb.h"
-#include <google/protobuf/arena.h>
 
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/Internal/ClangHelpers.hpp"
@@ -48,7 +47,7 @@ int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
 void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     GuardClangCallback("BeginTranslationUnit", [&] {
         UEM_INFO("Starting AST traversal...");
-        context = &ctx;
+        transient_data.context = &ctx;
     });
 }
 
@@ -67,32 +66,32 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     // if this is a forward declaration...
     if (!clang_decl->isComplete()) {
         // and we don't know about it yet...
-        if (!visited_forward_decls.insert(clang_decl).second) {
+        if (!transient_data.visited_forward_decls.insert(clang_decl).second) {
             // generate a new forward declaration message and return
-            auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(arena.get());
+            auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(&transient_data.arena);
             p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
-            PopulateEnumDetails(context, p_forward_decl->mutable_enum_details(), clang_decl);
-            PopulateDeclarationMetadata(context, p_forward_decl->mutable_metadata(), clang_decl);
-            p_forward_decl->set_as_string(GetDeclAsString(context, clang_decl));
-            FinalizeTL(p_forward_decl, arena.get(), results);
+            PopulateEnumDetails(transient_data, p_forward_decl->mutable_enum_details(), clang_decl);
+            PopulateDeclarationMetadata(transient_data, p_forward_decl->mutable_metadata(), clang_decl);
+            p_forward_decl->set_as_string(GetDeclAsString(transient_data, clang_decl));
+            FinalizeTL(transient_data, p_forward_decl);
             return true;
         }
         return true;
     }
 
     // if this is a complete definition that we've already seen (secondary translation unit), continue
-    if (!visited_decls.insert(clang_decl->getCanonicalDecl()).second) return true;
+    if (!transient_data.visited_decls.insert(clang_decl->getCanonicalDecl()).second) return true;
 
     // else, generate a new enum declaration
-    auto* p_enum_decl = Arena::Create<TLEnumDeclaration>(arena.get());
-    PopulateDeclarationMetadata(context, p_enum_decl->mutable_metadata(), clang_decl);
-    PopulateEnumDetails(context, p_enum_decl->mutable_details(), clang_decl);
+    auto* p_enum_decl = Arena::Create<TLEnumDeclaration>(&transient_data.arena);
+    PopulateDeclarationMetadata(transient_data, p_enum_decl->mutable_metadata(), clang_decl);
+    PopulateEnumDetails(transient_data, p_enum_decl->mutable_details(), clang_decl);
     for (auto* enumerator : clang_decl->enumerators()) {
         auto p_enumerator = p_enum_decl->add_enumerators();
-        PopulateIdentifier(context, p_enumerator->mutable_identifier(), enumerator);
+        PopulateIdentifier(transient_data, p_enumerator->mutable_identifier(), enumerator);
         p_enumerator->set_value(llvm::toString(enumerator->getInitVal(), 10));
     }
-    FinalizeTL(p_enum_decl, arena.get(), results);
+    FinalizeTL(transient_data, p_enum_decl);
     return true;
 }
 
@@ -108,8 +107,8 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl*) { return true; }
 
 bool UEMeta::ClangHandler::VisitVarTemplateDecl(clang::VarTemplateDecl*) { return true; }
 
-UEMeta::ClangHandler::ClangHandler() : arena(std::make_unique<Arena>()) {
-    results.reserve(10000);
+UEMeta::ClangHandler::ClangHandler() {
+    transient_data.results.reserve(10000);
 }
 
 /// @brief Creates the AST consumer for one translation unit.

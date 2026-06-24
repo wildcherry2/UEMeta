@@ -3,7 +3,10 @@
 #include "parser.pb.h"
 #include <clang/AST/ASTContext.h>
 
+#include "UEMeta/ClangHandler.hpp"
+
 using namespace ParseResult;
+using Data = UEMeta::ClangHandler::TransientData;
 
 /// @brief Tracks whether any guarded Clang callback caught an exception.
 inline std::atomic_bool GClangExceptionCaught{false};
@@ -39,61 +42,61 @@ void GuardClangCallback(const std::string_view step, Func&& func) noexcept {
 }
 
 /// @brief Gets the declaration as a macro-expanded string
-inline std::string GetDeclAsString(clang::ASTContext* ctx, const clang::Decl* decl) {
+inline std::string GetDeclAsString(const Data& data, const clang::Decl* decl) {
     std::string s{};
     llvm::raw_string_ostream os(s);
-    decl->print(os, ctx->getPrintingPolicy(), 0, true);
+    decl->print(os, data.context->getPrintingPolicy(), 0, true);
     return s;
 }
 
 /// @brief Fills out an EnumDetails* from an EnumDecl*
-inline void PopulateEnumDetails(const clang::ASTContext* ctx, EnumDetails* p_msg, const clang::EnumDecl* decl) {
-    if (!(ctx && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateEnumDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!ctx, !!p_msg, !!decl);
+inline void PopulateEnumDetails(const Data& data, EnumDetails* p_msg, const clang::EnumDecl* decl) {
+    if (!(data.context && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateEnumDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
         return;
     }
     auto underlying = decl->getIntegerType();
     if (!underlying.isNull()) {
-        p_msg->set_underlying_type(underlying.getAsString(ctx->getPrintingPolicy()));
+        p_msg->set_underlying_type(underlying.getAsString(data.context->getPrintingPolicy()));
     }
     p_msg->set_scope(!decl->isScoped() ? ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ENUM_SCOPE_CLASS : ENUM_SCOPE_STRUCT);
 }
 
 /// @brief Fills out a DeclarationMetadata from a Decl
-inline void PopulateDeclarationMetadata(const clang::ASTContext* ctx, DeclarationMetadata* p_msg, const clang::Decl* decl) {
-    if (!(ctx && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateDeclarationMetadata due to nullptr! ctx={}, p_msg={}, decl={}", !!ctx, !!p_msg, !!decl);
+inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p_msg, const clang::Decl* decl) {
+    if (!(data.context && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateDeclarationMetadata due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
         return;
     }
     //todo
 }
 
 /// @brief Fills out an Identifier from a Decl
-inline void PopulateIdentifier(const clang::ASTContext* ctx, Identifier* p_msg, const clang::Decl* decl) {
-    if (!(ctx && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateIdentifier due to nullptr! ctx={}, p_msg={}, decl={}", !!ctx, !!p_msg, !!decl);
+inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang::Decl* decl) {
+    if (!(data.context && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateIdentifier due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
         return;
     }
 }
 
 /// @brief Finalizes a top-level forward declaration.
-inline void FinalizeTL(TLForwardDeclaration* decl, google::protobuf::Arena* arena, std::vector<Declaration*>& container) {
-    if (!(decl && arena)) {
-        UEM_WARN("Failed to FinalizeTL due to nullptr! TLForwardDeclaration={}, arena={}", !!decl, !!arena);
+inline void FinalizeTL(Data& data, TLForwardDeclaration* decl) {
+    if (!decl) {
+        UEM_WARN("Failed to FinalizeTL due to nullptr! TLForwardDeclaration={}", !!decl);
         return;
     }
-    auto decl_container = google::protobuf::Arena::Create<Declaration>(arena);
+    auto decl_container = google::protobuf::Arena::Create<Declaration>(&data.arena);
     decl_container->set_allocated_forward_declaration(decl);
-    container.emplace_back(decl_container);
+    data.results.emplace_back(decl_container);
 }
 
 /// @brief Finalizes a top-level enum declaration.
-inline void FinalizeTL(TLEnumDeclaration* decl, google::protobuf::Arena* arena, std::vector<Declaration*>& container) {
-    if (!(decl && arena)) {
-        UEM_WARN("Failed to FinalizeTL due to nullptr! TLEnumDeclaration={}, arena={}", !!decl, !!arena);
+inline void FinalizeTL(Data& data, TLEnumDeclaration* decl) {
+    if (!decl) {
+        UEM_WARN("Failed to FinalizeTL due to nullptr! TLEnumDeclaration={}", !!decl);
         return;
     }
-    auto decl_container = google::protobuf::Arena::Create<Declaration>(arena);
+    auto decl_container = google::protobuf::Arena::Create<Declaration>(&data.arena);
     decl_container->set_allocated_enum_declaration(decl);
-    container.emplace_back(decl_container);
+    data.results.emplace_back(decl_container);
 }

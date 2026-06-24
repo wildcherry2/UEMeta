@@ -5,13 +5,11 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
+#include <atomic>
+#include <google/protobuf/arena.h>
 
 namespace ParseResult {
     class Declaration;
-}
-
-namespace google::protobuf {
-    class Arena;
 }
 
 namespace clang::tooling {
@@ -134,6 +132,14 @@ namespace UEMeta {
 
         ClangHandler();
 
+        struct TransientData {
+            clang::ASTContext* context{};
+            llvm::DenseSet<const clang::Decl*> visited_decls{};
+            llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
+            std::vector<ParseResult::Declaration*> results{};
+            google::protobuf::Arena arena{};
+        };
+
     protected:
         /**
          * @brief Creates the AST consumer and preprocessor callbacks for one translation unit.
@@ -159,10 +165,6 @@ namespace UEMeta {
          */
         void EndTranslationUnit(clang::ASTContext& ctx);
 
-        clang::ASTContext* context{};
-        llvm::DenseSet<const clang::Decl*> visited_decls{};
-        llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
-        std::vector<ParseResult::Declaration*> results{};
-        std::unique_ptr<google::protobuf::Arena> arena{};
+        TransientData transient_data{};
     };
 }
