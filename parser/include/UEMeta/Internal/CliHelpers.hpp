@@ -49,58 +49,18 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
 
 constexpr auto STDOUT_HELP = "Overrides all output settings and dumps output to stdout.";
 
-/// @brief Validates that a CLI path names an existing non-empty file, optionally with a required filename.
-static std::string ValidateNonEmptyFile(const std::string& path, const std::string& assertFileName = "") {
-    std::error_code ec{};
-    const UEMeta::StablePath temp{std::string_view{path}};
-    if (!temp.Exists(ec)) {
-        return fmtquill::format("File \"{}\" not found (OS returned error code {})", path, ec.value());
-    }
-    if (!temp.IsFile(ec)) {
-        return fmtquill::format("File \"{}\" is not a regular file (OS returned error code {})", path, ec.value());
-    }
-    const auto file_size = std::filesystem::file_size(temp.UnderlyingPath(), ec);
-    if (ec || !file_size) {
-        return fmtquill::format("File \"{}\" is empty (OS returned error code {})", path, ec.value());
-    }
-    if (!assertFileName.empty() && temp.UnderlyingPath().filename().string() != assertFileName) {
-        return fmtquill::format("File \"{}\" is not named \"{}\" (named '{}')!",
-            path, assertFileName, temp.UnderlyingPath().filename().string());
-    }
-    return "";
-}
-
-/// @brief Validates a compile commands file or JSON literal using its protobuf shape.
-static std::string ValidateCompileCommands(const std::string& in) {
-    try {
-        if (in.empty()) return "";
-        const auto IsValidCCJson = [](const std::string& in) -> std::string {
-            ParseResult::CompileCommands compileCommands;
-            google::protobuf::util::JsonParseOptions options;
-            options.ignore_unknown_fields = true;
-
-            auto status = google::protobuf::util::JsonStringToMessage(in, &compileCommands, options);
-
-            if (!status.ok()) {
-                return fmtquill::format("Invalid compile_commands file: {}, error: ", in.c_str(), status.ToString());
-            }
-
-            return "";
-        };
-
-        if (in.ends_with(".json")) {
-            auto test = ValidateNonEmptyFile(in, "compile_commands.json");
-            if (!test.empty()) return test;
-            std::ifstream ifs{in};
-            std::stringstream buffer;
-            buffer << ifs.rdbuf();
-            return IsValidCCJson(buffer.str());
+/// @brief Loads a compile_commands.json into a string
+static std::string LoadCompileCommandsString(const std::string& in) {
+    if (in.ends_with(".json")) {
+        std::ifstream ifs{in};
+        if (!ifs.is_open()) {
+            throw std::runtime_error{fmtquill::format("Could not open compilation database json file {}", in)};
         }
-
-        return IsValidCCJson(in);
-    } catch (const std::exception& e) {
-        return fmtquill::format("Invalid compile_commands file (exception): {}", e.what());
+        std::stringstream ss{};
+        ss << ifs.rdbuf();
+        return ss.str();
     }
+    return in;
 }
 
 #ifdef WIN32

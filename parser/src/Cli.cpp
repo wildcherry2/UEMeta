@@ -115,8 +115,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.add_flag("--stdout", cfg.dump_to_stdout, STDOUT_HELP)
         ->default_val(false);
     app.add_option("--compile-commands", cc_temp, COMPILE_COMMANDS_HELP)
-        ->check(ValidateCompileCommands)
-        ->required();
+        ->required()
+        ->transform(LoadCompileCommandsString);
     app.add_option("--clang-path", cfg.clang_path, CLANG_PATH_HELP)
         ->check(CLI::ExistingFile);
     app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP);

@@ -48,18 +48,18 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
 }
 
 /// @brief Loads the already-filtered compile_commands.json.
-static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::string& cc_path) {
+static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::string& cc_str) {
     try {
         std::string error{};
-        auto db = JSONCompilationDatabase::loadFromFile(cc_path, error, JSONCommandLineSyntax::AutoDetect);
+        auto db = JSONCompilationDatabase::loadFromBuffer(cc_str, error, JSONCommandLineSyntax::AutoDetect);
         if (!db) {
-            UEM_ERROR("(llvm) Failed to load compile commands at \"{}\": {}", cc_path, error);
+            UEM_ERROR("(llvm) Failed to load compile commands at \"{}\": {}", cc_str, error);
             return nullptr;
         }
 
         const auto commands = db->getAllCompileCommands();
         if (commands.empty()) {
-            UEM_ERROR("(llvm) compile_commands.json at \"{}\" does not contain any compile commands.", cc_path);
+            UEM_ERROR("(llvm) compile_commands.json at \"{}\" does not contain any compile commands.", cc_str);
             return nullptr;
         }
         for (const auto& command : commands) {
@@ -71,9 +71,9 @@ static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::strin
 
         return db;
     } catch (std::exception& ex) {
-        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what());
+        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with error: {}", cc_str, ex.what());
     } catch (...) {
-        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with unknown error.", cc_path);
+        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with unknown error.", cc_str);
     }
     return nullptr;
 }
