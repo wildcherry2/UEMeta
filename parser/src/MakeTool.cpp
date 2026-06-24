@@ -47,19 +47,19 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
     return out;
 }
 
-/// @brief Loads the already-filtered compile_commands.json.
-static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::string& cc_str) {
+/// @brief Loads the already-filtered compile_commands.json content.
+static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::string& cc_json) {
     try {
         std::string error{};
-        auto db = JSONCompilationDatabase::loadFromBuffer(cc_str, error, JSONCommandLineSyntax::AutoDetect);
+        auto db = JSONCompilationDatabase::loadFromBuffer(cc_json, error, JSONCommandLineSyntax::AutoDetect);
         if (!db) {
-            UEM_ERROR("(llvm) Failed to load compile commands at \"{}\": {}", cc_str, error);
+            UEM_ERROR("(llvm) Failed to load compile commands from JSON buffer: {}", error);
             return nullptr;
         }
 
         const auto commands = db->getAllCompileCommands();
         if (commands.empty()) {
-            UEM_ERROR("(llvm) compile_commands.json at \"{}\" does not contain any compile commands.", cc_str);
+            UEM_ERROR("(llvm) compile_commands JSON buffer does not contain any compile commands.");
             return nullptr;
         }
         for (const auto& command : commands) {
@@ -71,9 +71,9 @@ static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::strin
 
         return db;
     } catch (std::exception& ex) {
-        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with error: {}", cc_str, ex.what());
+        UEM_ERROR("(llvm) Failed to load compile commands from JSON buffer with error: {}", ex.what());
     } catch (...) {
-        UEM_ERROR("(llvm) Failed to load compile commands at \"{}\" with unknown error.", cc_str);
+        UEM_ERROR("(llvm) Failed to load compile commands from JSON buffer with unknown error.");
     }
     return nullptr;
 }
@@ -81,11 +81,11 @@ static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::strin
 /// @brief Creates the ClangTool and argument adjusters for the configured compile commands.
 std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
     try {
-        const auto compile_commands_path = Config::GetConfig().CompileCommands().string();
-        auto db = LoadCompileDatabase(compile_commands_path);
+        const auto& compile_commands_json = Config::GetConfig().CompileCommands();
+        auto db = LoadCompileDatabase(compile_commands_json);
 
         if (!db) return nullptr;
-        UEM_INFO("Using filtered compile_commands.json at {}", compile_commands_path);
+        UEM_INFO("Using filtered compile_commands JSON buffer ({} bytes)", compile_commands_json.size());
 
         db = expandResponseFiles(std::move(db), llvm::vfs::getRealFileSystem());
         if (!db) {
@@ -95,7 +95,7 @@ std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
 
         const auto sources = db->getAllFiles();
         if (sources.empty()) {
-            UEM_ERROR("(llvm) compile_commands.json at \"{}\" does not contain any source files.", compile_commands_path);
+            UEM_ERROR("(llvm) compile_commands JSON buffer does not contain any source files.");
             return nullptr;
         }
 

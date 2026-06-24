@@ -1,13 +1,9 @@
 #pragma once
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
-#include <unordered_set>
 #include <ranges>
-#include <string_view>
-#include <unordered_map>
-#include <optional>
-#include <google/protobuf/util/json_util.h>
 #include "parser.pb.h"
 
 constexpr auto COMPILE_COMMANDS_HELP = "Path to compile_commands.json, or a JSON string representing the "
@@ -63,7 +59,7 @@ static std::string LoadCompileCommandsString(const std::string& in) {
     return in;
 }
 
-#ifdef WIN32
+#if defined(_WIN32) || defined(WIN32)
 /**
  * @brief Default bundled clang-cl executable path on Windows.
  */

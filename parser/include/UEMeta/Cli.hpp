@@ -30,9 +30,9 @@ namespace UEMeta {
         };
 
         /**
-         * @brief Returns the compile_commands.json path or literal.
+         * @brief Returns the normalized compile_commands.json content.
          */
-        [[nodiscard]] const StablePath& CompileCommands() const;
+        [[nodiscard]] const std::string& CompileCommands() const;
 
         /**
          * @brief Returns the clang or clang-cl executable path.
@@ -85,7 +85,7 @@ namespace UEMeta {
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
             return os << fmtquill::format("compile_commands={}\nprefer_clang={}\nstrip_commands={}\n"
                                           "additional_clang_args={}\npath_begin={}\nformat={}\nclang_path={}\n"
-                                          "log={}\noutput_directory={}", obj.compile_commands.string(), obj.prefer_clang, obj.strip_commands,
+                                          "log={}\noutput_directory={}", obj.compile_commands, obj.prefer_clang, obj.strip_commands,
                                           obj.additional_clang_args, obj.path_begin, format_string_map.at(obj.format), obj.clang_path.string(), obj.log.string(),
                                           obj.output_directory.string());
         }
@@ -146,7 +146,7 @@ namespace UEMeta {
         StablePath clang_path{};
         StablePath log{};
         StablePath output_directory{};
-        StablePath compile_commands{};
+        std::string compile_commands{};
 
         std::atomic_flag initialized{};
 

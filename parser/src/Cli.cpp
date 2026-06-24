@@ -12,8 +12,8 @@
 #include "quill/sinks/FileSink.h"
 
 
-/// @brief Returns the configured compile_commands.json path.
-const UEMeta::StablePath& UEMeta::Config::CompileCommands() const {
+/// @brief Returns the normalized compile_commands.json content.
+const std::string& UEMeta::Config::CompileCommands() const {
     AssertInitialized();
     return compile_commands;
 }
@@ -108,13 +108,11 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         return 0;
     };
 
-    std::string cc_temp{};
-
     app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
         ->default_val(false);
     app.add_flag("--stdout", cfg.dump_to_stdout, STDOUT_HELP)
         ->default_val(false);
-    app.add_option("--compile-commands", cc_temp, COMPILE_COMMANDS_HELP)
+    app.add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
         ->required()
         ->transform(LoadCompileCommandsString);
     app.add_option("--clang-path", cfg.clang_path, CLANG_PATH_HELP)
@@ -137,16 +135,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
     cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
-
-    if (cc_temp.ends_with(".json")) {
-        cfg.compile_commands = StablePath(cc_temp);
-    }
-    else {
-        cfg.compile_commands = StablePath::current_program_directory() / "compile_commands.json";
-        std::ofstream cc_file{cfg.compile_commands.UnderlyingPath()};
-        cc_file << cc_temp;
-        cc_file.close();
-    }
 
     cfg.initialized.test_and_set();
     return 0;

@@ -373,3 +373,30 @@ add_custom_command(TARGET parser POST_BUILD
     COMMENT "Bundling parser executable and LLVM/Clang binaries"
     VERBATIM
 )
+
+set(UEMETA_PLAYGROUND_SOURCE "${PROJECT_SOURCE_DIR}/playground/pg.cpp")
+
+file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON)
+file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_SOURCE}" UEMETA_PLAYGROUND_SOURCE_JSON)
+set(UEMETA_PLAYGROUND_CLANG_CL_COMMAND
+    "clang-cl.exe /nologo /TP /std:c++latest /EHsc /Zc:preprocessor /bigobj /DWIN32 /D_WINDOWS /DNDEBUG /MT /O2 /Ob2 /c \"${UEMETA_PLAYGROUND_SOURCE_JSON}\""
+)
+string(REPLACE "\"" "\\\"" UEMETA_PLAYGROUND_CLANG_CL_COMMAND_JSON "${UEMETA_PLAYGROUND_CLANG_CL_COMMAND}")
+string(CONCAT UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON
+    "[{"
+    "\"directory\":\"${UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON}\","
+    "\"command\":\"${UEMETA_PLAYGROUND_CLANG_CL_COMMAND_JSON}\","
+    "\"file\":\"${UEMETA_PLAYGROUND_SOURCE_JSON}\""
+    "}]"
+)
+
+add_custom_target(playground
+    COMMAND "$<TARGET_FILE:parser>"
+        --compile-commands "${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}"
+        --clang-path "${PARSER_BUNDLE_CLANG_DIR}/clang-cl.exe"
+        --stdout
+    DEPENDS parser "${UEMETA_PLAYGROUND_SOURCE}"
+    COMMENT "Running parser over playground/pg.cpp"
+    USES_TERMINAL
+    VERBATIM
+)

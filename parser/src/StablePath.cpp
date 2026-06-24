@@ -101,7 +101,7 @@ UEMeta::StablePath UEMeta::StablePath::current_program_directory() noexcept {
     return current_path;
 }
 
-#ifdef WIN32
+#if defined(_WIN32) || defined(WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
@@ -118,7 +118,7 @@ UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
     return out;
 }
 
-#elifdef __linux__
+#elif defined(__linux__)
 UEMeta::StablePath UEMeta::StablePath::current_program_path() noexcept {
     std::error_code ec{};
     auto path = std::filesystem::read_symlink("/proc/self/exe", ec);
