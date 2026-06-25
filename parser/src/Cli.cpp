@@ -191,6 +191,7 @@ int UEMeta::Logger::Initialize() {
         if (auto& log_path = cfg.Log().UnderlyingPath(); !log_path.empty()) {
             quill::FileSinkConfig file_sink_config{};
             file_sink_config.set_override_pattern_formatter_options(formatter_options);
+            file_sink_config.set_open_mode('w');
             auto file_sink = quill::Frontend::create_or_get_sink<quill::FileSink>(log_path.string(), file_sink_config);
             if (!console_sink || !file_sink) {
                 UEM_ERROR("Failed to initialize logger sinks.");

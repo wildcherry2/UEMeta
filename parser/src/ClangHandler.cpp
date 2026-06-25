@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/DeclTemplate.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/Tooling.h>
 #include "parser.pb.h"
@@ -58,9 +59,43 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
     });
 }
 
-bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl*) { return true; }
+// CXXRecordDecl->getDescribedClassTemplate() can tell you if you have a templated c++ class,
+// RecordDecl->getDescribedTemplate() can tell you without casting to c++ type
+bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
+    // if this is a forward declaration...
+    if (!clang_decl->isThisDeclarationADefinition()) {
+        // and we don't know about it yet...
+        if (transient_data.visited_forward_decls.insert(clang_decl).second) {
+            // generate a new forward declaration message and return
+            auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(&transient_data.arena);
 
-bool UEMeta::ClangHandler::VisitClassTemplateDecl(clang::ClassTemplateDecl*) { return true; }
+            // assign the tag kind
+            if (auto tag_kind = clang_decl->getTagKind(); tag_kind == clang::TagTypeKind::Class) {
+                p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_CLASS);
+            }
+            else if (tag_kind == clang::TagTypeKind::Struct) {
+                p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_STRUCT);
+            }
+            else {
+                p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_UNION);
+            }
+
+            // populate metadata
+            PopulateDeclarationMetadata(transient_data, p_forward_decl->mutable_metadata(), clang_decl);
+
+            // copy as string
+            p_forward_decl->set_as_string(GetDeclAsString(transient_data, clang_decl));
+
+            // handle templates
+
+        }
+
+        return true;
+    }
+
+
+    return true;
+}
 
 bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     // if this is a forward declaration...
@@ -74,8 +109,6 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
             PopulateDeclarationMetadata(transient_data, p_forward_decl->mutable_metadata(), clang_decl);
             p_forward_decl->set_as_string(GetDeclAsString(transient_data, clang_decl));
             FinalizeTL(transient_data, p_forward_decl);
-            ++transient_data.occurrence_index;
-            return true;
         }
         return true;
     }
@@ -93,7 +126,6 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
         p_enumerator->set_value(llvm::toString(enumerator->getInitVal(), 10));
     }
     FinalizeTL(transient_data, p_enum_decl);
-    ++transient_data.occurrence_index;
     return true;
 }
 

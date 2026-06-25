@@ -131,7 +131,7 @@ inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p
         return;
     }
     PopulateIdentifier(data, p_msg->mutable_identifier(), decl);
-    p_msg->set_occurrence_index(data.occurrence_index);
+    p_msg->set_occurrence_index(data.occurrence_index++);
     if (auto* as_enum = llvm::dyn_cast_or_null<clang::EnumDecl>(decl)) {
         p_msg->set_is_anonymous(as_enum->getName().empty());
     }
@@ -139,6 +139,72 @@ inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p
         p_msg->set_is_anonymous(as_record->isAnonymousStructOrUnion() || as_record->getName().empty()); // catches nested anon structs as well
     }
     p_msg->set_content_hash(std::hash<std::string_view>::operator()(GetDeclAsString(data, decl)));
+}
+
+/// @pre decl is a forward declaration
+/// @brief Adds a new forward declaration message to results from decl
+inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
+    if (decl->isThisDeclarationADefinition())
+        throw std::runtime_error("AddForwardDeclaration can't be called on a non forward declaration!");
+
+    auto* p_decl = google::protobuf::Arena::Create<Declaration>(&data.arena);
+    auto* p_forward_decl = p_decl->mutable_forward_declaration();
+
+    const auto HandleTemplates = [&] {
+        auto* as_cxx = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl);
+        if (!as_cxx) return;
+        auto* p_templ = p_forward_decl->mutable_template_details();
+        switch (as_cxx->getTemplateSpecializationKind()) {
+            case clang::TSK_Undeclared: // primary template
+                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+                p_templ->set_primary_template_qualified_name(as_cxx->getQualifiedNameAsString());
+                break;
+            case clang::TSK_ImplicitInstantiation: // template params inferred from usage
+                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_IMPLICIT);
+                break;
+            case clang::TSK_ExplicitSpecialization: // like a custom implementation of a template ('template <> void print<int>(int v)')
+                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT);
+                break;
+            case clang::TSK_ExplicitInstantiationDeclaration: // 'extern template' declaration
+                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION);
+                break;
+            case clang::TSK_ExplicitInstantiationDefinition: // like forward declaring 'template class std::vector<int>'
+                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
+                break;
+        }
+        //todo handle params
+    };
+
+    // assign the kind and template info
+    switch (decl->getTagKind()) {
+        case clang::TagTypeKind::Struct:
+            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_STRUCT);
+            HandleTemplates();
+            break;
+        case clang::TagTypeKind::Union:
+            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_UNION);
+            HandleTemplates();
+            break;
+        case clang::TagTypeKind::Class:
+            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_CLASS);
+            HandleTemplates();
+            break;
+        case clang::TagTypeKind::Enum:
+            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
+            PopulateEnumDetails(data, p_forward_decl->mutable_enum_details(), static_cast<clang::EnumDecl*>(decl));
+            break;
+        default:
+            throw std::runtime_error("AddForwardDeclaration can't be called on a nonstandard declaration!");
+    }
+
+    // populate declaration metadata
+    PopulateDeclarationMetadata(data, p_forward_decl->mutable_metadata(), decl);
+
+    // populate as string
+    p_forward_decl->set_as_string(GetDeclAsString(data, decl));
+
+    // add to results
+    data.visited_forward_decls.insert(decl);
 }
 
 /// @brief Finalizes a top-level forward declaration.

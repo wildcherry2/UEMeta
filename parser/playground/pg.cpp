@@ -1,15 +1,8 @@
 
 
 namespace ns {
-    enum class B {
-        enumerator,
-        second,
-        third = 9
-    };
+    class A {};
 
-    class A {
-        using enum B;
-    };
-
-
+    template<typename B>
+    class C {};
 }

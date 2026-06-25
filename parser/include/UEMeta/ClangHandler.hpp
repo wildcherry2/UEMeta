@@ -63,14 +63,6 @@ namespace UEMeta {
         bool VisitRecordDecl(clang::RecordDecl* decl);
 
         /**
-         * @brief Visits class template declarations through their templated record declaration.
-         *
-         * @param decl Class template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitClassTemplateDecl(clang::ClassTemplateDecl* decl);
-
-        /**
          * @brief Visits enum declarations and records top-level metadata.
          *
          * @param clang_decl Enum declaration supplied by Clang.
@@ -134,11 +126,11 @@ namespace UEMeta {
 
         struct TransientData {
             clang::ASTContext* context{};
-            llvm::DenseSet<const clang::Decl*> visited_decls{};
-            llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
-            std::vector<ParseResult::Declaration*> results{};
-            google::protobuf::Arena arena{};
-            size_t occurrence_index = 0;
+            mutable llvm::DenseSet<const clang::Decl*> visited_decls{};
+            mutable llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
+            mutable std::vector<ParseResult::Declaration*> results{};
+            mutable google::protobuf::Arena arena{};
+            mutable size_t occurrence_index = 0;
         };
 
     protected:
