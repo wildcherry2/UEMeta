@@ -155,13 +155,20 @@ enum TemplateParameterKind {
     TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE = 5;
 }
 
-// NONE represents a primary template. The containing TemplateDetails message is
-// absent for declarations which are not templates.
 enum TemplateSpecializationKind {
+    // primary template
     TEMPLATE_SPECIALIZATION_NONE = 0;
+
+    // template params inferred from usage
     TEMPLATE_SPECIALIZATION_IMPLICIT = 1;
+
+    // like a custom implementation of a template ('template <> void print<int>(int v)')
     TEMPLATE_SPECIALIZATION_EXPLICIT = 2;
+
+    // 'extern template' declaration
     TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION = 3;
+
+    // like forward declaring 'template class std::vector<int>'
     TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION = 4;
 }
 
@@ -347,14 +354,4 @@ message BaseSpecifier {
     optional bool is_virtual = 3;
     optional uint64 offset = 4;
     string as_string = 5;
-}
-
-// Used to validate compile_commands.json
-message CompileCommands {
-    message Command {
-        string file = 1;
-        string command = 2;
-        string directory = 3;
-    }
-    repeated Command commands = 1;
 }
