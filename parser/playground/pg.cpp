@@ -1,21 +1,15 @@
-enum class Test {
-    ALPHA,
-    BETA = 2
-};
+
 
 namespace ns {
-    enum class Test {
-        ALPHA,
-        BETA = 2
+    enum class B {
+        enumerator,
+        second,
+        third = 9
     };
 
-    typedef enum {
-        BRAVO,
-        CHARLIE
-    } Anon;
+    class A {
+        using enum B;
+    };
 
-    enum {
-        DELTA,
-        ECHO = 9
-    } AnotherAnon;
+
 }

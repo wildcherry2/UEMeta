@@ -64,9 +64,9 @@ bool UEMeta::ClangHandler::VisitClassTemplateDecl(clang::ClassTemplateDecl*) { r
 
 bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     // if this is a forward declaration...
-    if (!clang_decl->isComplete()) {
+    if (!clang_decl->isThisDeclarationADefinition()) {
         // and we don't know about it yet...
-        if (!transient_data.visited_forward_decls.insert(clang_decl).second) {
+        if (transient_data.visited_forward_decls.insert(clang_decl).second) {
             // generate a new forward declaration message and return
             auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(&transient_data.arena);
             p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
