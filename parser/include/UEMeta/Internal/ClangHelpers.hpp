@@ -3,6 +3,7 @@
 #include "parser.pb.h"
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Comment.h>
+#include <ranges>
 #include <string_view>
 #include "UEMeta/ClangHandler.hpp"
 
@@ -106,7 +107,7 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
         if (const auto* comment = data.context->getRawCommentForDeclNoCache(decl)) {
             p_msg->set_documentation(comment->getRawText(data.context->getSourceManager()).str());
         }
-        auto scopes = std::views::split(p_msg->qualified_name(), "::")
+        auto scopes = std::views::split(p_msg->qualified_name(), std::string_view{"::"})
                         | std::views::transform([](auto range) -> std::string_view {
                                 auto sv = std::string_view{range};
                                 auto start = sv.find_first_not_of(" \t\n\r");
@@ -118,7 +119,7 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
                             })
                         | std::views::filter([] (auto sv) { return !sv.empty(); });
         for (auto scope : scopes) {
-            p_msg->add_scope(scope);
+            p_msg->add_scope(std::string{scope}); // proto3 needs copies of string views to serialize properly
         }
     }
 }

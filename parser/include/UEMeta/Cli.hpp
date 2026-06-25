@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <atomic>
 #include <map>
@@ -223,24 +224,38 @@ namespace UEMeta {
 
         quill::Logger* logger{};
     };
+
+    namespace Logging {
+        template <typename Message>
+        decltype(auto) BuildLogMessage(Message&& message) noexcept {
+            return std::forward<Message>(message);
+        }
+
+        template <typename Format, typename... Args>
+            requires(sizeof...(Args) > 0)
+        std::string BuildLogMessage(Format&& format, Args&&... args) {
+            return fmtquill::format(fmtquill::runtime(fmtquill::string_view{std::forward<Format>(format)}),
+                                    std::forward<Args>(args)...);
+        }
+    }
 }
 
 /**
  * @brief Emits an informational log message through the UEMeta logger.
  */
-#define UEM_INFO(fmt, ...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_INFO(...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits a warning log message through the UEMeta logger.
  */
-#define UEM_WARN(fmt, ...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_WARN(...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits a debug log message through the UEMeta logger.
  */
-#define UEM_DEBUG(fmt, ...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_DEBUG(...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits an error log message through the UEMeta logger.
  */
-#define UEM_ERROR(fmt, ...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_ERROR(...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))

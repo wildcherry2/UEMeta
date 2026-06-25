@@ -166,8 +166,8 @@ void UEMeta::ClangHandler::Serialize() {
     if (cfg.DumpToStdout()) {
         for (auto* msg : transient_data.results) {
             auto str = msg->DebugString();
-            std::cout << str;
-            std::cout.flush();
+            auto enums = msg->enum_declaration().enumerators();
+            UEM_INFO(str);
         }
     }
 }
