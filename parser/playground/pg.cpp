@@ -1,8 +1,5 @@
 
+template<typename T>
+class A {};
 
-namespace ns {
-    class A {};
-
-    template<typename B>
-    class C {};
-}
+A<float>;

@@ -141,6 +141,113 @@ inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p
     p_msg->set_content_hash(std::hash<std::string_view>::operator()(GetDeclAsString(data, decl)));
 }
 
+inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, clang::TagDecl* decl) {
+    if (!(data.context && p_msg && decl)) {
+        UEM_WARN("Failed to PopulateTemplateDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
+        return;
+    }
+    auto* as_cxx = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl);
+    if (!as_cxx) {
+        UEM_WARN("Failed to PopulateTemplateDetails due to decl not being CXXRecord!");
+        return;
+    }
+    const auto SetPrimaryTemplateQName = [&] {
+        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
+            if (const auto* primary = spec->getSpecializedTemplate()) {
+                p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+                return;
+            }
+        }
+        UEM_WARN("Failed to get primary template for declaration {}", GetDeclAsString(data, decl));
+    };
+    const auto& policy = data.context->getPrintingPolicy();
+    const auto PrintTemplateArgument = [&](const clang::TemplateArgument& arg) {
+        std::string s{};
+        llvm::raw_string_ostream os(s);
+        arg.print(policy, os, true);
+        os.flush();
+        return s;
+    };
+    const auto PopulateParameters = [&](this auto self, const clang::TemplateParameterList* params, auto* p_params) -> void {
+        if (!params) return;
+        for (const auto* param : *params) {
+            auto* p_param = p_params->add_parameters();
+            PopulateIdentifier(data, p_param->mutable_identifier(), param);
+            p_param->set_as_string(GetDeclAsString(data, param));
+            if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
+                p_param->set_kind(type_param->wasDeclaredWithTypename()
+                                      ? TEMPLATE_PARAMETER_KIND_TYPENAME
+                                      : TEMPLATE_PARAMETER_KIND_CLASS);
+                if (type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
+                if (type_param->hasDefaultArgument()) {
+                    p_param->set_default_value(PrintTemplateArgument(type_param->getDefaultArgument().getArgument()));
+                }
+            }
+            else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
+                p_param->set_kind(TEMPLATE_PARAMETER_KIND_NON_TYPE);
+                p_param->set_type(non_type_param->getType().getAsString(policy));
+                if (non_type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
+                if (non_type_param->hasDefaultArgument()) {
+                    p_param->set_default_value(PrintTemplateArgument(non_type_param->getDefaultArgument().getArgument()));
+                }
+            }
+            else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
+                p_param->set_kind(template_param->wasDeclaredWithTypename()
+                                      ? TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
+                                      : TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
+                if (template_param->isParameterPack()) p_param->set_is_parameter_pack(true);
+                if (template_param->hasDefaultArgument()) {
+                    p_param->set_default_value(PrintTemplateArgument(template_param->getDefaultArgument().getArgument()));
+                }
+                self(template_param->getTemplateParameters(), p_param);
+            }
+        }
+    };
+    const auto GetTemplateParameters = [&]() -> const clang::TemplateParameterList* {
+        if (const auto* primary = as_cxx->getDescribedClassTemplate()) return primary->getTemplateParameters();
+        if (const auto* partial = llvm::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(as_cxx)) {
+            return partial->getTemplateParameters();
+        }
+        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
+            if (const auto* primary = spec->getSpecializedTemplate()) return primary->getTemplateParameters();
+        }
+        return nullptr;
+    };
+    const auto AddTemplateArguments = [&] {
+        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
+            for (const auto& arg : spec->getTemplateArgs().asArray()) {
+                p_msg->add_arguments(PrintTemplateArgument(arg));
+            }
+        }
+    };
+
+    PopulateParameters(GetTemplateParameters(), p_msg);
+    AddTemplateArguments();
+
+    switch (as_cxx->getTemplateSpecializationKind()) {
+        case clang::TSK_Undeclared: // primary template
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+            p_msg->set_primary_template_qualified_name(as_cxx->getQualifiedNameAsString());
+            break;
+        case clang::TSK_ImplicitInstantiation: // template params inferred from usage
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_IMPLICIT);
+            SetPrimaryTemplateQName();
+            break;
+        case clang::TSK_ExplicitSpecialization: // like a custom implementation of a template ('template <> void print<int>(int v)')
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT);
+            SetPrimaryTemplateQName();
+            break;
+        case clang::TSK_ExplicitInstantiationDeclaration: // 'extern template' declaration
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION);
+            SetPrimaryTemplateQName();
+            break;
+        case clang::TSK_ExplicitInstantiationDefinition: // like forward declaring 'template class std::vector<int>'
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
+            SetPrimaryTemplateQName();
+            break;
+    }
+}
+
 /// @pre decl is a forward declaration
 /// @brief Adds a new forward declaration message to results from decl
 inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
@@ -150,44 +257,19 @@ inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
     auto* p_decl = google::protobuf::Arena::Create<Declaration>(&data.arena);
     auto* p_forward_decl = p_decl->mutable_forward_declaration();
 
-    const auto HandleTemplates = [&] {
-        auto* as_cxx = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl);
-        if (!as_cxx) return;
-        auto* p_templ = p_forward_decl->mutable_template_details();
-        switch (as_cxx->getTemplateSpecializationKind()) {
-            case clang::TSK_Undeclared: // primary template
-                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
-                p_templ->set_primary_template_qualified_name(as_cxx->getQualifiedNameAsString());
-                break;
-            case clang::TSK_ImplicitInstantiation: // template params inferred from usage
-                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_IMPLICIT);
-                break;
-            case clang::TSK_ExplicitSpecialization: // like a custom implementation of a template ('template <> void print<int>(int v)')
-                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT);
-                break;
-            case clang::TSK_ExplicitInstantiationDeclaration: // 'extern template' declaration
-                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION);
-                break;
-            case clang::TSK_ExplicitInstantiationDefinition: // like forward declaring 'template class std::vector<int>'
-                p_templ->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
-                break;
-        }
-        //todo handle params
-    };
-
     // assign the kind and template info
     switch (decl->getTagKind()) {
         case clang::TagTypeKind::Struct:
             p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_STRUCT);
-            HandleTemplates();
+            PopulateTemplateDetails(data, p_forward_decl->mutable_template_details(), decl);
             break;
         case clang::TagTypeKind::Union:
             p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_UNION);
-            HandleTemplates();
+            PopulateTemplateDetails(data, p_forward_decl->mutable_template_details(), decl);
             break;
         case clang::TagTypeKind::Class:
             p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_CLASS);
-            HandleTemplates();
+            PopulateTemplateDetails(data, p_forward_decl->mutable_template_details(), decl);
             break;
         case clang::TagTypeKind::Enum:
             p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
@@ -205,6 +287,7 @@ inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
 
     // add to results
     data.visited_forward_decls.insert(decl);
+    data.results.emplace_back(p_decl);
 }
 
 /// @brief Finalizes a top-level forward declaration.

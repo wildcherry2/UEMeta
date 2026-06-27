@@ -67,27 +67,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
         // and we don't know about it yet...
         if (transient_data.visited_forward_decls.insert(clang_decl).second) {
             // generate a new forward declaration message and return
-            auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(&transient_data.arena);
-
-            // assign the tag kind
-            if (auto tag_kind = clang_decl->getTagKind(); tag_kind == clang::TagTypeKind::Class) {
-                p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_CLASS);
-            }
-            else if (tag_kind == clang::TagTypeKind::Struct) {
-                p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_STRUCT);
-            }
-            else {
-                p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_UNION);
-            }
-
-            // populate metadata
-            PopulateDeclarationMetadata(transient_data, p_forward_decl->mutable_metadata(), clang_decl);
-
-            // copy as string
-            p_forward_decl->set_as_string(GetDeclAsString(transient_data, clang_decl));
-
-            // handle templates
-
+            AddForwardDeclaration(transient_data, clang_decl);
         }
 
         return true;
@@ -103,12 +83,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
         // and we don't know about it yet...
         if (transient_data.visited_forward_decls.insert(clang_decl).second) {
             // generate a new forward declaration message and return
-            auto* p_forward_decl = Arena::Create<TLForwardDeclaration>(&transient_data.arena);
-            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
-            PopulateEnumDetails(transient_data, p_forward_decl->mutable_enum_details(), clang_decl);
-            PopulateDeclarationMetadata(transient_data, p_forward_decl->mutable_metadata(), clang_decl);
-            p_forward_decl->set_as_string(GetDeclAsString(transient_data, clang_decl));
-            FinalizeTL(transient_data, p_forward_decl);
+            AddForwardDeclaration(transient_data, clang_decl);
         }
         return true;
     }
@@ -198,7 +173,6 @@ void UEMeta::ClangHandler::Serialize() {
     if (cfg.DumpToStdout()) {
         for (auto* msg : transient_data.results) {
             auto str = msg->DebugString();
-            auto enums = msg->enum_declaration().enumerators();
             UEM_INFO(str);
         }
     }
