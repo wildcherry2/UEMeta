@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package ParseResult;
 
+// todo make sure fields that are optional aren't always supplied
+
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
     string path = 1;
@@ -60,8 +62,7 @@ message TLAliasDeclaration {
 // An independently tracked top-level free-function declaration.
 message TLFreeFunctionDeclaration {
     DeclarationMetadata metadata = 1;
-    FunctionDetails details = 2;
-    string as_string = 3;
+    FunctionCommon details = 2;
 }
 
 // An independently tracked top-level global-variable declaration.
@@ -93,20 +94,22 @@ enum EnumScope {
     ENUM_SCOPE_STRUCT = 2;
 }
 
-enum ReferenceQualifier {
-    REFERENCE_QUALIFIER_NONE = 0;
-    REFERENCE_QUALIFIER_LVALUE = 1;
-    REFERENCE_QUALIFIER_RVALUE = 2;
+enum VariableStorageClass {
+    VAR_STORAGE_CLASS_UNSPECIFIED = 0;
+    VAR_STORAGE_CLASS_EXTERN = 1;
+    VAR_STORAGE_CLASS_STATIC = 2;
+    VAR_STORAGE_CLASS_PRIVATE_EXTERN = 3;
+    VAR_STORAGE_CLASS_AUTO = 4;
+    VAR_STORAGE_CLASS_REGISTER = 5;
+    VAR_STORAGE_CLASS_THREAD_LOCAL = 6;
 }
 
-enum StorageClass {
-    STORAGE_CLASS_UNSPECIFIED = 0;
-    STORAGE_CLASS_EXTERN = 1;
-    STORAGE_CLASS_STATIC = 2;
-    STORAGE_CLASS_PRIVATE_EXTERN = 3;
-    STORAGE_CLASS_AUTO = 4;
-    STORAGE_CLASS_REGISTER = 5;
-    STORAGE_CLASS_THREAD_LOCAL = 6;
+enum FunctionStorageClass {
+    FUN_VAR_STORAGE_CLASS_UNSPECIFIED = 0;
+    FUN_VAR_STORAGE_CLASS_EXTERN = 1;
+    FUN_VAR_STORAGE_CLASS_STATIC = 2;
+    FUN_VAR_STORAGE_CLASS_PRIVATE_EXTERN = 3;
+    FUN_VAR_STORAGE_CLASS_AUTO = 4;
 }
 
 enum AccessSpecifier {
@@ -269,33 +272,32 @@ message EnumDetails {
 // destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
 // member function is not independently tracked, so it has no occurrence_index.
 message MemberFunction {
-    Identifier identifier = 1;
-    FunctionDetails details = 2;
-    string as_string = 3;
-    uint64 content_hash = 4;
+    FunctionCommon details = 1;
+    AccessSpecifier access = 2;
+    bool is_const = 3;
+    bool is_volatile = 4;
+    FunctionVirtuality virtuality = 5;
+    FunctionDefinitionKind definition = 6;
+    bool is_explicit = 7;
+    optional VTableIndex vtable_index = 8;
 }
 
 // Function-specific type, parameters, and qualifiers. Identity and source
 // metadata deliberately live in the containing TLFreeFunctionDeclaration or
 // MemberFunction so this payload can be shared by both contexts.
-message FunctionDetails {
+message FunctionCommon {
     FunctionKind kind = 1;
     string type = 2;
-    optional string return_type = 3;
-    optional AccessSpecifier access = 4;
-    optional StorageClass storage_class = 5;
-    optional bool is_const = 6;
-    optional bool is_volatile = 7;
-    optional FunctionVirtuality virtuality = 8;
-    optional ConstantEvaluationKind constant_evaluation = 9;
-    optional bool is_inline = 10;
-    optional FunctionDefinitionKind definition = 11;
-    optional bool is_explicit = 12;
-    optional ReferenceQualifier ref_qualifier = 13;
-    optional ExceptionSpec exception_spec = 14;
-    optional TemplateDetails template_details = 15;
-    repeated Parameter parameters = 16;
-    optional VTableIndex vtable_index = 17;
+    optional string return_type = 3; // assume 'auto' if not given
+    optional FunctionStorageClass storage_class = 4;
+    optional ConstantEvaluationKind constant_evaluation = 5;
+    optional bool is_inline = 6;
+    optional ExceptionSpec exception_spec = 7;
+    optional TemplateDetails template_details = 8;
+    repeated Parameter parameters = 9;
+    string as_string = 10;
+    Identifier identifier = 11;
+    uint64 content_hash = 12;
 }
 
 // Parameters use a deterministic synthesized identity when no name is spelled in
@@ -325,7 +327,7 @@ message VariableDetails {
     string type = 2;
     string as_string = 3;
     optional AccessSpecifier access = 4;
-    optional StorageClass storage_class = 5;
+    optional VariableStorageClass storage_class = 5;
     optional bool is_constexpr = 6;
     optional bool is_inline = 7;
 }
@@ -338,21 +340,24 @@ message Enumerator {
 // A non-static data member owned by a TLRecordDeclaration.
 message Field {
     Identifier identifier = 1;
-    string type_fqn_hash = 2; // this can resolve to a 'using' alias or a full type
-    string as_string = 3;
-    optional AccessSpecifier access = 4;
-    optional bool is_mutable = 5;
-    optional bool is_bitfield = 6;
-    optional uint64 bit_width = 7;
-    optional uint64 offset_bits = 8;
-    uint64 content_hash = 9;
-    optional string default_value = 10;
-    string qualified_type = 11;
+    string as_string = 2; // note that this excludes any default values (that's a separate entry)
+    AccessSpecifier access = 3;
+    bool is_mutable = 4;
+    bool is_bitfield = 5;
+
+    // if is_bitfield, then this is the bit width, otherwise this is the size of the field in the layout (same thing, really)
+    // may be missing for non-bitfields if there's no layout (primary template)
+    optional uint64 bit_width = 6; 
+
+    // may also be missing if there's no layout
+    optional uint64 offset_bits = 7;
+    uint64 content_hash = 8;
+    optional string default_value = 9;
 }
 
 message BaseSpecifier {
     Identifier identifier = 1;
-    optional AccessSpecifier access = 2;
+    AccessSpecifier access = 2;
     optional bool is_virtual = 3;
     optional uint64 offset = 4;
     string as_string = 5;

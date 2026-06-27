@@ -43,19 +43,36 @@ void GuardClangCallback(const std::string_view step, Func&& func) noexcept {
     }
 }
 
-/// @brief Gets the declaration as a macro-expanded string
-inline std::string_view GetDeclAsString(const Data& data, const clang::Decl* decl) {
-    static llvm::DenseMap<const clang::Decl*, std::string> decl_contents;
+inline std::string ClangToString(const clang::Decl* decl, const clang::PrintingPolicy& policy) {
     if (!decl) throw std::runtime_error("Can't get a string from a null decl!");
-    if (const auto cached = decl_contents.find(decl); cached != decl_contents.end()) {
-        return std::string_view{cached->getSecond()};
-    }
     std::string s{};
     llvm::raw_string_ostream os(s);
-    decl->print(os, data.context->getPrintingPolicy(), 0, true);
+    decl->print(os, policy, 0, true);
     os.flush();
-    decl_contents[decl] = std::move(s);
-    return decl_contents[decl];
+    return s;
+}
+
+/// @brief Gets the declaration as a macro-expanded string
+inline std::string ClangToString(const Data& data, const clang::Decl* decl) {
+    return ClangToString(decl, data.context->getPrintingPolicy());
+}
+
+/// @brief Gets the template argument as a macro-expanded string
+inline std::string ClangToString(const Data& data, const clang::TemplateArgument& arg) {
+    std::string s{};
+    llvm::raw_string_ostream os(s);
+    arg.print(data.context->getPrintingPolicy(), os, true);
+    os.flush();
+    return s;
+}
+
+/// @brief Gets the expr as a macro-expanded string
+inline std::string ClangToString(const Data& data, const clang::Expr* expr) {
+    std::string s{};
+    llvm::raw_string_ostream os(s);
+    expr->printPretty(os, nullptr, data.context->getPrintingPolicy());
+    os.flush();
+    return s;
 }
 
 inline llvm::StringRef GetDeclSourcePath(const Data& data, const clang::Decl* decl) {
@@ -138,7 +155,7 @@ inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p
     else if (auto* as_record = llvm::dyn_cast_or_null<clang::RecordDecl>(decl)) {
         p_msg->set_is_anonymous(as_record->isAnonymousStructOrUnion() || as_record->getName().empty()); // catches nested anon structs as well
     }
-    p_msg->set_content_hash(std::hash<std::string_view>::operator()(GetDeclAsString(data, decl)));
+    p_msg->set_content_hash(std::hash<std::string_view>::operator()(ClangToString(data, decl)));
 }
 
 inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, clang::TagDecl* decl) {
@@ -158,29 +175,22 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
                 return;
             }
         }
-        UEM_WARN("Failed to get primary template for declaration {}", GetDeclAsString(data, decl));
+        UEM_WARN("Failed to get primary template for declaration {}", ClangToString(data, decl));
     };
     const auto& policy = data.context->getPrintingPolicy();
-    const auto PrintTemplateArgument = [&](const clang::TemplateArgument& arg) {
-        std::string s{};
-        llvm::raw_string_ostream os(s);
-        arg.print(policy, os, true);
-        os.flush();
-        return s;
-    };
     const auto PopulateParameters = [&](this auto self, const clang::TemplateParameterList* params, auto* p_params) -> void {
         if (!params) return;
         for (const auto* param : *params) {
             auto* p_param = p_params->add_parameters();
             PopulateIdentifier(data, p_param->mutable_identifier(), param);
-            p_param->set_as_string(GetDeclAsString(data, param));
+            p_param->set_as_string(ClangToString(data, param));
             if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
                 p_param->set_kind(type_param->wasDeclaredWithTypename()
                                       ? TEMPLATE_PARAMETER_KIND_TYPENAME
                                       : TEMPLATE_PARAMETER_KIND_CLASS);
                 if (type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (type_param->hasDefaultArgument()) {
-                    p_param->set_default_value(PrintTemplateArgument(type_param->getDefaultArgument().getArgument()));
+                    p_param->set_default_value(ClangToString(data, type_param->getDefaultArgument().getArgument()));
                 }
             }
             else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
@@ -188,7 +198,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
                 p_param->set_type(non_type_param->getType().getAsString(policy));
                 if (non_type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (non_type_param->hasDefaultArgument()) {
-                    p_param->set_default_value(PrintTemplateArgument(non_type_param->getDefaultArgument().getArgument()));
+                    p_param->set_default_value(ClangToString(data, non_type_param->getDefaultArgument().getArgument()));
                 }
             }
             else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
@@ -197,7 +207,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
                                       : TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                 if (template_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (template_param->hasDefaultArgument()) {
-                    p_param->set_default_value(PrintTemplateArgument(template_param->getDefaultArgument().getArgument()));
+                    p_param->set_default_value(ClangToString(data, template_param->getDefaultArgument().getArgument()));
                 }
                 self(template_param->getTemplateParameters(), p_param);
             }
@@ -216,7 +226,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
     const auto AddTemplateArguments = [&] {
         if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
             for (const auto& arg : spec->getTemplateArgs().asArray()) {
-                p_msg->add_arguments(PrintTemplateArgument(arg));
+                p_msg->add_arguments(ClangToString(data, arg));
             }
         }
     };
@@ -283,7 +293,7 @@ inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
     PopulateDeclarationMetadata(data, p_forward_decl->mutable_metadata(), decl);
 
     // populate as string
-    p_forward_decl->set_as_string(GetDeclAsString(data, decl));
+    p_forward_decl->set_as_string(ClangToString(data, decl));
 
     // add to results
     data.visited_forward_decls.insert(decl);

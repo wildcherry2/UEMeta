@@ -73,12 +73,49 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     p_record_decl->set_align_bytes(layout.getAlignment().getQuantity());
     p_record_decl->set_size_bytes(layout.getSize().getQuantity());
     p_record_decl->set_kind(clang_decl->isClass() ? RECORD_KIND_CLASS : clang_decl->isStruct() ? RECORD_KIND_STRUCT : RECORD_KIND_UNION);
+
+    // populate fields
     for (const auto* field : clang_decl->fields()) {
         auto* p_field = p_record_decl->add_fields();
-        p_field->set_access(field->getAccess() == clang::AS_public ? ACCESS_SPECIFIER_PUBLIC
-            : field->getAccess() == clang::AS_private ? ACCESS_SPECIFIER_PRIVATE : ACCESS_SPECIFIER_PROTECTED);
+        const auto type = field->getType();
+        const auto access = field->getAccess();
+        p_field->set_access(access == clang::AS_public ? ACCESS_SPECIFIER_PUBLIC
+            : access == clang::AS_protected ? ACCESS_SPECIFIER_PROTECTED : access == clang::AS_private ? ACCESS_SPECIFIER_PRIVATE
+            : clang_decl->isStruct() ? ACCESS_SPECIFIER_PUBLIC : ACCESS_SPECIFIER_PRIVATE);
         PopulateIdentifier(transient_data, p_field->mutable_identifier(), field);
+        p_field->set_offset_bits(layout.getFieldOffset(field->getFieldIndex()));
+        if (field->isBitField()) {
+            p_field->set_is_bitfield(true);
+            p_field->set_bit_width(field->getBitWidthValue());
+        }
+        else {
+            p_field->set_bit_width(transient_data.context->getTypeSize(type));
+        }
+        p_field->set_is_mutable(field->isMutable());
+        if (const auto* def_val = field->getInClassInitializer()) {
+            p_field->set_default_value(ClangToString(transient_data, def_val));
+        }
+
+        static clang::PrintingPolicy field_printing_policy = [&] {
+            auto pol = clang::PrintingPolicy(transient_data.context->getPrintingPolicy());
+            pol.SuppressInitializers = true;
+            pol.SuppressSpecifiers = false;
+            return pol;
+        }();
+
+        p_field->set_as_string(ClangToString(field, field_printing_policy));
+        p_field->set_content_hash(std::hash<std::string>::operator()(ClangToString(transient_data, field)));
     }
+
+    // populate methods, if it's not a c-style POD
+    const auto* cxx = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(clang_decl);
+    if (cxx) {
+        for (auto* method : cxx->methods()) {
+            auto* p_method = p_record_decl->add_methods();
+
+        }
+    }
+
     return true;
 }
 
