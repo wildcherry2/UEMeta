@@ -160,6 +160,8 @@ namespace UEMeta {
 
         void Serialize();
 
+        bool OnVisit(clang::TagDecl* decl);
+
         TransientData transient_data{};
     };
 }

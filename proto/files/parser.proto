@@ -22,9 +22,9 @@ message TLRecordDeclaration {
     optional TemplateDetails template_details = 3;
     optional bool is_complete_definition = 4;
     // May be missing if the size is unknown (e.g. templates).
-    optional uint64 size_bytes = 5;
+    optional int64 size_bytes = 5;
     // May be missing if the alignment is unknown (e.g. templates).
-    optional uint64 align_bytes = 6;
+    optional int64 align_bytes = 6;
     repeated Field fields = 7;
     repeated NestedDeclaration nested = 8;
     repeated BaseSpecifier bases = 9;
@@ -338,7 +338,7 @@ message Enumerator {
 // A non-static data member owned by a TLRecordDeclaration.
 message Field {
     Identifier identifier = 1;
-    string type = 2;
+    string type_fqn_hash = 2; // this can resolve to a 'using' alias or a full type
     string as_string = 3;
     optional AccessSpecifier access = 4;
     optional bool is_mutable = 5;
@@ -346,6 +346,8 @@ message Field {
     optional uint64 bit_width = 7;
     optional uint64 offset_bits = 8;
     uint64 content_hash = 9;
+    optional string default_value = 10;
+    string qualified_type = 11;
 }
 
 message BaseSpecifier {

@@ -11,6 +11,7 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/DeclTemplate.h>
 #include <clang/Frontend/CompilerInstance.h>
+#include <clang/AST/RecordLayout.h>
 #include <clang/Tooling/Tooling.h>
 #include "parser.pb.h"
 
@@ -62,34 +63,27 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
 // CXXRecordDecl->getDescribedClassTemplate() can tell you if you have a templated c++ class,
 // RecordDecl->getDescribedTemplate() can tell you without casting to c++ type
 bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
-    // if this is a forward declaration...
-    if (!clang_decl->isThisDeclarationADefinition()) {
-        // and we don't know about it yet...
-        if (transient_data.visited_forward_decls.insert(clang_decl).second) {
-            // generate a new forward declaration message and return
-            AddForwardDeclaration(transient_data, clang_decl);
-        }
+    if (OnVisit(clang_decl)) return true;
 
-        return true;
+    auto* p_record_decl = Arena::Create<TLRecordDeclaration>(&transient_data.arena);
+    PopulateDeclarationMetadata(transient_data, p_record_decl->mutable_metadata(), clang_decl);
+    PopulateTemplateDetails(transient_data, p_record_decl->mutable_template_details(), clang_decl);
+    p_record_decl->set_is_complete_definition(clang_decl->isCompleteDefinition());
+    auto& layout = transient_data.context->getASTRecordLayout(clang_decl);
+    p_record_decl->set_align_bytes(layout.getAlignment().getQuantity());
+    p_record_decl->set_size_bytes(layout.getSize().getQuantity());
+    p_record_decl->set_kind(clang_decl->isClass() ? RECORD_KIND_CLASS : clang_decl->isStruct() ? RECORD_KIND_STRUCT : RECORD_KIND_UNION);
+    for (const auto* field : clang_decl->fields()) {
+        auto* p_field = p_record_decl->add_fields();
+        p_field->set_access(field->getAccess() == clang::AS_public ? ACCESS_SPECIFIER_PUBLIC
+            : field->getAccess() == clang::AS_private ? ACCESS_SPECIFIER_PRIVATE : ACCESS_SPECIFIER_PROTECTED);
+        PopulateIdentifier(transient_data, p_field->mutable_identifier(), field);
     }
-
-
     return true;
 }
 
 bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
-    // if this is a forward declaration...
-    if (!clang_decl->isThisDeclarationADefinition()) {
-        // and we don't know about it yet...
-        if (transient_data.visited_forward_decls.insert(clang_decl).second) {
-            // generate a new forward declaration message and return
-            AddForwardDeclaration(transient_data, clang_decl);
-        }
-        return true;
-    }
-
-    // if this is a complete definition that we've already seen (secondary translation unit), continue
-    if (!transient_data.visited_decls.insert(clang_decl->getCanonicalDecl()).second) return true;
+    if (OnVisit(clang_decl)) return true;
 
     // else, generate a new enum declaration
     auto* p_enum_decl = Arena::Create<TLEnumDeclaration>(&transient_data.arena);
@@ -176,4 +170,22 @@ void UEMeta::ClangHandler::Serialize() {
             UEM_INFO(str);
         }
     }
+}
+
+bool UEMeta::ClangHandler::OnVisit(clang::TagDecl* clang_decl) {
+    // if this is a forward declaration...
+    if (!clang_decl->isThisDeclarationADefinition()) {
+        // and we don't know about it yet...
+        if (transient_data.visited_forward_decls.insert(clang_decl).second) {
+            // generate a new forward declaration message and return
+            AddForwardDeclaration(transient_data, clang_decl);
+        }
+
+        return true;
+    }
+
+    // if this is a complete definition that we've already seen (secondary translation unit), continue
+    if (!transient_data.visited_decls.insert(clang_decl->getCanonicalDecl()).second) return true;
+
+    return false;
 }
