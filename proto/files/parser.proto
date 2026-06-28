@@ -28,9 +28,10 @@ message TLRecordDeclaration {
     // May be missing if the alignment is unknown (e.g. templates).
     optional int64 align_bytes = 6;
     repeated Field fields = 7;
-    repeated NestedDeclaration nested = 8;
+    // hashes of records, enums, forward decls, static fields, and aliases that are 
+    // nested within this record. this is not recursive; just direct nested declarations
+    repeated uint64 nested_hashes = 8;
     repeated BaseSpecifier bases = 9;
-    repeated StaticField static_fields = 10;
     repeated MemberFunction methods = 11;
 }
 
@@ -62,10 +63,10 @@ message TLAliasDeclaration {
 // An independently tracked top-level free-function declaration.
 message TLFreeFunctionDeclaration {
     DeclarationMetadata metadata = 1;
-    FunctionCommon details = 2;
+    FunctionCommon common = 2;
 }
 
-// An independently tracked top-level global-variable declaration.
+// An independently tracked global-variable or static field declaration.
 message TLGlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
     VariableDetails details = 2;
@@ -108,8 +109,7 @@ enum FunctionStorageClass {
     FUN_VAR_STORAGE_CLASS_UNSPECIFIED = 0;
     FUN_VAR_STORAGE_CLASS_EXTERN = 1;
     FUN_VAR_STORAGE_CLASS_STATIC = 2;
-    FUN_VAR_STORAGE_CLASS_PRIVATE_EXTERN = 3;
-    FUN_VAR_STORAGE_CLASS_AUTO = 4;
+    FUN_VAR_STORAGE_CLASS_EXTERN_C = 3;
 }
 
 enum AccessSpecifier {
@@ -128,7 +128,8 @@ enum FunctionKind {
     FUNCTION_KIND_MEMBER = 3;
     FUNCTION_KIND_STATIC_MEMBER = 4;
     FUNCTION_KIND_DESTRUCTOR = 5;
-    FUNCTION_KIND_CONVERSION = 6;
+    FUNCTION_KIND_MEMBER_CONVERSION = 6;
+    FUNCTION_KIND_CONVERSION = 7;
 }
 
 enum FunctionDefinitionKind {
@@ -175,20 +176,6 @@ enum TemplateSpecializationKind {
     TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION = 4;
 }
 
-enum ExceptionSpec {
-    EXCEPTION_SPEC_NONE = 0;
-    EXCEPTION_SPEC_THROW_EMPTY = 1;
-    EXCEPTION_SPEC_THROW_ANY = 2;
-    EXCEPTION_SPEC_DECLSPEC_NOTHROW = 3;
-    EXCEPTION_SPEC_NOEXCEPT = 4;
-    EXCEPTION_SPEC_NOEXCEPT_DEPENDENT = 5;
-    EXCEPTION_SPEC_NOEXCEPT_FALSE = 6;
-    EXCEPTION_SPEC_NOEXCEPT_TRUE = 7;
-    EXCEPTION_SPEC_UNEVALUATED = 8;
-    EXCEPTION_SPEC_UNINSTANTIATED = 9;
-    EXCEPTION_SPEC_UNPARSED = 10;
-}
-
 // Identity and source context shared by declarations and their named child
 // entities.
 // Producers must generate deterministic names for constructs that are unnamed in
@@ -227,15 +214,6 @@ message Declaration {
     }
 }
 
-message NestedDeclaration {
-    oneof value {
-        TLRecordDeclaration record = 1;
-        TLEnumDeclaration enum_declaration = 2;
-        TLForwardDeclaration forward_declaration = 3;
-        TLAliasDeclaration alias = 4;
-    }
-}
-
 // Shared by record, function, variable, alias, and forward-declaration
 // templates. specialization_kind == NONE identifies a primary (unspecialized) template.
 message TemplateDetails {
@@ -261,7 +239,8 @@ message TemplateParameter {
 }
 
 message EnumDetails {
-    // int, unsigned, long, etc. If missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values).
+    // int, unsigned, long, etc.
+    // if missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values for unscoped, or int for scoped).
     optional string underlying_type = 1;
 
     // enum class/struct, if missing then the enum is unscoped.
@@ -272,32 +251,30 @@ message EnumDetails {
 // destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
 // member function is not independently tracked, so it has no occurrence_index.
 message MemberFunction {
-    FunctionCommon details = 1;
+    FunctionCommon common = 1;
     AccessSpecifier access = 2;
     bool is_const = 3;
     bool is_volatile = 4;
     FunctionVirtuality virtuality = 5;
-    FunctionDefinitionKind definition = 6;
-    bool is_explicit = 7;
+    bool is_deleted = 6;
     optional VTableIndex vtable_index = 8;
 }
 
-// Function-specific type, parameters, and qualifiers. Identity and source
-// metadata deliberately live in the containing TLFreeFunctionDeclaration or
-// MemberFunction so this payload can be shared by both contexts.
+// Common function traits. Some things may seem like they're better off in MemberFunction,
+// like `FunctionDefinitionKind` or `is_explicit`, but it simplifies the processing this way
 message FunctionCommon {
     FunctionKind kind = 1;
-    string type = 2;
-    optional string return_type = 3; // assume 'auto' if not given
+    optional string return_type = 3; // assume 'auto' if not given and not ctor/dtor
     optional FunctionStorageClass storage_class = 4;
-    optional ConstantEvaluationKind constant_evaluation = 5;
-    optional bool is_inline = 6;
-    optional ExceptionSpec exception_spec = 7;
-    optional TemplateDetails template_details = 8;
-    repeated Parameter parameters = 9;
-    string as_string = 10;
-    Identifier identifier = 11;
-    uint64 content_hash = 12;
+    optional ConstantEvaluationKind consteval_kind = 5;
+    optional bool is_explicit = 6; // only set for ctors and conversion ops
+    optional string inline_definition = 7; // the function body if present in the header
+    optional TemplateDetails template_details = 9;
+    repeated Parameter parameters = 10;
+    string as_string = 11; // this is just the signature
+    Identifier identifier = 12;
+    uint64 content_hash = 13;
+    optional FunctionDefinitionKind definition_kind = 14; // only set for functions that are deletable/defaultable
 }
 
 // Parameters use a deterministic synthesized identity when no name is spelled in
@@ -310,16 +287,8 @@ message Parameter {
 }
 
 message VTableIndex {
-    uint32 index = 1;
-    uint32 offset = 2;
-}
-
-// A static data member owned by a TLRecordDeclaration. Identity and source
-// metadata live here; VariableDetails contains only variable-specific properties.
-message StaticField {
-    Identifier identifier = 1;
-    VariableDetails details = 2;
-    string as_string = 3;
+    uint64 index = 1; // the index of the virtual function within the vtable (slot)
+    int64 offset = 2; // in a multiple inhertiance scenario, this is the index of the vtable to use, otherwise 0 (vfptroffset)
 }
 
 message VariableDetails {

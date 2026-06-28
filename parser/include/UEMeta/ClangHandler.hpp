@@ -5,6 +5,7 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/DenseMap.h>
 #include <atomic>
 #include <google/protobuf/arena.h>
 
@@ -81,28 +82,12 @@ namespace UEMeta {
         bool VisitFunctionDecl(clang::FunctionDecl* decl);
 
         /**
-         * @brief Visits function templates through their templated function declaration.
-         *
-         * @param decl Function template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitFunctionTemplateDecl(clang::FunctionTemplateDecl* decl);
-
-        /**
          * @brief Visits top-level type alias declarations.
          *
          * @param decl Type alias declaration supplied by Clang.
          * @return True to continue traversal.
          */
         bool VisitTypeAliasDecl(clang::TypeAliasDecl* decl);
-
-        /**
-         * @brief Visits type alias templates through their templated alias declaration.
-         *
-         * @param decl Type alias template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* decl);
 
         /**
          * @brief Visits global variable declarations and records top-level metadata.
@@ -114,21 +99,10 @@ namespace UEMeta {
          */
         bool VisitVarDecl(clang::VarDecl* decl);
 
-        /**
-         * @brief Visits variable templates through their templated variable declaration.
-         *
-         * @param decl Variable template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitVarTemplateDecl(clang::VarTemplateDecl* decl);
-
-        ClangHandler();
-
         struct TransientData {
             clang::ASTContext* context{};
-            mutable llvm::DenseSet<const clang::Decl*> visited_decls{};
-            mutable llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
-            mutable std::vector<ParseResult::Declaration*> results{};
+            mutable llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_decls{};
+            mutable llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_forward_decls{};
             mutable google::protobuf::Arena arena{};
             mutable size_t occurrence_index = 0;
         };
@@ -158,9 +132,12 @@ namespace UEMeta {
          */
         void EndTranslationUnit(clang::ASTContext& ctx);
 
-        void Serialize();
+        void Serialize() const;
 
-        bool OnVisit(clang::TagDecl* decl);
+        bool OnVisit(clang::TagDecl* decl) const;
+
+        /// @brief If the clang_decl is a child of a record (nested decl), adds its hash to the parent's message's nested_hashes list
+        bool OnAfterVisit(const clang::TagDecl* clang_decl, uint64_t clang_decl_fqn_hash) const;
 
         TransientData transient_data{};
     };

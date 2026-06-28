@@ -52,6 +52,15 @@ inline std::string ClangToString(const clang::Decl* decl, const clang::PrintingP
     return s;
 }
 
+inline std::string ClangToString(const Data& data, const clang::Stmt* statement) {
+    if (!statement) throw std::runtime_error("Can't get a string from a null decl!");
+    std::string s{};
+    llvm::raw_string_ostream os(s);
+    statement->printPretty(os, nullptr, data.context->getPrintingPolicy());
+    os.flush();
+    return s;
+}
+
 /// @brief Gets the declaration as a macro-expanded string
 inline std::string ClangToString(const Data& data, const clang::Decl* decl) {
     return ClangToString(decl, data.context->getPrintingPolicy());
@@ -119,7 +128,12 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
     if (auto* as_named = llvm::dyn_cast_or_null<clang::NamedDecl>(decl)) {
         p_msg->set_qualified_name(as_named->getQualifiedNameAsString());
         p_msg->set_qualified_name_hash(std::hash<std::string>::operator()(p_msg->qualified_name()));
-        p_msg->set_name(as_named->getName());
+        if (as_named->getDeclName().isIdentifier()) {
+            p_msg->set_name(as_named->getName());
+        }
+        else {
+            p_msg->set_name(as_named->getNameAsString());
+        }
         p_msg->set_file_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(data, decl)));
         if (const auto* comment = data.context->getRawCommentForDeclNoCache(decl)) {
             p_msg->set_documentation(comment->getRawText(data.context->getSourceManager()).str());
@@ -136,7 +150,7 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
                             })
                         | std::views::filter([] (auto sv) { return !sv.empty(); });
         for (auto scope : scopes) {
-            p_msg->add_scope(std::string{scope}); // proto3 needs copies of string views to serialize properly
+            p_msg->add_scope(std::string{scope});
         }
     }
 }
@@ -158,25 +172,11 @@ inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p
     p_msg->set_content_hash(std::hash<std::string_view>::operator()(ClangToString(data, decl)));
 }
 
-inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, clang::TagDecl* decl) {
+inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, clang::Decl* decl) {
     if (!(data.context && p_msg && decl)) {
         UEM_WARN("Failed to PopulateTemplateDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
         return;
     }
-    auto* as_cxx = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(decl);
-    if (!as_cxx) {
-        UEM_WARN("Failed to PopulateTemplateDetails due to decl not being CXXRecord!");
-        return;
-    }
-    const auto SetPrimaryTemplateQName = [&] {
-        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
-            if (const auto* primary = spec->getSpecializedTemplate()) {
-                p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
-                return;
-            }
-        }
-        UEM_WARN("Failed to get primary template for declaration {}", ClangToString(data, decl));
-    };
     const auto& policy = data.context->getPrintingPolicy();
     const auto PopulateParameters = [&](this auto self, const clang::TemplateParameterList* params, auto* p_params) -> void {
         if (!params) return;
@@ -213,54 +213,147 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
             }
         }
     };
-    const auto GetTemplateParameters = [&]() -> const clang::TemplateParameterList* {
-        if (const auto* primary = as_cxx->getDescribedClassTemplate()) return primary->getTemplateParameters();
-        if (const auto* partial = llvm::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(as_cxx)) {
-            return partial->getTemplateParameters();
+    const auto AddTemplateArguments = [&](const auto& args) {
+        for (const auto& arg : args) {
+            p_msg->add_arguments(ClangToString(data, arg));
         }
-        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
-            if (const auto* primary = spec->getSpecializedTemplate()) return primary->getTemplateParameters();
-        }
-        return nullptr;
     };
-    const auto AddTemplateArguments = [&] {
-        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
-            for (const auto& arg : spec->getTemplateArgs().asArray()) {
-                p_msg->add_arguments(ClangToString(data, arg));
+    const auto SetSpecializationKind = [&](const clang::TemplateSpecializationKind kind) {
+        switch (kind) {
+            case clang::TSK_Undeclared:
+                p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+                break;
+            case clang::TSK_ImplicitInstantiation:
+                p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_IMPLICIT);
+                break;
+            case clang::TSK_ExplicitSpecialization:
+                p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT);
+                break;
+            case clang::TSK_ExplicitInstantiationDeclaration:
+                p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION);
+                break;
+            case clang::TSK_ExplicitInstantiationDefinition:
+                p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
+                break;
+        }
+    };
+
+    if (const auto* as_cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+        const auto SetPrimaryTemplateQName = [&] {
+            if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
+                if (const auto* primary = spec->getSpecializedTemplate()) {
+                    p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+                    return;
+                }
             }
+            UEM_WARN("Failed to get primary template for declaration {}", ClangToString(data, decl));
+        };
+        const auto GetTemplateParameters = [&]() -> const clang::TemplateParameterList* {
+            if (const auto* primary = as_cxx->getDescribedClassTemplate()) return primary->getTemplateParameters();
+            if (const auto* partial = llvm::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(as_cxx)) {
+                return partial->getTemplateParameters();
+            }
+            if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
+                if (const auto* primary = spec->getSpecializedTemplate()) return primary->getTemplateParameters();
+            }
+            return nullptr;
+        };
+
+        PopulateParameters(GetTemplateParameters(), p_msg);
+        if (const auto* spec = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(as_cxx)) {
+            AddTemplateArguments(spec->getTemplateArgs().asArray());
         }
-    };
 
-    PopulateParameters(GetTemplateParameters(), p_msg);
-    AddTemplateArguments();
-
-    switch (as_cxx->getTemplateSpecializationKind()) {
-        case clang::TSK_Undeclared: // primary template
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+        SetSpecializationKind(as_cxx->getTemplateSpecializationKind());
+        if (as_cxx->getTemplateSpecializationKind() == clang::TSK_Undeclared) {
             p_msg->set_primary_template_qualified_name(as_cxx->getQualifiedNameAsString());
-            break;
-        case clang::TSK_ImplicitInstantiation: // template params inferred from usage
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_IMPLICIT);
+        }
+        else {
             SetPrimaryTemplateQName();
-            break;
-        case clang::TSK_ExplicitSpecialization: // like a custom implementation of a template ('template <> void print<int>(int v)')
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT);
-            SetPrimaryTemplateQName();
-            break;
-        case clang::TSK_ExplicitInstantiationDeclaration: // 'extern template' declaration
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION);
-            SetPrimaryTemplateQName();
-            break;
-        case clang::TSK_ExplicitInstantiationDefinition: // like forward declaring 'template class std::vector<int>'
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
-            SetPrimaryTemplateQName();
-            break;
+        }
+        return;
     }
+
+    if (const auto* as_func = llvm::dyn_cast<clang::FunctionDecl>(decl)) {
+        if (const auto* primary = as_func->getDescribedFunctionTemplate()) {
+            PopulateParameters(primary->getTemplateParameters(), p_msg);
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+            p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+            return;
+        }
+
+        if (const auto* primary = as_func->getPrimaryTemplate()) {
+            PopulateParameters(primary->getTemplateParameters(), p_msg);
+            if (const auto* args = as_func->getTemplateSpecializationArgs()) {
+                AddTemplateArguments(args->asArray());
+            }
+            SetSpecializationKind(as_func->getTemplateSpecializationKind());
+            p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+        }
+
+        return;
+    }
+
+    UEM_WARN("Failed to PopulateTemplateDetails because decl was not FunctionDecl or CXXRecordDecl!");
+}
+
+inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clang::FunctionDecl* decl) {
+    PopulateTemplateDetails(data, p_msg->mutable_template_details(), decl);
+    PopulateIdentifier(data, p_msg->mutable_identifier(), decl);
+    p_msg->set_return_type(decl->getReturnType().getAsString());
+    if (!decl->isCXXClassMember()) {
+        p_msg->set_kind(llvm::dyn_cast_or_null<clang::CXXConversionDecl>(decl) ? FUNCTION_KIND_CONVERSION : FUNCTION_KIND_FREE);
+    }
+    else if (const auto as_cxx = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
+        if (as_cxx->isStatic()) {
+            p_msg->set_kind(FUNCTION_KIND_STATIC_MEMBER);
+        }
+        else if (const auto as_ctor = llvm::dyn_cast_or_null<clang::CXXConstructorDecl>(decl)) {
+            p_msg->set_kind(FUNCTION_KIND_CONSTRUCTOR);
+            p_msg->set_is_explicit(as_ctor->isExplicit());
+        }
+        else if (auto as_dtor = llvm::dyn_cast_or_null<clang::CXXDestructorDecl>(decl)) {
+            p_msg->set_kind(FUNCTION_KIND_DESTRUCTOR);
+        }
+        else if (auto as_conv = llvm::dyn_cast_or_null<clang::CXXConversionDecl>(decl)) {
+            p_msg->set_kind(FUNCTION_KIND_MEMBER_CONVERSION);
+            p_msg->set_is_explicit(as_conv->isExplicit());
+        }
+        else {
+            p_msg->set_kind(FUNCTION_KIND_MEMBER);
+        }
+
+        p_msg->set_storage_class(as_cxx->isExternCXXContext() ? FUN_VAR_STORAGE_CLASS_EXTERN
+            : as_cxx->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
+            : as_cxx->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
+
+        p_msg->set_definition_kind(as_cxx->isDefaulted() ? FUNCTION_DEFINITION_DEFAULTED
+                : as_cxx->isDeleted() ? FUNCTION_DEFINITION_DELETED : FUNCTION_DEFINITION_NORMAL);
+    }
+    else {
+        p_msg->set_kind(FUNCTION_KIND_FREE);
+        p_msg->set_storage_class(decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
+            : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
+    }
+    p_msg->set_consteval_kind(decl->isConsteval() ? CONSTANT_EVALUATION_CONSTEVAL
+        : decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE);
+
+    if (decl->doesThisDeclarationHaveABody()) {
+        p_msg->set_inline_definition(ClangToString(data, decl->getBody()));
+    }
+
+    static clang::PrintingPolicy fn_sig_pp = [&] {
+        clang::PrintingPolicy pp(data.context->getPrintingPolicy());
+        pp.TerseOutput = true;
+        return pp;
+    }();
+    p_msg->set_as_string(ClangToString(decl, fn_sig_pp));
+    p_msg->set_content_hash(std::hash<std::string>::operator()(ClangToString(data, decl)));
 }
 
 /// @pre decl is a forward declaration
 /// @brief Adds a new forward declaration message to results from decl
-inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
+inline auto AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
     if (decl->isThisDeclarationADefinition())
         throw std::runtime_error("AddForwardDeclaration can't be called on a non forward declaration!");
 
@@ -295,29 +388,5 @@ inline void AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
     // populate as string
     p_forward_decl->set_as_string(ClangToString(data, decl));
 
-    // add to results
-    data.visited_forward_decls.insert(decl);
-    data.results.emplace_back(p_decl);
-}
-
-/// @brief Finalizes a top-level forward declaration.
-inline void FinalizeTL(Data& data, TLForwardDeclaration* decl) {
-    if (!decl) {
-        UEM_WARN("Failed to FinalizeTL due to nullptr! TLForwardDeclaration={}", !!decl);
-        return;
-    }
-    auto decl_container = google::protobuf::Arena::Create<Declaration>(&data.arena);
-    decl_container->set_allocated_forward_declaration(decl);
-    data.results.emplace_back(decl_container);
-}
-
-/// @brief Finalizes a top-level enum declaration.
-inline void FinalizeTL(Data& data, TLEnumDeclaration* decl) {
-    if (!decl) {
-        UEM_WARN("Failed to FinalizeTL due to nullptr! TLEnumDeclaration={}", !!decl);
-        return;
-    }
-    auto decl_container = google::protobuf::Arena::Create<Declaration>(&data.arena);
-    decl_container->set_allocated_enum_declaration(decl);
-    data.results.emplace_back(decl_container);
+    return p_decl;
 }
