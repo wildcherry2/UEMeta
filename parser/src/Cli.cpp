@@ -41,9 +41,9 @@ bool UEMeta::Config::PrefersClang() const {
     return prefer_clang;
 }
 
-bool UEMeta::Config::DumpToStdout() const {
+bool UEMeta::Config::DumpToJson() const {
     AssertInitialized();
-    return dump_to_stdout;
+    return dump_to_json;
 }
 
 UEMeta::Config::SerializationFormat UEMeta::Config::Format() const {
@@ -110,7 +110,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
         ->default_val(false);
-    app.add_flag("--stdout", cfg.dump_to_stdout, STDOUT_HELP)
+    app.add_flag("--dump", cfg.dump_to_json, DUMP_HELP)
         ->default_val(false);
     app.add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
         ->required()

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -14,6 +15,7 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/AST/RecordLayout.h>
 #include <clang/Tooling/Tooling.h>
+#include <google/protobuf/util/json_util.h>
 #include "parser.pb.h"
 
 #include "UEMeta/Cli.hpp"
@@ -108,6 +110,8 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
 
         p_field->set_as_string(ClangToString(field, field_printing_policy));
         p_field->set_content_hash(std::hash<std::string>::operator()(ClangToString(transient_data, field)));
+        p_field->set_underlying_type(GetUnderlyingType(field->getType()).getAsString());
+        p_field->set_type(field->getType().getAsString());
     }
 
     // if it's not a c-style POD
@@ -186,15 +190,52 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
 }
 
 bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* clang_decl) {
-    if (clang_decl->isCXXClassMember()) return true; // handled by VisitRecordDecl
+    if (clang_decl->isCXXClassMember() || OnVisit(clang_decl)) return true; // handled by VisitRecordDecl
 
+    auto* p_decl = Arena::Create<Declaration>(&transient_data.arena);
+    auto* p_fun = p_decl->mutable_function();
+    PopulateDeclarationMetadata(transient_data, p_fun->mutable_metadata(), clang_decl);
+    PopulateFunctionCommon(transient_data, p_fun->mutable_common(), clang_decl);
+    transient_data.visited_decls.insert(std::pair<const clang::Decl*, Declaration*>(clang_decl, p_decl));
+    return OnAfterVisit(clang_decl, p_fun->metadata().identifier().qualified_name_hash());
 }
 
-bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl*) { return true; }
+bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* clang_decl) {
+    if (OnVisit(clang_decl)) return true;
+    auto* p_decl = Arena::Create<Declaration>(&transient_data.arena);
+    auto* p_alias = p_decl->mutable_alias();
+    PopulateDeclarationMetadata(transient_data, p_alias->mutable_metadata(), clang_decl);
+    PopulateTemplateDetails(transient_data, p_alias->mutable_template_details(), clang_decl);
+    p_alias->set_alias(clang_decl->getNameAsString());
+    p_alias->set_aliased_type(clang_decl->getUnderlyingType().getAsString());
+    const auto str = ClangToString(transient_data, clang_decl);
+    p_alias->set_as_string(str);
+    p_alias->set_content_hash(std::hash<std::string>::operator()(str));
+    transient_data.visited_decls.insert(std::pair<const clang::Decl*, Declaration*>(clang_decl, p_decl));
+    return true;
+}
 
 bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
-    if (clang_decl->isCXXClassMember()) return true; // handled by VisitRecordDecl
-    return true;
+    if (clang_decl->isCXXClassMember() || clang::dyn_cast_or_null<clang::ParmVarDecl>(clang_decl) // handled by VisitRecordDecl/VisitFunctionDecl
+        || OnVisit(clang_decl))
+        return true;
+    auto* p_decl = Arena::Create<Declaration>(&transient_data.arena);
+    auto* p_var = p_decl->mutable_variable();
+    PopulateDeclarationMetadata(transient_data, p_var->mutable_metadata(), clang_decl);
+    p_var->set_underlying_type(GetUnderlyingType(clang_decl->getType()).getAsString());
+    p_var->set_type(clang_decl->getType().getAsString());
+    const auto str = ClangToString(transient_data, clang_decl);
+    p_var->set_as_string(str);
+    p_var->set_content_hash(std::hash<std::string>::operator()(str));
+    p_var->set_storage_class(clang_decl->getTLSKind() != clang::VarDecl::TLS_None ? VAR_STORAGE_CLASS_THREAD_LOCAL
+        : clang_decl->getStorageClass() == clang::SC_Static ? VAR_STORAGE_CLASS_STATIC
+        : clang_decl->getStorageClass() == clang::SC_Extern && clang_decl->isExternC() ? VAR_STORAGE_CLASS_EXTERN_C
+        : clang_decl->getStorageClass() == clang::SC_Extern && clang_decl->isInExternCXXContext() ? VAR_STORAGE_CLASS_EXTERN
+        : VAR_STORAGE_CLASS_UNSPECIFIED);
+    p_var->set_constant_evaluation_kind(clang_decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE); // vars can't be consteval
+    p_var->set_default_value(ClangToString(transient_data, clang_decl->getInit()));
+    transient_data.visited_decls.insert(std::pair<const clang::Decl*, Declaration*>(clang_decl, p_decl));
+    return OnAfterVisit(clang_decl, p_var->metadata().identifier().qualified_name_hash());
 }
 
 /// @brief Creates the AST consumer for one translation unit.
@@ -247,39 +288,61 @@ void UEMeta::ClangHandler::Serialize() const {
     // only going to worry about stdout for now
 
     auto& cfg = Config::GetConfig();
-    if (cfg.DumpToStdout()) {
+    if (cfg.DumpToJson()) {
+        std::string json = "[\n";
+        std::string buffer{};
+        google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
         for (const auto& [decl, msg] : transient_data.visited_forward_decls) {
-            auto str = msg->DebugString();
-            UEM_INFO(str);
+            if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
+                json += buffer + ",\n";
+            }
+            buffer.clear();
         }
         for (const auto& [decl, msg] : transient_data.visited_decls) {
-            auto str = msg->DebugString();
-            UEM_INFO(str);
+            if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
+                json += buffer + ",\n";
+            }
+            buffer.clear();
         }
+        json.pop_back();
+        json.pop_back();
+        json += "\n]";
+        const auto& log_path = Config::GetConfig().Log().UnderlyingPath();
+        const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath() : log_path) / "dump.json";
+        std::ofstream json_file(out_path, std::ios::trunc);
+        json_file << json;
+        json_file.close();
     }
 }
 
-bool UEMeta::ClangHandler::OnVisit(clang::TagDecl* decl) const {
-    // if this is a forward declaration...
-    if (!decl->isThisDeclarationADefinition()) {
-        // and we don't know about it yet...
-        if (!transient_data.visited_forward_decls.contains(decl)) {
-            // generate a new forward declaration message and return
-            auto p_decl = AddForwardDeclaration(transient_data, decl);
-            transient_data.visited_forward_decls.insert(std::pair<const clang::Decl*, Declaration*>(decl, p_decl));
-            return OnAfterVisit(decl, p_decl->mutable_forward_declaration()->metadata().identifier().qualified_name_hash());
-        }
+bool UEMeta::ClangHandler::OnVisit(auto* decl) const {
+    if (!decl) return true;
 
-        return true;
+    if (std::filesystem::path decl_path = transient_data.context->getSourceManager().getFilename(decl->getLocation()).str(); decl_path != transient_data.current_file) {
+        transient_data.occurrence_index = 0;
+        transient_data.current_file = std::move(decl_path);
     }
 
+    if (const auto as_tag = llvm::dyn_cast_or_null<clang::TagDecl>(decl)) {
+        // if this is a forward declaration...
+        if (!as_tag->isThisDeclarationADefinition()) {
+            // and we don't know about it yet...
+            if (!transient_data.visited_forward_decls.contains(decl)) {
+                // generate a new forward declaration message and return
+                auto p_decl = AddForwardDeclaration(transient_data, as_tag);
+                transient_data.visited_forward_decls.insert(std::pair<const clang::Decl*, Declaration*>(decl, p_decl));
+                return OnAfterVisit(as_tag, p_decl->mutable_forward_declaration()->metadata().identifier().qualified_name_hash());
+            }
+            return true;
+        }
+    }
     // if this is a complete definition that we've already seen (secondary translation unit), continue
     if (transient_data.visited_decls.contains(decl)) return true;
 
     return false;
 }
 
-bool UEMeta::ClangHandler::OnAfterVisit(const clang::TagDecl* clang_decl, const uint64_t clang_decl_fqn_hash) const {
+bool UEMeta::ClangHandler::OnAfterVisit(const clang::Decl* clang_decl, const uint64_t clang_decl_fqn_hash) const {
     // populate parent nested hashes
     if (const auto decl_context = clang_decl->getDeclContext(); decl_context->isRecord()) {
         auto* as_cls = llvm::cast<clang::RecordDecl>(decl_context);

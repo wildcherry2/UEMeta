@@ -44,7 +44,7 @@ void GuardClangCallback(const std::string_view step, Func&& func) noexcept {
 }
 
 inline std::string ClangToString(const clang::Decl* decl, const clang::PrintingPolicy& policy) {
-    if (!decl) throw std::runtime_error("Can't get a string from a null decl!");
+    if (!decl) return "";
     std::string s{};
     llvm::raw_string_ostream os(s);
     decl->print(os, policy, 0, true);
@@ -53,7 +53,7 @@ inline std::string ClangToString(const clang::Decl* decl, const clang::PrintingP
 }
 
 inline std::string ClangToString(const Data& data, const clang::Stmt* statement) {
-    if (!statement) throw std::runtime_error("Can't get a string from a null decl!");
+    if (!statement) return "";
     std::string s{};
     llvm::raw_string_ostream os(s);
     statement->printPretty(os, nullptr, data.context->getPrintingPolicy());
@@ -77,11 +77,25 @@ inline std::string ClangToString(const Data& data, const clang::TemplateArgument
 
 /// @brief Gets the expr as a macro-expanded string
 inline std::string ClangToString(const Data& data, const clang::Expr* expr) {
+    if (!expr) return "";
     std::string s{};
     llvm::raw_string_ostream os(s);
     expr->printPretty(os, nullptr, data.context->getPrintingPolicy());
     os.flush();
     return s;
+}
+
+
+inline clang::QualType GetUnderlyingType(clang::QualType in) {
+    in = in.getNonReferenceType();
+    while (in->isPointerType() || in->isArrayType()) {
+        if (in->isPointerType()) {
+            in = in->getPointeeType();
+        } else if (in->isArrayType()) {
+            in = llvm::cast<clang::ArrayType>(in.getTypePtr())->getElementType();
+        }
+    }
+    return in.getUnqualifiedType();
 }
 
 inline llvm::StringRef GetDeclSourcePath(const Data& data, const clang::Decl* decl) {
@@ -126,14 +140,21 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
         return;
     }
     if (auto* as_named = llvm::dyn_cast_or_null<clang::NamedDecl>(decl)) {
-        p_msg->set_qualified_name(as_named->getQualifiedNameAsString());
-        p_msg->set_qualified_name_hash(std::hash<std::string>::operator()(p_msg->qualified_name()));
-        if (as_named->getDeclName().isIdentifier()) {
-            p_msg->set_name(as_named->getName());
+        if (auto* as_parmdecl = llvm::dyn_cast_or_null<clang::ParmVarDecl>(decl)) { // params need special handling
+            auto qual_name = llvm::dyn_cast_or_null<clang::NamedDecl>(as_parmdecl->getDeclContext())->getQualifiedNameAsString() + "::" + as_parmdecl->getQualifiedNameAsString();
+            p_msg->set_qualified_name(qual_name);
+            p_msg->set_qualified_name_hash(std::hash<std::string>::operator()(qual_name));
         }
         else {
-            p_msg->set_name(as_named->getNameAsString());
+            p_msg->set_qualified_name(as_named->getQualifiedNameAsString());
+            p_msg->set_qualified_name_hash(std::hash<std::string>::operator()(p_msg->qualified_name()));
         }
+            if (as_named->getDeclName().isIdentifier()) {
+                p_msg->set_name(as_named->getName());
+            }
+            else {
+                p_msg->set_name(as_named->getNameAsString());
+            }
         p_msg->set_file_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(data, decl)));
         if (const auto* comment = data.context->getRawCommentForDeclNoCache(decl)) {
             p_msg->set_documentation(comment->getRawText(data.context->getSourceManager()).str());
@@ -152,6 +173,9 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
         for (auto scope : scopes) {
             p_msg->add_scope(std::string{scope});
         }
+    }
+    else {
+        UEM_WARN("Failed to cast decl {} to clang::NamedDecl!", ClangToString(data, decl));
     }
 }
 
@@ -294,17 +318,46 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
         return;
     }
 
-    UEM_WARN("Failed to PopulateTemplateDetails because decl was not FunctionDecl or CXXRecordDecl!");
+    if (const auto* as_alias = llvm::dyn_cast<clang::TypeAliasDecl>(decl)) {
+        if (const auto* primary = as_alias->getDescribedAliasTemplate()) {
+            PopulateParameters(primary->getTemplateParameters(), p_msg);
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+            p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+        }
+
+        return;
+    }
+
+    if (const auto* as_var = llvm::dyn_cast<clang::VarDecl>(decl)) {
+        if (const auto* primary = as_var->getDescribedVarTemplate()) {
+            PopulateParameters(primary->getTemplateParameters(), p_msg);
+            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
+            p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+            return;
+        }
+
+        if (const auto* spec = llvm::dyn_cast<clang::VarTemplateSpecializationDecl>(as_var)) {
+            if (const auto* partial = llvm::dyn_cast<clang::VarTemplatePartialSpecializationDecl>(spec)) {
+                PopulateParameters(partial->getTemplateParameters(), p_msg);
+            }
+            else if (const auto* primary = spec->getSpecializedTemplate()) {
+                PopulateParameters(primary->getTemplateParameters(), p_msg);
+            }
+
+            if (const auto* primary = spec->getSpecializedTemplate()) {
+                p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
+            }
+            AddTemplateArguments(spec->getTemplateArgs().asArray());
+            SetSpecializationKind(spec->getSpecializationKind());
+        }
+    }
 }
 
 inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clang::FunctionDecl* decl) {
     PopulateTemplateDetails(data, p_msg->mutable_template_details(), decl);
     PopulateIdentifier(data, p_msg->mutable_identifier(), decl);
     p_msg->set_return_type(decl->getReturnType().getAsString());
-    if (!decl->isCXXClassMember()) {
-        p_msg->set_kind(llvm::dyn_cast_or_null<clang::CXXConversionDecl>(decl) ? FUNCTION_KIND_CONVERSION : FUNCTION_KIND_FREE);
-    }
-    else if (const auto as_cxx = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
+    if (const auto as_cxx = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
         if (as_cxx->isStatic()) {
             p_msg->set_kind(FUNCTION_KIND_STATIC_MEMBER);
         }
@@ -323,24 +376,24 @@ inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clan
             p_msg->set_kind(FUNCTION_KIND_MEMBER);
         }
 
-        p_msg->set_storage_class(as_cxx->isExternCXXContext() ? FUN_VAR_STORAGE_CLASS_EXTERN
-            : as_cxx->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
-            : as_cxx->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
-
         p_msg->set_definition_kind(as_cxx->isDefaulted() ? FUNCTION_DEFINITION_DEFAULTED
                 : as_cxx->isDeleted() ? FUNCTION_DEFINITION_DELETED : FUNCTION_DEFINITION_NORMAL);
     }
     else {
+        p_msg->set_kind(llvm::dyn_cast_or_null<clang::CXXConversionDecl>(decl) ? FUNCTION_KIND_CONVERSION : FUNCTION_KIND_FREE);
         p_msg->set_kind(FUNCTION_KIND_FREE);
-        p_msg->set_storage_class(decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
-            : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
     }
+
     p_msg->set_consteval_kind(decl->isConsteval() ? CONSTANT_EVALUATION_CONSTEVAL
         : decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE);
 
     if (decl->doesThisDeclarationHaveABody()) {
         p_msg->set_inline_definition(ClangToString(data, decl->getBody()));
     }
+
+    p_msg->set_storage_class(decl->getStorageClass() == clang::SC_Extern && decl->isExternCXXContext() ? FUN_VAR_STORAGE_CLASS_EXTERN
+            : decl->getStorageClass() == clang::SC_Extern && decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
+            : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
 
     static clang::PrintingPolicy fn_sig_pp = [&] {
         clang::PrintingPolicy pp(data.context->getPrintingPolicy());
@@ -349,6 +402,16 @@ inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clan
     }();
     p_msg->set_as_string(ClangToString(decl, fn_sig_pp));
     p_msg->set_content_hash(std::hash<std::string>::operator()(ClangToString(data, decl)));
+
+    for (const auto param : decl->parameters()) {
+        const auto p_param = p_msg->add_parameters();
+        const auto str = ClangToString(data, param);
+        p_param->set_as_string(str);
+        p_param->set_content_hash(std::hash<std::string>::operator()(str));
+        PopulateIdentifier(data, p_param->mutable_identifier(), param);
+        p_param->set_type(param->getType().getAsString());
+        p_param->set_default_value(ClangToString(data, param->getInit()));
+    }
 }
 
 /// @pre decl is a forward declaration

@@ -43,7 +43,8 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
                              "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
                              "\n\tGood for debugging.";
 
-constexpr auto STDOUT_HELP = "Overrides all output settings and dumps output to stdout.";
+constexpr auto DUMP_HELP = "Overrides all output settings and dumps all output to a JSON file, either in the same directory"
+                           "as the log file (if given) or the same directory as the program.";
 
 /// @brief Loads a compile_commands.json into a string
 static std::string LoadCompileCommandsString(const std::string& in) {

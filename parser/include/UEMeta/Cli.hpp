@@ -58,7 +58,7 @@ namespace UEMeta {
         /**
          * @brief Returns true when the user wants to dump to stdout.
          */
-        [[nodiscard]] bool DumpToStdout() const;
+        [[nodiscard]] bool DumpToJson() const;
 
         /**
          * @brief Returns the output format.
@@ -139,7 +139,7 @@ namespace UEMeta {
         static int Initialize(int argc, char** argv);
 
         bool prefer_clang{};
-        bool dump_to_stdout{};
+        bool dump_to_json{};
         SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};

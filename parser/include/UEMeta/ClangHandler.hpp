@@ -7,6 +7,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/DenseMap.h>
 #include <atomic>
+#include <filesystem>
 #include <google/protobuf/arena.h>
 
 namespace ParseResult {
@@ -105,6 +106,7 @@ namespace UEMeta {
             mutable llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_forward_decls{};
             mutable google::protobuf::Arena arena{};
             mutable size_t occurrence_index = 0;
+            mutable std::filesystem::path current_file{};
         };
 
     protected:
@@ -134,10 +136,10 @@ namespace UEMeta {
 
         void Serialize() const;
 
-        bool OnVisit(clang::TagDecl* decl) const;
+        bool OnVisit(auto* decl) const;
 
         /// @brief If the clang_decl is a child of a record (nested decl), adds its hash to the parent's message's nested_hashes list
-        bool OnAfterVisit(const clang::TagDecl* clang_decl, uint64_t clang_decl_fqn_hash) const;
+        bool OnAfterVisit(const clang::Decl* clang_decl, uint64_t clang_decl_fqn_hash) const;
 
         TransientData transient_data{};
     };

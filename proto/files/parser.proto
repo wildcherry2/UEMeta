@@ -3,6 +3,7 @@ syntax = "proto3";
 package ParseResult;
 
 // todo make sure fields that are optional aren't always supplied
+// todo figure out common fields between variables, fields, and params
 
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
@@ -57,7 +58,9 @@ message TLAliasDeclaration {
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
     string aliased_type = 3;
-    string as_string = 4;
+    string alias = 4;
+    string as_string = 5;
+    uint64 content_hash = 6;
 }
 
 // An independently tracked top-level free-function declaration.
@@ -69,8 +72,14 @@ message TLFreeFunctionDeclaration {
 // An independently tracked global-variable or static field declaration.
 message TLGlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
-    VariableDetails details = 2;
-    string as_string = 3;
+    optional TemplateDetails template_details = 2;
+    string type = 3;
+    string underlying_type = 4;
+    string as_string = 5;
+    optional VariableStorageClass storage_class = 6;
+    optional string default_value = 7;
+    optional ConstantEvaluationKind constant_evaluation_kind = 8;
+    uint64 content_hash = 9;
 }
 
 enum RecordKind {
@@ -98,11 +107,9 @@ enum EnumScope {
 enum VariableStorageClass {
     VAR_STORAGE_CLASS_UNSPECIFIED = 0;
     VAR_STORAGE_CLASS_EXTERN = 1;
-    VAR_STORAGE_CLASS_STATIC = 2;
-    VAR_STORAGE_CLASS_PRIVATE_EXTERN = 3;
-    VAR_STORAGE_CLASS_AUTO = 4;
-    VAR_STORAGE_CLASS_REGISTER = 5;
-    VAR_STORAGE_CLASS_THREAD_LOCAL = 6;
+    VAR_STORAGE_CLASS_EXTERN_C = 2;
+    VAR_STORAGE_CLASS_STATIC = 3;
+    VAR_STORAGE_CLASS_THREAD_LOCAL = 4;
 }
 
 enum FunctionStorageClass {
@@ -284,21 +291,12 @@ message Parameter {
     string type = 2;
     string default_value = 3;
     string as_string = 4;
+    uint64 content_hash = 5;
 }
 
 message VTableIndex {
     uint64 index = 1; // the index of the virtual function within the vtable (slot)
     int64 offset = 2; // in a multiple inhertiance scenario, this is the index of the vtable to use, otherwise 0 (vfptroffset)
-}
-
-message VariableDetails {
-    optional TemplateDetails template_details = 1;
-    string type = 2;
-    string as_string = 3;
-    optional AccessSpecifier access = 4;
-    optional VariableStorageClass storage_class = 5;
-    optional bool is_constexpr = 6;
-    optional bool is_inline = 7;
 }
 
 message Enumerator {
@@ -322,6 +320,8 @@ message Field {
     optional uint64 offset_bits = 7;
     uint64 content_hash = 8;
     optional string default_value = 9;
+    string type = 10;
+    string underlying_type = 11;
 }
 
 message BaseSpecifier {

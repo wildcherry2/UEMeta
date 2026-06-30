@@ -6,3 +6,4 @@ CMakeUserPresets.json
 .idea/
 uemeta_scope_fixture_out/
 /pg.log
+dump.json
