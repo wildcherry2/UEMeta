@@ -19,6 +19,8 @@
  */
 int main(int argc, char** argv);
 
+
+//todo make getters lazy initialize cfg?
 namespace UEMeta {
     /**
      * @brief Process-wide CLI configuration used by tool setup.
@@ -56,7 +58,7 @@ namespace UEMeta {
         [[nodiscard]] bool PrefersClang() const;
 
         /**
-         * @brief Returns true when the user wants to dump to stdout.
+         * @brief Returns true when the user wants to dump everything to a single JSON.
          */
         [[nodiscard]] bool DumpToJson() const;
 

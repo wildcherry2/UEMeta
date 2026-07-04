@@ -1,8 +1,10 @@
 // ReSharper disable CppMemberFunctionMayBeStatic
+// ReSharper disable CppMemberFunctionMayBeConst
 #include "UEMeta/ClangHandler.hpp"
 
 #include <atomic>
 #include <exception>
+#include <execution>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -10,12 +12,14 @@
 #include <utility>
 
 #include <clang/AST/ASTContext.h>
-#include <clang/AST/DeclTemplate.h>
 #include <clang/AST/VTableBuilder.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/AST/RecordLayout.h>
 #include <clang/Tooling/Tooling.h>
 #include <google/protobuf/util/json_util.h>
+#if defined(DEBUG)
+#include "buf/validate/validator.h"
+#endif
 #include "parser.pb.h"
 
 #include "UEMeta/Cli.hpp"
@@ -25,13 +29,13 @@ using google::protobuf::Arena;
 using namespace ParseResult;
 
 /// @brief Requests traversal of template instantiations.
-bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; }
+bool UEMeta::ClangHandler::shouldVisitTemplateInstantiations() const { return true; } // NOLINT(*-convert-member-functions-to-static)
 
 /// @brief Skips implicit compiler-generated declarations.
-bool UEMeta::ClangHandler::shouldVisitImplicitCode() const { return false; }
+bool UEMeta::ClangHandler::shouldVisitImplicitCode() const { return false; } // NOLINT(*-convert-member-functions-to-static)
 
 /// @brief Skips lambda body traversal.
-bool UEMeta::ClangHandler::shouldVisitLambdaBody() const { return false; }
+bool UEMeta::ClangHandler::shouldVisitLambdaBody() const { return false; } // NOLINT(*-convert-member-functions-to-static)
 
 /// @brief Runs Clang with ClangHandler and converts guarded exceptions into a nonzero result.
 int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
@@ -57,7 +61,7 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 }
 
 /// @brief Logs the end of declaration traversal.
-void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) {
+void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) { // NOLINT(*-convert-member-functions-to-static)
     GuardClangCallback("EndTranslationUnit", [] {
         UEM_INFO("Finished traversing AST");
     });
@@ -210,7 +214,6 @@ bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* clang_decl) 
     p_alias->set_aliased_type(clang_decl->getUnderlyingType().getAsString());
     const auto str = ClangToString(transient_data, clang_decl);
     p_alias->set_as_string(str);
-    p_alias->set_content_hash(std::hash<std::string>::operator()(str));
     transient_data.visited_decls.insert(std::pair<const clang::Decl*, Declaration*>(clang_decl, p_decl));
     return true;
 }
@@ -285,13 +288,11 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
 }
 
 void UEMeta::ClangHandler::Serialize() const {
-    // only going to worry about stdout for now
-
-    auto& cfg = Config::GetConfig();
+    const auto& cfg = Config::GetConfig();
     if (cfg.DumpToJson()) {
         std::string json = "[\n";
         std::string buffer{};
-        google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
+        constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
         for (const auto& [decl, msg] : transient_data.visited_forward_decls) {
             if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
                 json += buffer + ",\n";
@@ -312,7 +313,67 @@ void UEMeta::ClangHandler::Serialize() const {
         std::ofstream json_file(out_path, std::ios::trunc);
         json_file << json;
         json_file.close();
+        return;
     }
+
+    const auto out_dir = cfg.OutputDirectory().UnderlyingPath();
+    const auto is_json = cfg.Format() == Config::SerializationFormat::json;
+    const auto GenerateOutFile = [&](const Declaration* decl) {
+        // file path is in format {qualnamehash}-{contenthash}-{filenamehash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var|file][bin|json]
+        // validate if in debug
+        #if defined(DEBUG)
+        static std::unique_ptr<buf::validate::ValidatorFactory> factory = buf::validate::ValidatorFactory::New().value();
+        auto validator = factory->NewValidator(&transient_data.arena);
+        auto results = validator.Validate(*decl);
+        if (!results.ok()) {
+            UEM_ERROR("Validation error encountered: {}", results.status().message());
+            return;
+        }
+        if (const auto& validation_result = results.value(); !validation_result.success()) {
+            for (const auto& err : validation_result.violations()) {
+                UEM_ERROR("Proto validation failed: {}", err.proto().ShortDebugString());
+            }
+            return;
+        }
+        #endif
+        auto out_path = out_dir;
+        using p = std::tuple<const char*, const DeclarationMetadata&, const google::protobuf::Message&>;
+        auto [extension, meta, out_msg] = decl->has_alias() ? p{"alias", decl->alias().metadata(), decl->alias()}
+            : decl->has_enum_declaration() ? p{"enum", decl->enum_declaration().metadata(), decl->enum_declaration()}
+            : decl->has_forward_declaration() ? p{"fwdecl", decl->forward_declaration().metadata(), decl->forward_declaration()}
+            : decl->has_function() ? p{"function", decl->function().metadata(), decl->function()}
+            : decl->has_variable() ? p{"var", decl->variable().metadata(), decl->variable()}
+            : decl->record().kind() == RECORD_KIND_CLASS ? p{"class", decl->record().metadata(), decl->record()}
+            : decl->record().kind() == RECORD_KIND_STRUCT ? p{"struct", decl->record().metadata(), decl->record()}
+            : p{"union", decl->record().metadata(), decl->record()};
+
+        const auto& ident = meta.identifier();
+        out_path = out_path / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
+            meta.content_hash(), ident.file_path_hash(), meta.occurrence_index(), extension, is_json ? "json" : "bin");
+        std::ofstream out_file(out_path, std::ios::trunc);
+
+        if (is_json) {
+            thread_local std::string buffer{};
+            constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
+            buffer.clear();
+            if (google::protobuf::util::MessageToJsonString(out_msg, &buffer, options).ok()) {
+                out_file << buffer;
+            }
+            else {
+                UEM_ERROR("Failed to write to file: {}", out_path.string());
+            }
+        }
+        else if (!out_msg.SerializeToOstream(&out_file)) {
+            UEM_ERROR("Failed to write to file: {}", out_path.string());
+        }
+
+        out_file.close();
+    };
+
+    std::for_each(std::execution::par_unseq, transient_data.visited_decls.begin(), transient_data.visited_decls.end(),
+    [&](const llvm::detail::DenseMapPair<const clang::Decl*, Declaration*>& decl_pair) {
+            GenerateOutFile(decl_pair.getSecond());
+    });
 }
 
 bool UEMeta::ClangHandler::OnVisit(auto* decl) const {

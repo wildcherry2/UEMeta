@@ -50,6 +50,15 @@
       "displayName": "Playground",
       "inherits": "ninja-debug",
       "binaryDir": "${sourceDir}/intermediate/build/playground"
+    },
+    {
+      "name": "testing",
+      "displayName": "Testing",
+      "inherits": "ninja-debug",
+      "binaryDir": "${sourceDir}/intermediate/build/testing",
+      "cacheVariables": {
+        "UEMETA_ENABLE_TESTING": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -95,6 +104,25 @@
       "targets": [
         "playground"
       ]
+    },
+    {
+      "name": "testing",
+      "displayName": "Testing",
+      "inherits": "ninja-debug",
+      "configurePreset": "testing",
+      "targets": [
+        "uemeta-parser-tests"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "testing",
+      "displayName": "Testing",
+      "configurePreset": "testing",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

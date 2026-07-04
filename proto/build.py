@@ -102,6 +102,15 @@ generate_template = json.dumps({
     ]
 })
 
+#todo this doesn't work
+argv = [
+    str(buf_path.resolve()),
+    "dep",
+    "update"
+]
+
+run(argv, text=True, check=True)
+
 # build argv
 argv = [
     str(buf_path.resolve()),
