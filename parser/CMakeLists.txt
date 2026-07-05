@@ -93,14 +93,8 @@ set(UEMETA_MSVC_DISABLED_WARNINGS
     /wd4189 # local variable initialized but not referenced
     /wd4702 # unreachable code
 )
-set(UEMETA_PROTOBUF_ABSL_MSVC_DISABLED_WARNINGS
-    /wd4018 # signed/unsigned mismatch
-    /wd4201 # nonstandard extension used: nameless struct/union
-    /wd4267 # conversion from size_t, possible loss of data
-    /wd4324 # structure was padded due to alignment specifier
-    /wd4458 # declaration hides class member
-    /wd4624 # destructor was implicity defined as deleted
-    /wd4715 # not all control paths return a value
+set(UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS
+    /w # suppress warnings while compiling non-project targets
 )
 
 FetchContent_Declare(llvm_prebuilt
@@ -117,6 +111,7 @@ FetchContent_Declare(cli11
     GIT_TAG "${UEMETA_CLI11_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/cli11-${UEMETA_CLI11_VERSION}"
+    SYSTEM
 )
 
 FetchContent_Declare(quill
@@ -124,6 +119,7 @@ FetchContent_Declare(quill
     GIT_TAG "${UEMETA_QUILL_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
+    SYSTEM
 )
 
 FetchContent_Declare(protobuf
@@ -131,6 +127,7 @@ FetchContent_Declare(protobuf
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protobuf-${UEMETA_PROTOBUF_VERSION}"
+    SYSTEM
 )
 
 FetchContent_Declare(protovalidate_cc
@@ -138,6 +135,7 @@ FetchContent_Declare(protovalidate_cc
     GIT_TAG "${UEMETA_PROTOVALIDATE_CC_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protovalidate-cc-${UEMETA_PROTOVALIDATE_CC_VERSION}"
+    SYSTEM
 )
 
 function(UEMeta_FetchContent_MakeAvailable name)
@@ -266,12 +264,12 @@ if(MSVC)
     UEMeta_ConfigureMSVCDependencyTargets(
         "${protobuf_SOURCE_DIR}"
         "${UEMETA_MSVC_RUNTIME_LIBRARY}"
-        ${UEMETA_PROTOBUF_ABSL_MSVC_DISABLED_WARNINGS}
+        ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
     )
     UEMeta_ConfigureMSVCDependencyTargets(
         "${protovalidate_cc_SOURCE_DIR}"
         "${UEMETA_MSVC_RUNTIME_LIBRARY}"
-        ${UEMETA_MSVC_DISABLED_WARNINGS}
+        ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
     )
 endif()
 
@@ -382,14 +380,17 @@ if(MSVC)
     set_target_properties(parser PROPERTIES
         MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
     )
+    set_source_files_properties(${UEMETA_PROTO_GENERATED_SOURCES} PROPERTIES
+        COMPILE_OPTIONS "${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}"
+    )
 endif()
 
 target_include_directories(parser PRIVATE
     "${PROJECT_SOURCE_DIR}/include"
-    "${UEMETA_PROTO_GENERATED_DIR}"
 )
 
 target_include_directories(parser SYSTEM PRIVATE
+    "${UEMETA_PROTO_GENERATED_DIR}"
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )
@@ -404,6 +405,8 @@ target_compile_options(parser PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-std=c++2c>
     $<$<CXX_COMPILER_ID:GNU>:-std=c++2c>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
+    $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Od>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Zi>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/RTC1>
@@ -481,6 +484,7 @@ if(UEMETA_ENABLE_TESTING)
         GIT_TAG "${UEMETA_GOOGLETEST_GIT_TAG}"
         GIT_PROGRESS TRUE
         SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/googletest-${UEMETA_GOOGLETEST_VERSION}"
+        SYSTEM
     )
 
     UEMeta_FetchContent_MakeAvailable(googletest)
@@ -489,7 +493,7 @@ if(UEMETA_ENABLE_TESTING)
         UEMeta_ConfigureMSVCDependencyTargets(
             "${googletest_SOURCE_DIR}"
             "${UEMETA_MSVC_RUNTIME_LIBRARY}"
-            ${UEMETA_MSVC_DISABLED_WARNINGS}
+            ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
         )
     endif()
 
@@ -608,6 +612,8 @@ if(UEMETA_ENABLE_TESTING)
     target_compile_options(uemeta-parser-tests PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
         $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
+        $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
