@@ -7,7 +7,7 @@
 namespace UEMeta {
     class HeartbeatLogger {
     public:
-        explicit HeartbeatLogger(std::string str, std::chrono::milliseconds wait = std::chrono::milliseconds(1000));
+        explicit HeartbeatLogger(std::string str, std::chrono::milliseconds wait = std::chrono::milliseconds(1500));
         void Start();
         virtual void SetStr(std::string str);
         void Stop();
@@ -25,13 +25,13 @@ namespace UEMeta {
 
     class CountingHeartbeatLogger : public HeartbeatLogger {
     public:
-        explicit CountingHeartbeatLogger(const std::string& format_str, std::chrono::milliseconds wait = std::chrono::milliseconds(1000));
+        explicit CountingHeartbeatLogger(const std::string& format_str, std::chrono::milliseconds wait = std::chrono::milliseconds(1500));
         ~CountingHeartbeatLogger() override = default;
         void SetStr(std::string str) override;
         void Increment();
         void Decrement();
         void SetValue(uint64_t value);
-
+        uint64_t GetValue() const;
     protected:
         void Log() override;
 

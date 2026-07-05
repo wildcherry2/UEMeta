@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <memory>
 #include <google/protobuf/arena.h>
+#include "UEMeta/HeartbeatLogger.hpp"
 
 namespace ParseResult {
     class Declaration;
@@ -132,5 +133,6 @@ namespace UEMeta {
         void EndTranslationUnit(clang::ASTContext& ctx);
 
         std::unique_ptr<ASTData> data;
+        CountingHeartbeatLogger logger;
     };
 }

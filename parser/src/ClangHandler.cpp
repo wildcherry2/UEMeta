@@ -55,6 +55,7 @@ int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
 void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
     GuardClangCallback("BeginTranslationUnit", [&] {
         UEM_INFO("Starting AST traversal...");
+        data->GetTraverseLogger().Start();
         data->SetContext(&ctx);
     });
 }
@@ -62,8 +63,8 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 /// @brief Logs the end of declaration traversal, starts post-processing
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) { // NOLINT(*-convert-member-functions-to-static)
     GuardClangCallback("EndTranslationUnit", [&] {
-        UEM_INFO("Finished traversing AST");
-        UEM_INFO("Computing occurrence indices...");
+        data->GetTraverseLogger().Stop();
+        UEM_INFO("Finished traversing AST, extracted data from {} nodes!", data->GetTraverseLogger().GetValue());
         data->GenerateFileData();
         data->Serialize();
     });
@@ -221,7 +222,7 @@ bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* clang_decl) 
     const auto str = ClangToString(context, clang_decl);
     p_alias->set_as_string(str);
     data->AddVisitedDecl(clang_decl, p_decl);
-    return true;
+    return data->OnAfterVisit(clang_decl, p_alias->metadata().identifier().qualified_name_hash());
 }
 
 bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
@@ -248,7 +249,7 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
     return data->OnAfterVisit(clang_decl, p_var->metadata().identifier().qualified_name_hash());
 }
 
-UEMeta::ClangHandler::ClangHandler() : data(new ASTData()) {}
+UEMeta::ClangHandler::ClangHandler() : data(new ASTData()), logger("Visited {} total nodes...") {}
 
 /// @brief Creates the AST consumer for one translation unit.
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
@@ -258,18 +259,23 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         const auto input_name = file.str();
         const auto file_name = std::filesystem::path(input_name).filename().string();
         const auto tu_name = file_name.empty() ? input_name : file_name;
-        UEM_INFO("Parsing TU '{}' (this may take a moment)", tu_name);
 
         /// @brief AST consumer that drives traversal once Clang finishes parsing a translation unit.
         class Consumer : public clang::ASTConsumer {
         public:
             /// @brief Creates a consumer tied to the owning ClangHandler.
             explicit Consumer(ClangHandler* owner, std::string tu_name)
-                : owner(owner), tu_name(std::move(tu_name)) {}
+                : owner(owner), tu_name(std::move(tu_name)), parse_logger(fmtquill::format("Parsing TU {}...", this->tu_name)) {}
+
+            void Initialize(clang::ASTContext &Context) override {
+                UEM_INFO("Starting TU '{}' parsing (this may take a moment)!", tu_name);
+                parse_logger.Start();
+            }
 
             /// @brief Traverses declarations after Clang finishes parsing the translation unit.
             void HandleTranslationUnit(clang::ASTContext& ctx) override {
                 GuardClangCallback("HandleTranslationUnit", [&] {
+                    parse_logger.Stop();
                     UEM_INFO("TU '{}' parsed!", tu_name);
                     owner->BeginTranslationUnit(ctx);
                     if (!owner->TraverseDecl(ctx.getTranslationUnitDecl())) {
@@ -283,6 +289,7 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         private:
             ClangHandler* owner;
             std::string tu_name;
+            HeartbeatLogger parse_logger;
         };
 
         return std::make_unique<Consumer>(this, tu_name);

@@ -35,7 +35,7 @@ namespace UEMeta {
 
         template<typename MessageType>
         [[nodiscard]] MessageType* Allocate() const {
-            MessageType* msg = google::protobuf::Arena::Create<MessageType>(&arena);
+            auto* msg = google::protobuf::Arena::Create<MessageType>(&arena);
             to_serialize.push_back(msg);
             return msg;
         }
@@ -107,6 +107,7 @@ namespace UEMeta {
                     parent->getSecond()->mutable_record()->add_nested_hashes(clang_decl_fqn_hash);
                 }
             }
+            logger.Increment();
             return true;
         }
 
@@ -114,18 +115,32 @@ namespace UEMeta {
             return to_serialize;
         }
 
+        CountingHeartbeatLogger& GetTraverseLogger() const {
+            return logger;
+        }
+
         void GenerateFileData() {
             if (all_unique_visited_decls.empty()) return;
-            const auto& sm = context->getSourceManager();
 
-            // sort by occurrence in TU
-            std::sort(std::execution::par_unseq, all_unique_visited_decls.begin(), all_unique_visited_decls.end(),
-            [&](const clang::Decl* lhs, const clang::Decl* rhs) {
-                return sm.isBeforeInTranslationUnit(lhs->getLocation(), rhs->getLocation());
-            });
+            // sort all declarations by order of appearance
+            {
+                const auto& sm = context->getSourceManager();
+                HeartbeatLogger sort_logger{fmtquill::format("Sorting {} declarations by occurrence...", all_unique_visited_decls.size())};
+                sort_logger.Start();
+                // sort by occurrence in TU
+                std::sort(std::execution::par_unseq, all_unique_visited_decls.begin(), all_unique_visited_decls.end(),
+                [&](const clang::Decl* lhs, const clang::Decl* rhs) {
+                    return sm.isBeforeInTranslationUnit(lhs->getLocation(), rhs->getLocation());
+                });
+                sort_logger.Stop();
+                UEM_INFO("Sorted {} declarations!", all_unique_visited_decls.size());
+            }
 
             // assign occurrence indices and generate TLFileData
             {
+                CountingHeartbeatLogger occ_logger{"Generating TLFileData from declarations ({} declarations remaining)..."};
+                occ_logger.SetValue(all_unique_visited_decls.size());
+                occ_logger.Start();
                 auto* current_file = Allocate<ParseResult::TLFileData>();
                 current_file->set_path(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path());
                 current_file->set_file_occurrence(0);
@@ -149,6 +164,7 @@ namespace UEMeta {
                                 to_patch_info.metadata->mutable_identifier()->set_file_path(current_file->path());
                                 to_patch_info.metadata->mutable_identifier()->set_file_path_hash(current_file->path_hash());
                                 to_patch_info.metadata->set_occurrence_index(occurrence_counter++);
+                                occ_logger.Decrement();
                             }
                             info = GetInfo(*decl_it);
                             // fall through to fill out occurrence index for current decl_it
@@ -166,24 +182,30 @@ namespace UEMeta {
                     }
 
                     info.metadata->set_occurrence_index(occurrence_counter++);
+                    occ_logger.Decrement();
                 }
+
+                occ_logger.Stop();
+                UEM_INFO("Generated {} TLFileData!", current_file ? current_file->file_occurrence() + 1 : 0);
             }
         }
 
         void Serialize() {
+            logger.SetStr("Serializing {} declarations...");
+            logger.Start();
             const auto& cfg = Config::GetConfig();
-            const auto& messages = to_serialize;
             if (cfg.DumpToJson()) {
                 std::string json = "[\n";
                 std::string buffer{};
                 constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
-                for (const auto* msg : messages) {
+                for (const auto* msg : to_serialize) {
                     if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
                         json += buffer + ",\n";
                     }
                     buffer.clear();
+                    logger.Decrement();
                 }
-                if (!messages.empty()) {
+                if (!to_serialize.empty()) {
                     json.pop_back();
                     json.pop_back();
                 }
@@ -201,6 +223,7 @@ namespace UEMeta {
 
             // Actually generates the file
             const auto GenerateOutFile = [&](google::protobuf::Message* msg) {
+                logger.Decrement();
                 if (!msg) return;
 
                 // validate if in debug
@@ -261,7 +284,10 @@ namespace UEMeta {
 
                 out_file.close();
             };
-            std::for_each(std::execution::par_unseq, messages.begin(), messages.end(), GenerateOutFile);
+            std::for_each(std::execution::par_unseq, to_serialize.begin(), to_serialize.end(), GenerateOutFile);
+
+            logger.Stop();
+            UEM_INFO("Serialized {} declarations!", to_serialize.size());
         }
 
         #if defined(DEBUG) || defined(TESTING)
@@ -280,6 +306,7 @@ namespace UEMeta {
         llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_forward_decls{};
 
         mutable google::protobuf::Arena arena{};
+        mutable CountingHeartbeatLogger logger{"Visited {} nodes..."};
 
         // Equivalent to visited_decls.values() + visited_forward_decls.values() + any TLFileData we make.
         // We use a vector that contains the same data as the maps because we want to parallelize serialization.

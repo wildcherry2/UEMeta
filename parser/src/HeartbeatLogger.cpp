@@ -17,11 +17,11 @@ void UEMeta::HeartbeatLogger::Start() {
         std::unique_lock lock(mtx);
 
         while (true) {
+            Log();
             const bool stoppedBeforeTimeout = cv.wait_for(lock, stoken, this->wait, [&stoken] {
                 return stoken.stop_requested();
             });
             if (stoppedBeforeTimeout) break;
-            Log();
         }
     });
 }
@@ -71,15 +71,21 @@ void UEMeta::CountingHeartbeatLogger::SetStr(const std::string str) {
 }
 
 void UEMeta::CountingHeartbeatLogger::Increment() {
-    counter.fetch_add(1);
+    if (counter.load() < 0xffffffffffffffffui64) return (void)counter.fetch_add(1);
+    UEM_WARN("CountingHeartbeatLogger tried to overflow counter!");
 }
 
 void UEMeta::CountingHeartbeatLogger::Decrement() {
-    counter.fetch_add(-1);
+    if (counter.load() > 0) return (void)counter.fetch_add(-1);
+    UEM_WARN("CountingHeartbeatLogger tried to overflow counter!");
 }
 
 void UEMeta::CountingHeartbeatLogger::SetValue(const uint64_t value) {
     counter.store(value);
+}
+
+uint64_t UEMeta::CountingHeartbeatLogger::GetValue() const {
+    return counter.load();
 }
 
 void UEMeta::CountingHeartbeatLogger::Log() {
