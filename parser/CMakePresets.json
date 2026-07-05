@@ -54,7 +54,7 @@
     {
       "name": "testing",
       "displayName": "Testing",
-      "inherits": "ninja-debug",
+      "inherits": "ninja-release",
       "binaryDir": "${sourceDir}/intermediate/build/testing",
       "cacheVariables": {
         "UEMETA_ENABLE_TESTING": "ON"
@@ -108,7 +108,7 @@
     {
       "name": "testing",
       "displayName": "Testing",
-      "inherits": "ninja-debug",
+      "inherits": "ninja-release",
       "configurePreset": "testing",
       "targets": [
         "uemeta-parser-tests"

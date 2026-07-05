@@ -10,14 +10,13 @@ import "buf/validate/validate.proto";
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
     string path = 1 [(buf.validate.field).required = true];
-    uint64 content_hash = 2 [(buf.validate.field).required = true];
-    uint64 path_hash = 3 [(buf.validate.field).required = true];
+    uint64 path_hash = 2 [(buf.validate.field).required = true];
     message Include {
         string path = 1 [(buf.validate.field).required = true];
         // The index of this include relative to the other declarations in the same file
         uint32 occurrence_index = 2 [(buf.validate.field).required = true];
     }
-    repeated Include includes = 4;
+    repeated Include includes = 3;
 }
 
 // Top-level record declaration (class/struct/union).

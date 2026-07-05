@@ -1,0 +1,13 @@
+#include "AliasTypes.hpp"
+#include "EnumTypes.hpp"
+#include "FunctionTypes.hpp"
+#include "RecordTypes.hpp"
+
+namespace UEMeta::Testing::Types {
+    int TouchAll() {
+        DerivedRecord record{};
+        record.vfunc(1, true);
+        record.sfunc('x');
+        return FreeFunction(record) + GlobalConstant;
+    }
+}

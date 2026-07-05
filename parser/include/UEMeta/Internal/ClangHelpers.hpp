@@ -1,14 +1,18 @@
 #pragma once
 #include "UEMeta/Cli.hpp"
 #include "parser.pb.h"
+#include <atomic>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Comment.h>
+#include <exception>
+#include <functional>
 #include <ranges>
+#include <stdexcept>
+#include <string>
 #include <string_view>
-#include "UEMeta/ClangHandler.hpp"
+#include <utility>
 
 using namespace ParseResult;
-using Data = UEMeta::ClangHandler::TransientData;
 
 /// @brief Tracks whether any guarded Clang callback caught an exception.
 inline std::atomic_bool GClangExceptionCaught{false};
@@ -52,35 +56,35 @@ inline std::string ClangToString(const clang::Decl* decl, const clang::PrintingP
     return s;
 }
 
-inline std::string ClangToString(const Data& data, const clang::Stmt* statement) {
+inline std::string ClangToString(clang::ASTContext& context, const clang::Stmt* statement) {
     if (!statement) return "";
     std::string s{};
     llvm::raw_string_ostream os(s);
-    statement->printPretty(os, nullptr, data.context->getPrintingPolicy());
+    statement->printPretty(os, nullptr, context.getPrintingPolicy());
     os.flush();
     return s;
 }
 
 /// @brief Gets the declaration as a macro-expanded string
-inline std::string ClangToString(const Data& data, const clang::Decl* decl) {
-    return ClangToString(decl, data.context->getPrintingPolicy());
+inline std::string ClangToString(clang::ASTContext& context, const clang::Decl* decl) {
+    return ClangToString(decl, context.getPrintingPolicy());
 }
 
 /// @brief Gets the template argument as a macro-expanded string
-inline std::string ClangToString(const Data& data, const clang::TemplateArgument& arg) {
+inline std::string ClangToString(clang::ASTContext& context, const clang::TemplateArgument& arg) {
     std::string s{};
     llvm::raw_string_ostream os(s);
-    arg.print(data.context->getPrintingPolicy(), os, true);
+    arg.print(context.getPrintingPolicy(), os, true);
     os.flush();
     return s;
 }
 
 /// @brief Gets the expr as a macro-expanded string
-inline std::string ClangToString(const Data& data, const clang::Expr* expr) {
+inline std::string ClangToString(clang::ASTContext& context, const clang::Expr* expr) {
     if (!expr) return "";
     std::string s{};
     llvm::raw_string_ostream os(s);
-    expr->printPretty(os, nullptr, data.context->getPrintingPolicy());
+    expr->printPretty(os, nullptr, context.getPrintingPolicy());
     os.flush();
     return s;
 }
@@ -98,13 +102,13 @@ inline clang::QualType GetUnderlyingType(clang::QualType in) {
     return in.getUnqualifiedType();
 }
 
-inline llvm::StringRef GetDeclSourcePath(const Data& data, const clang::Decl* decl) {
+inline llvm::StringRef GetDeclSourcePath(clang::ASTContext& context, const clang::Decl* decl) {
     static llvm::DenseMap<const clang::Decl*, llvm::StringRef> decl_srcs;
     if (!decl) throw std::runtime_error("Can't get a source location from a null decl!");
     if (const auto cached = decl_srcs.find(decl); cached != decl_srcs.end()) {
         return cached->second;
     }
-    const auto& source_man = data.context->getSourceManager();
+    const auto& source_man = context.getSourceManager();
     const auto source_loc = source_man.getExpansionLoc(decl->getLocation());
     decl_srcs[decl] = source_man.getFilename(source_loc);
     return decl_srcs[decl];
@@ -120,23 +124,23 @@ inline uint64_t GetDeclSourcePathHash(llvm::StringRef in) {
 }
 
 /// @brief Fills out an EnumDetails* from an EnumDecl*
-inline void PopulateEnumDetails(const Data& data, EnumDetails* p_msg, const clang::EnumDecl* decl) {
-    if (!(data.context && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateEnumDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
+inline void PopulateEnumDetails(clang::ASTContext& context, EnumDetails* p_msg, const clang::EnumDecl* decl) {
+    if (!(p_msg && decl)) {
+        UEM_WARN("Failed to PopulateEnumDetails due to nullptr! p_msg={}, decl={}", !!p_msg, !!decl);
         return;
     }
     auto underlying = decl->getIntegerType();
     if (!underlying.isNull()) {
-        p_msg->set_underlying_type(underlying.getAsString(data.context->getPrintingPolicy()));
+        p_msg->set_underlying_type(underlying.getAsString(context.getPrintingPolicy()));
     }
     p_msg->set_scope(!decl->isScoped() ? ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ENUM_SCOPE_CLASS : ENUM_SCOPE_STRUCT);
 }
 
 
 /// @brief Fills out an Identifier from a Decl
-inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang::Decl* decl) {
-    if (!(data.context && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateIdentifier due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
+inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, const clang::Decl* decl) {
+    if (!(p_msg && decl)) {
+        UEM_WARN("Failed to PopulateIdentifier due to nullptr! p_msg={}, decl={}", !!p_msg, !!decl);
         return;
     }
     if (auto* as_named = llvm::dyn_cast_or_null<clang::NamedDecl>(decl)) {
@@ -155,9 +159,9 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
             else {
                 p_msg->set_name(as_named->getNameAsString());
             }
-        p_msg->set_file_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(data, decl)));
-        if (const auto* comment = data.context->getRawCommentForDeclNoCache(decl)) {
-            p_msg->set_documentation(comment->getRawText(data.context->getSourceManager()).str());
+        p_msg->set_file_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, decl)));
+        if (const auto* comment = context.getRawCommentForDeclNoCache(decl)) {
+            p_msg->set_documentation(comment->getRawText(context.getSourceManager()).str());
         }
         auto scopes = std::views::split(p_msg->qualified_name(), std::string_view{"::"})
                         | std::views::transform([](auto range) -> std::string_view {
@@ -175,46 +179,45 @@ inline void PopulateIdentifier(const Data& data, Identifier* p_msg, const clang:
         }
     }
     else {
-        UEM_WARN("Failed to cast decl {} to clang::NamedDecl!", ClangToString(data, decl));
+        UEM_WARN("Failed to cast decl {} to clang::NamedDecl!", ClangToString(context, decl));
     }
 }
 
 /// @brief Fills out a DeclarationMetadata from a Decl
-inline void PopulateDeclarationMetadata(const Data& data, DeclarationMetadata* p_msg, const clang::Decl* decl) {
-    if (!(data.context && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateDeclarationMetadata due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
+inline void PopulateDeclarationMetadata(clang::ASTContext& context, DeclarationMetadata* p_msg, const clang::Decl* decl) {
+    if (!(p_msg && decl)) {
+        UEM_WARN("Failed to PopulateDeclarationMetadata due to nullptr! p_msg={}, decl={}", !!p_msg, !!decl);
         return;
     }
-    PopulateIdentifier(data, p_msg->mutable_identifier(), decl);
-    p_msg->set_occurrence_index(data.occurrence_index++);
+    PopulateIdentifier(context, p_msg->mutable_identifier(), decl);
     if (auto* as_enum = llvm::dyn_cast_or_null<clang::EnumDecl>(decl)) {
         p_msg->set_is_anonymous(as_enum->getName().empty());
     }
     else if (auto* as_record = llvm::dyn_cast_or_null<clang::RecordDecl>(decl)) {
         p_msg->set_is_anonymous(as_record->isAnonymousStructOrUnion() || as_record->getName().empty()); // catches nested anon structs as well
     }
-    p_msg->set_content_hash(std::hash<std::string_view>::operator()(ClangToString(data, decl)));
+    p_msg->set_content_hash(std::hash<std::string_view>::operator()(ClangToString(context, decl)));
 }
 
-inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, clang::Decl* decl) {
-    if (!(data.context && p_msg && decl)) {
-        UEM_WARN("Failed to PopulateTemplateDetails due to nullptr! ctx={}, p_msg={}, decl={}", !!data.context, !!p_msg, !!decl);
+inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails* p_msg, const clang::Decl* decl) {
+    if (!(p_msg && decl)) {
+        UEM_WARN("Failed to PopulateTemplateDetails due to nullptr! p_msg={}, decl={}", !!p_msg, !!decl);
         return;
     }
-    const auto& policy = data.context->getPrintingPolicy();
+    const auto& policy = context.getPrintingPolicy();
     const auto PopulateParameters = [&](this auto self, const clang::TemplateParameterList* params, auto* p_params) -> void {
         if (!params) return;
         for (const auto* param : *params) {
             auto* p_param = p_params->add_parameters();
-            PopulateIdentifier(data, p_param->mutable_identifier(), param);
-            p_param->set_as_string(ClangToString(data, param));
+            PopulateIdentifier(context, p_param->mutable_identifier(), param);
+            p_param->set_as_string(ClangToString(context, param));
             if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
                 p_param->set_kind(type_param->wasDeclaredWithTypename()
                                       ? TEMPLATE_PARAMETER_KIND_TYPENAME
                                       : TEMPLATE_PARAMETER_KIND_CLASS);
                 if (type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (type_param->hasDefaultArgument()) {
-                    p_param->set_default_value(ClangToString(data, type_param->getDefaultArgument().getArgument()));
+                    p_param->set_default_value(ClangToString(context, type_param->getDefaultArgument().getArgument()));
                 }
             }
             else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
@@ -222,7 +225,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
                 p_param->set_type(non_type_param->getType().getAsString(policy));
                 if (non_type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (non_type_param->hasDefaultArgument()) {
-                    p_param->set_default_value(ClangToString(data, non_type_param->getDefaultArgument().getArgument()));
+                    p_param->set_default_value(ClangToString(context, non_type_param->getDefaultArgument().getArgument()));
                 }
             }
             else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
@@ -231,7 +234,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
                                       : TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                 if (template_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (template_param->hasDefaultArgument()) {
-                    p_param->set_default_value(ClangToString(data, template_param->getDefaultArgument().getArgument()));
+                    p_param->set_default_value(ClangToString(context, template_param->getDefaultArgument().getArgument()));
                 }
                 self(template_param->getTemplateParameters(), p_param);
             }
@@ -239,7 +242,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
     };
     const auto AddTemplateArguments = [&](const auto& args) {
         for (const auto& arg : args) {
-            p_msg->add_arguments(ClangToString(data, arg));
+            p_msg->add_arguments(ClangToString(context, arg));
         }
     };
     const auto SetSpecializationKind = [&](const clang::TemplateSpecializationKind kind) {
@@ -270,7 +273,7 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
                     return;
                 }
             }
-            UEM_WARN("Failed to get primary template for declaration {}", ClangToString(data, decl));
+            UEM_WARN("Failed to get primary template for declaration {}", ClangToString(context, decl));
         };
         const auto GetTemplateParameters = [&]() -> const clang::TemplateParameterList* {
             if (const auto* primary = as_cxx->getDescribedClassTemplate()) return primary->getTemplateParameters();
@@ -353,9 +356,9 @@ inline void PopulateTemplateDetails(const Data& data, TemplateDetails* p_msg, cl
     }
 }
 
-inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clang::FunctionDecl* decl) {
-    PopulateTemplateDetails(data, p_msg->mutable_template_details(), decl);
-    PopulateIdentifier(data, p_msg->mutable_identifier(), decl);
+inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p_msg, clang::FunctionDecl* decl) {
+    PopulateTemplateDetails(context, p_msg->mutable_template_details(), decl);
+    PopulateIdentifier(context, p_msg->mutable_identifier(), decl);
     p_msg->set_return_type(decl->getReturnType().getAsString());
     if (const auto as_cxx = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
         if (as_cxx->isStatic()) {
@@ -388,7 +391,7 @@ inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clan
         : decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE);
 
     if (decl->doesThisDeclarationHaveABody()) {
-        p_msg->set_inline_definition(ClangToString(data, decl->getBody()));
+        p_msg->set_inline_definition(ClangToString(context, decl->getBody()));
     }
 
     p_msg->set_storage_class(decl->getStorageClass() == clang::SC_Extern && decl->isExternCXXContext() ? FUN_VAR_STORAGE_CLASS_EXTERN
@@ -396,60 +399,20 @@ inline void PopulateFunctionCommon(const Data& data, FunctionCommon* p_msg, clan
             : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
 
     static clang::PrintingPolicy fn_sig_pp = [&] {
-        clang::PrintingPolicy pp(data.context->getPrintingPolicy());
+        clang::PrintingPolicy pp(context.getPrintingPolicy());
         pp.TerseOutput = true;
         return pp;
     }();
     p_msg->set_as_string(ClangToString(decl, fn_sig_pp));
-    p_msg->set_content_hash(std::hash<std::string>::operator()(ClangToString(data, decl)));
+    p_msg->set_content_hash(std::hash<std::string>::operator()(ClangToString(context, decl)));
 
     for (const auto param : decl->parameters()) {
         const auto p_param = p_msg->add_parameters();
-        const auto str = ClangToString(data, param);
+        const auto str = ClangToString(context, param);
         p_param->set_as_string(str);
         p_param->set_content_hash(std::hash<std::string>::operator()(str));
-        PopulateIdentifier(data, p_param->mutable_identifier(), param);
+        PopulateIdentifier(context, p_param->mutable_identifier(), param);
         p_param->set_type(param->getType().getAsString());
-        p_param->set_default_value(ClangToString(data, param->getInit()));
+        p_param->set_default_value(ClangToString(context, param->getInit()));
     }
-}
-
-/// @pre decl is a forward declaration
-/// @brief Adds a new forward declaration message to results from decl
-inline auto AddForwardDeclaration(const Data& data, clang::TagDecl* decl) {
-    if (decl->isThisDeclarationADefinition())
-        throw std::runtime_error("AddForwardDeclaration can't be called on a non forward declaration!");
-
-    auto* p_decl = google::protobuf::Arena::Create<Declaration>(&data.arena);
-    auto* p_forward_decl = p_decl->mutable_forward_declaration();
-
-    // assign the kind and template info
-    switch (decl->getTagKind()) {
-        case clang::TagTypeKind::Struct:
-            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_STRUCT);
-            PopulateTemplateDetails(data, p_forward_decl->mutable_template_details(), decl);
-            break;
-        case clang::TagTypeKind::Union:
-            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_UNION);
-            PopulateTemplateDetails(data, p_forward_decl->mutable_template_details(), decl);
-            break;
-        case clang::TagTypeKind::Class:
-            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_CLASS);
-            PopulateTemplateDetails(data, p_forward_decl->mutable_template_details(), decl);
-            break;
-        case clang::TagTypeKind::Enum:
-            p_forward_decl->set_kind(FORWARD_DECLARATION_KIND_ENUM);
-            PopulateEnumDetails(data, p_forward_decl->mutable_enum_details(), static_cast<clang::EnumDecl*>(decl));
-            break;
-        default:
-            throw std::runtime_error("AddForwardDeclaration can't be called on a nonstandard declaration!");
-    }
-
-    // populate declaration metadata
-    PopulateDeclarationMetadata(data, p_forward_decl->mutable_metadata(), decl);
-
-    // populate as string
-    p_forward_decl->set_as_string(ClangToString(data, decl));
-
-    return p_decl;
 }

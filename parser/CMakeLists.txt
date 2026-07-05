@@ -544,13 +544,14 @@ if(UEMETA_ENABLE_TESTING)
     )
 
     string(CONCAT UEMETA_TEST_PARSER_LAUNCHER_CONTENT
+        "file(REMOVE_RECURSE [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===])\n"
         "file(MAKE_DIRECTORY [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===])\n"
         "execute_process(\n"
         "    COMMAND \"$<TARGET_FILE:parser>\"\n"
         "        --compile-commands [===[${UEMETA_TEST_COMPILE_COMMANDS_JSON}]===]\n"
         "        --clang-path [===[${UEMETA_TEST_CLANG_EXECUTABLE_JSON}]===]\n"
         "        --output [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===]\n"
-        "        --format json\n"
+        "        --format binary\n"
         "        --path-begin [===[${UEMETA_TEST_WORKING_DIRECTORY_JSON}]===]\n"
         "    RESULT_VARIABLE UEMETA_TEST_PARSER_RESULT\n"
         ")\n"
@@ -566,6 +567,7 @@ if(UEMETA_ENABLE_TESTING)
         COMMAND "${CMAKE_COMMAND}" -E touch "${UEMETA_TEST_PARSER_OUTPUT_MARKER}"
         DEPENDS
             parser
+            "${UEMETA_TEST_PARSER_LAUNCHER}"
             "${UEMETA_TEST_TARGET_SOURCE}"
             ${UEMETA_TEST_TARGET_HEADERS}
         COMMENT "Preparing parser test output"
