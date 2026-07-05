@@ -61,10 +61,11 @@ void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
 
 /// @brief Logs the end of declaration traversal, starts post-processing
 void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) { // NOLINT(*-convert-member-functions-to-static)
-    GuardClangCallback("EndTranslationUnit", [] {
+    GuardClangCallback("EndTranslationUnit", [&] {
         UEM_INFO("Finished traversing AST");
         UEM_INFO("Computing occurrence indices...");
-        // now we need to calculate file info/occurrence indices
+        data->GenerateFileData();
+        data->Serialize();
     });
 }
 
@@ -275,7 +276,6 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
                         UEM_ERROR("(clang) AST traversal aborted due to an earlier exception.");
                         return;
                     }
-                    owner->Serialize();
                     owner->EndTranslationUnit(ctx);
                 });
             }
@@ -293,97 +293,4 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
         LogClangUnknownException("CreateASTConsumer");
         throw;
     }
-}
-
-void UEMeta::ClangHandler::Serialize() const {
-    const auto& cfg = Config::GetConfig();
-    const auto& messages = data->GetAllMessages();
-    if (cfg.DumpToJson()) {
-        std::string json = "[\n";
-        std::string buffer{};
-        constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
-        for (const auto* msg : messages) {
-            if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
-                json += buffer + ",\n";
-            }
-            buffer.clear();
-        }
-        if (!messages.empty()) {
-            json.pop_back();
-            json.pop_back();
-        }
-        json += "\n]";
-        const auto& log_path = Config::GetConfig().Log().UnderlyingPath();
-        const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath() : log_path) / "dump.json";
-        std::ofstream json_file(out_path, std::ios::trunc);
-        json_file << json;
-        json_file.close();
-        return;
-    }
-
-    const auto out_dir = cfg.OutputDirectory().UnderlyingPath();
-    const auto is_json = cfg.Format() == Config::SerializationFormat::json;
-
-    // Actually generates the file
-    const auto GenerateOutFile = [&](const google::protobuf::Message* msg) {
-        if (!msg) return;
-
-        // validate if in debug
-        #if defined(DEBUG)
-        auto validator = data->CreateValidator();
-        auto results = validator.Validate(*msg);
-        if (!results.ok()) {
-            UEM_ERROR("Validation error encountered: {}", results.status().message());
-            return;
-        }
-        if (const auto& validation_result = results.value(); !validation_result.success()) {
-            for (const auto& err : validation_result.violations()) {
-                UEM_ERROR("Proto validation failed: {}", err.proto().ShortDebugString());
-            }
-            return;
-        }
-        #endif
-
-        const auto* decl = dynamic_cast<const Declaration*>(msg);
-        if (!decl) {
-            UEM_WARN("Skipping unsupported serialization message: {}", msg->GetTypeName());
-            return;
-        }
-
-        // file path is in format {qualnamehash}-{contenthash}-{filenamehash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var][bin|json]
-        auto out_path = out_dir;
-        using p = std::tuple<const char*, const DeclarationMetadata&, const google::protobuf::Message&>;
-        auto [extension, meta, out_msg] = decl->has_alias() ? p{"alias", decl->alias().metadata(), decl->alias()}
-            : decl->has_enum_declaration() ? p{"enum", decl->enum_declaration().metadata(), decl->enum_declaration()}
-            : decl->has_forward_declaration() ? p{"fwdecl", decl->forward_declaration().metadata(), decl->forward_declaration()}
-            : decl->has_function() ? p{"function", decl->function().metadata(), decl->function()}
-            : decl->has_variable() ? p{"var", decl->variable().metadata(), decl->variable()}
-            : decl->record().kind() == RECORD_KIND_CLASS ? p{"class", decl->record().metadata(), decl->record()}
-            : decl->record().kind() == RECORD_KIND_STRUCT ? p{"struct", decl->record().metadata(), decl->record()}
-            : p{"union", decl->record().metadata(), decl->record()};
-
-        const auto& ident = meta.identifier();
-        out_path = out_path / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
-            meta.content_hash(), ident.file_path_hash(), meta.occurrence_index(), extension, is_json ? "json" : "bin");
-        std::ofstream out_file(out_path, std::ios::trunc);
-
-        if (is_json) {
-            thread_local std::string buffer{};
-            constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
-            buffer.clear();
-            if (google::protobuf::util::MessageToJsonString(out_msg, &buffer, options).ok()) {
-                out_file << buffer;
-            }
-            else {
-                UEM_ERROR("Failed to write to file: {}", out_path.string());
-            }
-        }
-        else if (!out_msg.SerializeToOstream(&out_file)) {
-            UEM_ERROR("Failed to write to file: {}", out_path.string());
-        }
-
-        out_file.close();
-    };
-
-    std::for_each(std::execution::par_unseq, messages.begin(), messages.end(), GenerateOutFile);
 }

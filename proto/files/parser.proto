@@ -6,17 +6,12 @@ import "buf/validate/validate.proto";
 
 // todo make sure fields that are optional aren't always supplied
 // todo figure out common fields between variables, fields, and params
-
+// todo take out the concept of Declaration and just have the top-level stuff
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
     string path = 1 [(buf.validate.field).required = true];
     uint64 path_hash = 2 [(buf.validate.field).required = true];
-    message Include {
-        string path = 1 [(buf.validate.field).required = true];
-        // The index of this include relative to the other declarations in the same file
-        uint32 occurrence_index = 2 [(buf.validate.field).required = true];
-    }
-    repeated Include includes = 3;
+    uint32 file_occurrence = 3 [(buf.validate.field).required = true];
 }
 
 // Top-level record declaration (class/struct/union).
@@ -192,9 +187,10 @@ message Identifier {
     string name = 1 [(buf.validate.field).required = true];
     string qualified_name = 2 [(buf.validate.field).required = true];
     uint64 qualified_name_hash = 3 [(buf.validate.field).required = true];
-    uint64 file_path_hash = 4 [(buf.validate.field).required = true];
-    repeated string scope = 5;
-    optional string documentation = 6;
+    string file_path = 4 [(buf.validate.field).required = true];
+    uint64 file_path_hash = 5 [(buf.validate.field).required = true];
+    repeated string scope = 6;
+    optional string documentation = 7;
 }
 
 // Identity, source, and file-splitting metadata shared by independently tracked

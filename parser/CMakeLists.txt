@@ -368,7 +368,8 @@ add_executable(parser
         src/MakeTool.cpp
         src/StablePath.cpp
         ${UEMETA_PROTO_GENERATED_SOURCES}
-        ${UEMETA_PROTO_GENERATED_HEADERS})
+        ${UEMETA_PROTO_GENERATED_HEADERS}
+        src/HeartbeatLogger.cpp)
 
 set_target_properties(parser PROPERTIES
     CXX_STANDARD 23
@@ -439,6 +440,7 @@ target_compile_definitions(parser PRIVATE
     QUILL_DISABLE_FUNCTION_NAME
     QUILL_DISABLE_FILE_INFO
     $<$<CONFIG:Debug>:DEBUG=1>
+    $<$<BOOL:${UEMETA_ENABLE_TESTING}>:TESTING=1>
 )
 
 set_property(DIRECTORY APPEND PROPERTY

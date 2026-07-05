@@ -131,8 +131,6 @@ namespace UEMeta {
          */
         void EndTranslationUnit(clang::ASTContext& ctx);
 
-        void Serialize() const;
-
         std::unique_ptr<ASTData> data;
     };
 }

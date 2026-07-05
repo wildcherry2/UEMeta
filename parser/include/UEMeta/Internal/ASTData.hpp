@@ -5,7 +5,9 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
-#if defined(DEBUG)
+#include <unordered_set>
+#include <unordered_map>
+#if defined(DEBUG) || defined(TESTING)
 #include "buf/validate/validator.h"
 #endif
 #include "parser.pb.h"
@@ -14,6 +16,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "clang/AST/Decl.h"
+#include "../Cli.hpp"
 
 void PopulateEnumDetails(clang::ASTContext& context, ParseResult::EnumDetails* p_msg, const clang::EnumDecl* decl);
 void PopulateTemplateDetails(clang::ASTContext& context, ParseResult::TemplateDetails* p_msg, const clang::Decl* decl);
@@ -44,7 +47,7 @@ namespace UEMeta {
         }
 
         void AddVisitedDecl(const clang::Decl* clang_decl, ParseResult::Declaration* p_decl) {
-            visited_decls.insert(std::pair<const clang::Decl*, ParseResult::Declaration*>{clang_decl, p_decl});
+            visited_decls.insert(std::pair{clang_decl, p_decl});
             all_unique_visited_decls.push_back(clang_decl);
         }
 
@@ -83,7 +86,7 @@ namespace UEMeta {
                                 throw std::runtime_error("AddForwardDeclaration can't be called on a nonstandard declaration!");
                         }
 
-                        visited_forward_decls.insert(decl);
+                        visited_forward_decls.insert(std::pair<const clang::Decl*, ParseResult::Declaration*>(decl, p_decl));
                         all_unique_visited_decls.push_back(decl);
                         return OnAfterVisit(as_tag, p_decl->mutable_forward_declaration()->metadata().identifier().qualified_name_hash());
                     }
@@ -111,7 +114,157 @@ namespace UEMeta {
             return to_serialize;
         }
 
-        #if defined(DEBUG)
+        void GenerateFileData() {
+            if (all_unique_visited_decls.empty()) return;
+            const auto& sm = context->getSourceManager();
+
+            // sort by occurrence in TU
+            std::sort(std::execution::par_unseq, all_unique_visited_decls.begin(), all_unique_visited_decls.end(),
+            [&](const clang::Decl* lhs, const clang::Decl* rhs) {
+                return sm.isBeforeInTranslationUnit(lhs->getLocation(), rhs->getLocation());
+            });
+
+            // assign occurrence indices and generate TLFileData
+            {
+                auto* current_file = Allocate<ParseResult::TLFileData>();
+                current_file->set_path(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path());
+                current_file->set_file_occurrence(0);
+                current_file->set_path_hash(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path_hash());
+
+                uint32_t occurrence_counter = 0;
+                for (auto decl_it = all_unique_visited_decls.begin(); decl_it != all_unique_visited_decls.end(); ++decl_it) {
+                    auto& info = GetInfo(*decl_it);
+
+                    // switching to a new file, now we need to make sure there are no gaps and patch if there are
+                    if (const auto file_hash = info.metadata->identifier().file_path_hash(); file_hash != current_file->path_hash()) {
+                        auto subrange = std::ranges::find_last_if(std::next(decl_it), all_unique_visited_decls.end(),
+                    [current_file, this](const clang::Decl* decl) {
+                            return GetInfo(decl).metadata->identifier().file_path_hash() == current_file->path_hash();
+                        });
+
+                        // found a gap, patch it while processing it
+                        if (!subrange.empty()) {
+                            for (auto end = subrange.begin(); decl_it != end; ++decl_it) {
+                                const auto& to_patch_info = GetInfo(*decl_it);
+                                to_patch_info.metadata->mutable_identifier()->set_file_path(current_file->path());
+                                to_patch_info.metadata->mutable_identifier()->set_file_path_hash(current_file->path_hash());
+                                to_patch_info.metadata->set_occurrence_index(occurrence_counter++);
+                            }
+                            info = GetInfo(*decl_it);
+                            // fall through to fill out occurrence index for current decl_it
+                        }
+
+                        // no gaps, update file stuff and reset occurrence counter
+                        else {
+                            const auto occ = current_file->file_occurrence() + 1;
+                            current_file = Allocate<ParseResult::TLFileData>();
+                            current_file->set_path(info.metadata->identifier().file_path());
+                            current_file->set_file_occurrence(occ);
+                            current_file->set_path_hash(info.metadata->identifier().file_path_hash());
+                            occurrence_counter = 0;
+                        }
+                    }
+
+                    info.metadata->set_occurrence_index(occurrence_counter++);
+                }
+            }
+        }
+
+        void Serialize() {
+            const auto& cfg = Config::GetConfig();
+            const auto& messages = to_serialize;
+            if (cfg.DumpToJson()) {
+                std::string json = "[\n";
+                std::string buffer{};
+                constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
+                for (const auto* msg : messages) {
+                    if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
+                        json += buffer + ",\n";
+                    }
+                    buffer.clear();
+                }
+                if (!messages.empty()) {
+                    json.pop_back();
+                    json.pop_back();
+                }
+                json += "\n]";
+                const auto& log_path = Config::GetConfig().Log().UnderlyingPath();
+                const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath() : log_path) / "dump.json";
+                std::ofstream json_file(out_path, std::ios::trunc);
+                json_file << json;
+                json_file.close();
+                return;
+            }
+
+            const auto out_dir = cfg.OutputDirectory().UnderlyingPath();
+            const auto is_json = cfg.Format() == Config::SerializationFormat::json;
+
+            // Actually generates the file
+            const auto GenerateOutFile = [&](google::protobuf::Message* msg) {
+                if (!msg) return;
+
+                // validate if in debug
+                #if defined(DEBUG) || defined(TESTING)
+                auto validator = CreateValidator();
+                auto results = validator.Validate(*msg);
+                if (!results.ok()) {
+                    UEM_ERROR("Validation error encountered: {}", results.status().message());
+                    return;
+                }
+                if (const auto& validation_result = results.value(); !validation_result.success()) {
+                    for (const auto& err : validation_result.violations()) {
+                        UEM_ERROR("Proto validation failed: {}", err.proto().ShortDebugString());
+                    }
+                    return;
+                }
+                #endif
+
+                const auto GetOutData = [&] () -> std::pair<std::filesystem::path, google::protobuf::Message*> {
+                    auto* p_decl = dynamic_cast<ParseResult::Declaration*>(msg); // fine until we throw in TLFileData
+                    if (!p_decl) {
+                        const auto* p_file = dynamic_cast<ParseResult::TLFileData*>(msg);
+                        if (!p_file) {
+                            UEM_WARN("Skipping unsupported serialization message: {}", msg->GetTypeName());
+                            return {};
+                        }
+                        // file path is in format {filepathhash}-{fileoccurrenceindex}.file[bin|json]
+                        return {out_dir / fmtquill::format("{}-{}.file{}",
+                            p_file->path_hash(), p_file->file_occurrence(), is_json ? "json" : "bin"), msg};
+                    }
+
+                    // file path is in format {qualnamehash}-{contenthash}-{filepathhash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var][bin|json]
+                    auto [extension, meta, out_msg] = GetInfo(p_decl);
+
+                    const auto& ident = meta->identifier();
+                    return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
+                        meta->content_hash(), ident.file_path_hash(), meta->occurrence_index(), extension, is_json ? "json" : "bin"), msg};
+                };
+
+                const auto [path, resolved_msg] = GetOutData();
+                if (path.empty()) return;
+                std::ofstream out_file(path, std::ios::trunc);
+
+                if (is_json) {
+                    thread_local std::string buffer{};
+                    constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
+                    buffer.clear();
+                    if (google::protobuf::util::MessageToJsonString(*resolved_msg, &buffer, options).ok()) {
+                        out_file << buffer;
+                    }
+                    else {
+                        UEM_ERROR("Failed to write to file: {}", path.string());
+                    }
+                }
+                else if (!resolved_msg->SerializeToOstream(&out_file)) {
+                    UEM_ERROR("Failed to write to file: {}", path.string());
+                }
+
+                out_file.close();
+            };
+            std::for_each(std::execution::par_unseq, messages.begin(), messages.end(), GenerateOutFile);
+        }
+
+        #if defined(DEBUG) || defined(TESTING)
         [[nodiscard]] buf::validate::Validator CreateValidator() const {
             static std::unique_ptr<buf::validate::ValidatorFactory> factory = buf::validate::ValidatorFactory::New().value();
             return factory->NewValidator(&arena);
@@ -124,7 +277,7 @@ namespace UEMeta {
         // We use maps to make sure we aren't double visiting, and so we can lookup parent structures when
         // we see that a declaration is nested within another.
         llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_decls{};
-        llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
+        llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_forward_decls{};
 
         mutable google::protobuf::Arena arena{};
 
@@ -141,5 +294,38 @@ namespace UEMeta {
         // We keep this vector so that when we generate TLFileData, we can use sorting with random access. This is
         // a more direct tradeoff of performance > memory.
         mutable std::vector<const clang::Decl*> all_unique_visited_decls{};
+
+        struct DeclInfo {
+            const char* extension;
+            ParseResult::DeclarationMetadata* metadata;
+            const google::protobuf::Message* message;
+        };
+
+        DeclInfo& GetInfo(const clang::Decl* decl) {
+            return GetInfo(visited_decls.contains(decl) ? visited_decls.at(decl) : visited_forward_decls.at(decl));
+        }
+
+        DeclInfo& GetInfo(ParseResult::Declaration* p_decl) {
+            static std::unordered_map<ParseResult::Declaration*, DeclInfo> cache{};
+            if (const auto existing = cache.find(p_decl); existing != cache.end()) {
+                return existing->second;
+            }
+
+            return cache.insert(std::pair{p_decl, p_decl->has_alias() ? DeclInfo{"alias", p_decl->mutable_alias()->mutable_metadata(), &p_decl->alias()}
+            : p_decl->has_enum_declaration() ? DeclInfo{"enum", p_decl->mutable_enum_declaration()->mutable_metadata(), &p_decl->enum_declaration()}
+            : p_decl->has_forward_declaration() ? DeclInfo{"fwdecl", p_decl->mutable_forward_declaration()->mutable_metadata(), &p_decl->forward_declaration()}
+            : p_decl->has_function() ? DeclInfo{"function", p_decl->mutable_function()->mutable_metadata(), &p_decl->function()}
+            : p_decl->has_variable() ? DeclInfo{"var", p_decl->mutable_variable()->mutable_metadata(), &p_decl->variable()}
+            : p_decl->record().kind() == ParseResult::RECORD_KIND_CLASS ? DeclInfo{"class", p_decl->mutable_record()->mutable_metadata(), &p_decl->record()}
+            : p_decl->record().kind() == ParseResult::RECORD_KIND_STRUCT ? DeclInfo{"struct", p_decl->mutable_record()->mutable_metadata(), &p_decl->record()}
+            : DeclInfo{"union", p_decl->mutable_record()->mutable_metadata(), &p_decl->record()}}).first->second;
+        }
+
+        struct TransientFile {
+            std::string_view file_path;
+            uint64_t hash;
+            uint32_t file_occurrence_index;
+            uint32_t local_occurrence_counter;
+        };
     };
 }

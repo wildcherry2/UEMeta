@@ -153,13 +153,17 @@ inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, co
             p_msg->set_qualified_name(as_named->getQualifiedNameAsString());
             p_msg->set_qualified_name_hash(std::hash<std::string>::operator()(p_msg->qualified_name()));
         }
-            if (as_named->getDeclName().isIdentifier()) {
-                p_msg->set_name(as_named->getName());
-            }
-            else {
-                p_msg->set_name(as_named->getNameAsString());
-            }
-        p_msg->set_file_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, decl)));
+
+        if (as_named->getDeclName().isIdentifier()) {
+            p_msg->set_name(as_named->getName());
+        }
+        else {
+            p_msg->set_name(as_named->getNameAsString());
+        }
+
+        const auto src = GetDeclSourcePath(context, decl);
+        p_msg->set_file_path(src.str());
+        p_msg->set_file_path_hash(GetDeclSourcePathHash(src));
         if (const auto* comment = context.getRawCommentForDeclNoCache(decl)) {
             p_msg->set_documentation(comment->getRawText(context.getSourceManager()).str());
         }
