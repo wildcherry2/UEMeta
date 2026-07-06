@@ -191,7 +191,8 @@ namespace UEMeta {
         }
 
         void Serialize() {
-            logger.SetStr("Serializing {} declarations...");
+            logger.SetStr("Serializing {} items...");
+            logger.SetValue(to_serialize.size());
             logger.Start();
             const auto& cfg = Config::GetConfig();
             if (cfg.DumpToJson()) {
@@ -211,7 +212,9 @@ namespace UEMeta {
                 }
                 json += "\n]";
                 const auto& log_path = Config::GetConfig().Log().UnderlyingPath();
-                const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath() : log_path) / "dump.json";
+                const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath()
+                    : log_path.parent_path()) / "dump.json";
+                UEM_INFO("Dumping to {}", out_path.string());
                 std::ofstream json_file(out_path, std::ios::trunc);
                 json_file << json;
                 json_file.close();

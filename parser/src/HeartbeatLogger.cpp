@@ -77,7 +77,7 @@ void UEMeta::CountingHeartbeatLogger::Increment() {
 
 void UEMeta::CountingHeartbeatLogger::Decrement() {
     if (counter.load() > 0) return (void)counter.fetch_add(-1);
-    UEM_WARN("CountingHeartbeatLogger tried to overflow counter!");
+    UEM_WARN("CountingHeartbeatLogger tried to underflow counter!");
 }
 
 void UEMeta::CountingHeartbeatLogger::SetValue(const uint64_t value) {

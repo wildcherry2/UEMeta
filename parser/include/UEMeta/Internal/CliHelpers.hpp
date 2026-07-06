@@ -90,7 +90,7 @@ static std::string LoadCompileCommandsString(const std::string& in) {
 #define UEM_DEFAULT_CLANG_CL_ADDL_ARGS std::vector<std::string>{"/clang:-mwaitpkg", "/clang:-fno-access-control"}
 
 #ifdef NDEBUG
-#define UEM_DEFAULT_FORMAT ::UEMeta::Config::SerializationFormat::json
+#define UEM_DEFAULT_FORMAT ::UEMeta::Config::SerializationFormat::binary
 #else
 #define UEM_DEFAULT_FORMAT ::UEMeta::Config::SerializationFormat::json
 #endif
