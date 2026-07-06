@@ -2,22 +2,20 @@ syntax = "proto3";
 
 package ParseResult;
 
-import "buf/validate/validate.proto";
-
 // todo make sure fields that are optional aren't always supplied
 // todo figure out common fields between variables, fields, and params
 // todo take out the concept of Declaration and just have the top-level stuff
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
-    string path = 1 [(buf.validate.field).required = true];
-    uint64 path_hash = 2 [(buf.validate.field).required = true];
-    uint32 file_occurrence = 3 [(buf.validate.field).required = true];
+    string path = 1;
+    uint64 path_hash = 2;
+    uint32 file_occurrence = 3;
 }
 
 // Top-level record declaration (class/struct/union).
 message TLRecordDeclaration {
-    DeclarationMetadata metadata = 1 [(buf.validate.field).required = true];
-    RecordKind kind = 2 [(buf.validate.field).required = true];
+    DeclarationMetadata metadata = 1;
+    RecordKind kind = 2;
     optional TemplateDetails template_details = 3;
     optional bool is_complete_definition = 4;
     // May be missing if the size is unknown (e.g. templates).
@@ -34,47 +32,47 @@ message TLRecordDeclaration {
 
 // Top-level enum declaration.
 message TLEnumDeclaration {
-    DeclarationMetadata metadata = 1 [(buf.validate.field).required = true];
-    EnumDetails details = 2 [(buf.validate.field).required = true];
+    DeclarationMetadata metadata = 1;
+    EnumDetails details = 2;
     repeated Enumerator enumerators = 3;
 }
 
 // Top-level forward declaration.
 message TLForwardDeclaration {
-    DeclarationMetadata metadata = 1 [(buf.validate.field).required = true];
-    ForwardDeclarationKind kind = 2 [(buf.validate.field).required = true];
+    DeclarationMetadata metadata = 1;
+    ForwardDeclarationKind kind = 2;
     optional TemplateDetails template_details = 3;
     // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
     optional EnumDetails enum_details = 4;
-    string as_string = 5 [(buf.validate.field).required = true];
+    string as_string = 5;
 }
 
 // Top-level alias declaration, including typedefs and using declarations.
 message TLAliasDeclaration {
-    DeclarationMetadata metadata = 1 [(buf.validate.field).required = true];
+    DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
-    string aliased_type = 3 [(buf.validate.field).required = true];
-    string alias = 4 [(buf.validate.field).required = true];
-    string as_string = 5 [(buf.validate.field).required = true];
+    string aliased_type = 3;
+    string alias = 4;
+    string as_string = 5;
 }
 
 // An independently tracked top-level free-function declaration.
 message TLFreeFunctionDeclaration {
-    DeclarationMetadata metadata = 1 [(buf.validate.field).required = true];
-    FunctionCommon common = 2 [(buf.validate.field).required = true];
+    DeclarationMetadata metadata = 1;
+    FunctionCommon common = 2;
 }
 
 // An independently tracked global-variable or static field declaration.
 message TLGlobalVariableDeclaration {
-    DeclarationMetadata metadata = 1 [(buf.validate.field).required = true];
+    DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
-    string type = 3 [(buf.validate.field).required = true];
-    string underlying_type = 4 [(buf.validate.field).required = true];
-    string as_string = 5 [(buf.validate.field).required = true];
+    string type = 3;
+    string underlying_type = 4;
+    string as_string = 5;
     optional VariableStorageClass storage_class = 6;
     optional string default_value = 7;
     optional ConstantEvaluationKind constant_evaluation_kind = 8;
-    uint64 content_hash = 9 [(buf.validate.field).required = true];
+    uint64 content_hash = 9;
 }
 
 enum RecordKind {
@@ -184,11 +182,11 @@ enum TemplateSpecializationKind {
 // source. A parameter's qualified_name includes its owning function's qualified
 // name and a parameter-specific suffix.
 message Identifier {
-    string name = 1 [(buf.validate.field).required = true];
-    string qualified_name = 2 [(buf.validate.field).required = true];
-    uint64 qualified_name_hash = 3 [(buf.validate.field).required = true];
-    string file_path = 4 [(buf.validate.field).required = true];
-    uint64 file_path_hash = 5 [(buf.validate.field).required = true];
+    string name = 1;
+    string qualified_name = 2;
+    uint64 qualified_name_hash = 3;
+    string file_path = 4;
+    uint64 file_path_hash = 5;
     repeated string scope = 6;
     optional string documentation = 7;
 }
@@ -198,10 +196,10 @@ message Identifier {
 // is kept here rather than in Identifier because it changes when the
 // declaration changes.
 message DeclarationMetadata {
-    Identifier identifier = 1 [(buf.validate.field).required = true];
-    uint64 content_hash = 2 [(buf.validate.field).required = true];
+    Identifier identifier = 1;
+    uint64 content_hash = 2;
     // The index of this declaration relative to the other declarations in the same file
-    uint32 occurrence_index = 3 [(buf.validate.field).required = true];
+    uint32 occurrence_index = 3;
     optional bool is_anonymous = 4;
 }
 
@@ -232,13 +230,13 @@ message TemplateDetails {
 //      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and default_value = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
-    TemplateParameterKind kind = 1 [(buf.validate.field).required = true];
-    Identifier identifier = 2 [(buf.validate.field).required = true];
+    TemplateParameterKind kind = 1;
+    Identifier identifier = 2;
     optional string type = 3;
     optional bool is_parameter_pack = 4;
     optional string default_value = 5;
     repeated TemplateParameter parameters = 6;
-    string as_string = 7 [(buf.validate.field).required = true];
+    string as_string = 7;
 }
 
 message EnumDetails {
@@ -254,19 +252,19 @@ message EnumDetails {
 // destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
 // member function is not independently tracked, so it has no occurrence_index.
 message MemberFunction {
-    FunctionCommon common = 1 [(buf.validate.field).required = true];
-    AccessSpecifier access = 2 [(buf.validate.field).required = true];
-    bool is_const = 3 [(buf.validate.field).required = true];
-    bool is_volatile = 4 [(buf.validate.field).required = true];
-    FunctionVirtuality virtuality = 5 [(buf.validate.field).required = true];
-    bool is_deleted = 6 [(buf.validate.field).required = true];
+    FunctionCommon common = 1;
+    AccessSpecifier access = 2;
+    bool is_const = 3;
+    bool is_volatile = 4;
+    FunctionVirtuality virtuality = 5;
+    bool is_deleted = 6;
     optional VTableIndex vtable_index = 8;
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,
 // like `FunctionDefinitionKind` or `is_explicit`, but it simplifies the processing this way
 message FunctionCommon {
-    FunctionKind kind = 1 [(buf.validate.field).required = true];
+    FunctionKind kind = 1;
     optional string return_type = 3; // assume 'auto' if not given and not ctor/dtor
     optional FunctionStorageClass storage_class = 4;
     optional ConstantEvaluationKind consteval_kind = 5;
@@ -274,39 +272,39 @@ message FunctionCommon {
     optional string inline_definition = 7; // the function body if present in the header
     optional TemplateDetails template_details = 9;
     repeated Parameter parameters = 10;
-    string as_string = 11 [(buf.validate.field).required = true]; // this is just the signature
-    Identifier identifier = 12 [(buf.validate.field).required = true];
-    uint64 content_hash = 13 [(buf.validate.field).required = true];
+    string as_string = 11; // this is just the signature
+    Identifier identifier = 12;
+    uint64 content_hash = 13;
     optional FunctionDefinitionKind definition_kind = 14; // only set for functions that are deletable/defaultable
 }
 
 // Parameters use a deterministic synthesized identity when no name is spelled in
 // the source.
 message Parameter {
-    Identifier identifier = 1 [(buf.validate.field).required = true];
-    string type = 2 [(buf.validate.field).required = true];
-    string default_value = 3 [(buf.validate.field).required = true];
-    string as_string = 4 [(buf.validate.field).required = true];
-    uint64 content_hash = 5 [(buf.validate.field).required = true];
+    Identifier identifier = 1;
+    string type = 2;
+    string default_value = 3;
+    string as_string = 4;
+    uint64 content_hash = 5;
 }
 
 message VTableIndex {
-    uint64 index = 1 [(buf.validate.field).required = true]; // the index of the virtual function within the vtable (slot)
-    int64 offset = 2 [(buf.validate.field).required = true]; // in a multiple inhertiance scenario, this is the index of the vtable to use, otherwise 0 (vfptroffset)
+    uint64 index = 1; // the index of the virtual function within the vtable (slot)
+    int64 offset = 2; // in a multiple inhertiance scenario, this is the index of the vtable to use, otherwise 0 (vfptroffset)
 }
 
 message Enumerator {
-    Identifier identifier = 1 [(buf.validate.field).required = true];
-    string value = 2 [(buf.validate.field).required = true];
+    Identifier identifier = 1;
+    string value = 2;
 }
 
 // A non-static data member owned by a TLRecordDeclaration.
 message Field {
-    Identifier identifier = 1 [(buf.validate.field).required = true];
-    string as_string = 2 [(buf.validate.field).required = true]; // note that this excludes any default values (that's a separate entry)
-    AccessSpecifier access = 3 [(buf.validate.field).required = true];
-    bool is_mutable = 4 [(buf.validate.field).required = true];
-    bool is_bitfield = 5 [(buf.validate.field).required = true];
+    Identifier identifier = 1;
+    string as_string = 2; // note that this excludes any default values (that's a separate entry)
+    AccessSpecifier access = 3;
+    bool is_mutable = 4;
+    bool is_bitfield = 5;
 
     // if is_bitfield, then this is the bit width, otherwise this is the size of the field in the layout (same thing, really)
     // may be missing for non-bitfields if there's no layout (primary template)
@@ -314,16 +312,16 @@ message Field {
 
     // may also be missing if there's no layout
     optional uint64 offset_bits = 7;
-    uint64 content_hash = 8 [(buf.validate.field).required = true];
+    uint64 content_hash = 8;
     optional string default_value = 9;
-    string type = 10 [(buf.validate.field).required = true];
-    string underlying_type = 11 [(buf.validate.field).required = true];
+    string type = 10;
+    string underlying_type = 11;
 }
 
 message BaseSpecifier {
-    Identifier identifier = 1 [(buf.validate.field).required = true];
-    AccessSpecifier access = 2 [(buf.validate.field).required = true];
+    Identifier identifier = 1;
+    AccessSpecifier access = 2;
     optional bool is_virtual = 3;
     optional uint64 offset = 4;
-    string as_string = 5 [(buf.validate.field).required = true];
+    string as_string = 5;
 }

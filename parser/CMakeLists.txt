@@ -77,11 +77,6 @@ set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
     CACHE STRING "Protobuf Git tag fetched by CMake"
 )
-set(UEMETA_PROTOVALIDATE_CC_VERSION "1.1.0" CACHE STRING "protovalidate-cc release fetched by CMake")
-set(UEMETA_PROTOVALIDATE_CC_GIT_TAG
-    "v${UEMETA_PROTOVALIDATE_CC_VERSION}"
-    CACHE STRING "protovalidate-cc Git tag fetched by CMake"
-)
 set(UEMETA_GOOGLETEST_VERSION "1.14.0" CACHE STRING "GoogleTest release fetched by CMake")
 set(UEMETA_GOOGLETEST_GIT_TAG
     "v${UEMETA_GOOGLETEST_VERSION}"
@@ -95,6 +90,7 @@ set(UEMETA_MSVC_DISABLED_WARNINGS
 )
 set(UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS
     /w # suppress warnings while compiling non-project targets
+    /wd4530 # external code may intentionally compile without unwind semantics
 )
 
 FetchContent_Declare(llvm_prebuilt
@@ -127,14 +123,6 @@ FetchContent_Declare(protobuf
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protobuf-${UEMETA_PROTOBUF_VERSION}"
-    SYSTEM
-)
-
-FetchContent_Declare(protovalidate_cc
-    GIT_REPOSITORY https://github.com/bufbuild/protovalidate-cc.git
-    GIT_TAG "${UEMETA_PROTOVALIDATE_CC_GIT_TAG}"
-    GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protovalidate-cc-${UEMETA_PROTOVALIDATE_CC_VERSION}"
     SYSTEM
 )
 
@@ -193,35 +181,6 @@ function(UEMeta_AppendTargetInterfaceIncludes target)
     endif()
 endfunction()
 
-function(UEMeta_PatchCelCppForProtobuf35 source_dir)
-    set(_uemeta_cel_well_known_types "${source_dir}/internal/well_known_types.cc")
-
-    if(NOT EXISTS "${_uemeta_cel_well_known_types}")
-        return()
-    endif()
-
-    file(READ "${_uemeta_cel_well_known_types}" _uemeta_cel_source)
-    set(_uemeta_field_label_expression
-        "(field->is_repeated() ? FieldDescriptor::LABEL_REPEATED : field->is_required() ? FieldDescriptor::LABEL_REQUIRED : FieldDescriptor::LABEL_OPTIONAL)"
-    )
-    string(REPLACE
-        "field->label() != label"
-        "${_uemeta_field_label_expression} != label"
-        _uemeta_cel_patched
-        "${_uemeta_cel_source}"
-    )
-    string(REPLACE
-        "LabelToString(field->label())"
-        "LabelToString(${_uemeta_field_label_expression})"
-        _uemeta_cel_patched
-        "${_uemeta_cel_patched}"
-    )
-
-    if(NOT _uemeta_cel_patched STREQUAL _uemeta_cel_source)
-        file(WRITE "${_uemeta_cel_well_known_types}" "${_uemeta_cel_patched}")
-    endif()
-endfunction()
-
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
@@ -240,22 +199,6 @@ UEMeta_AppendTargetInterfaceIncludes(
     "${protobuf_SOURCE_DIR}/third_party/utf8_range"
 )
 
-set(PROTOVALIDATE_CC_ENABLE_VENDORING ON CACHE BOOL "" FORCE)
-set(PROTOVALIDATE_CC_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-set(PROTOVALIDATE_CC_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(PROTOVALIDATE_CC_ENABLE_CONFORMANCE OFF CACHE BOOL "" FORCE)
-if(DEFINED CMAKE_CXX_STANDARD)
-    set(_uemeta_previous_cxx_standard "${CMAKE_CXX_STANDARD}")
-endif()
-set(CMAKE_CXX_STANDARD 23)
-UEMeta_FetchContent_MakeAvailable(protovalidate_cc)
-UEMeta_PatchCelCppForProtobuf35("${CMAKE_CURRENT_BINARY_DIR}/_deps/cel_cpp-src")
-if(DEFINED _uemeta_previous_cxx_standard)
-    set(CMAKE_CXX_STANDARD "${_uemeta_previous_cxx_standard}")
-else()
-    unset(CMAKE_CXX_STANDARD)
-endif()
-
 if(MSVC)
     # The official LLVM Windows archive is release-built with /MT and STL debug
     # iterators disabled, so every static dependency in the final binary must
@@ -263,11 +206,6 @@ if(MSVC)
     set(UEMETA_MSVC_RUNTIME_LIBRARY "MultiThreaded")
     UEMeta_ConfigureMSVCDependencyTargets(
         "${protobuf_SOURCE_DIR}"
-        "${UEMETA_MSVC_RUNTIME_LIBRARY}"
-        ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
-    )
-    UEMeta_ConfigureMSVCDependencyTargets(
-        "${protovalidate_cc_SOURCE_DIR}"
         "${UEMETA_MSVC_RUNTIME_LIBRARY}"
         ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
     )
@@ -433,7 +371,6 @@ target_link_libraries(parser PRIVATE
     CLI11::CLI11
     quill::quill
     protobuf::libprotobuf
-    protovalidate_cc::protovalidate_cc
 )
 
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
@@ -443,7 +380,6 @@ target_compile_definitions(parser PRIVATE
     QUILL_DISABLE_FUNCTION_NAME
     QUILL_DISABLE_FILE_INFO
     $<$<CONFIG:Debug>:DEBUG=1>
-    $<$<BOOL:${UEMETA_ENABLE_TESTING}>:TESTING=1>
 )
 
 set_property(DIRECTORY APPEND PROPERTY
@@ -550,8 +486,15 @@ if(UEMETA_ENABLE_TESTING)
     )
 
     string(CONCAT UEMETA_TEST_PARSER_LAUNCHER_CONTENT
-        "file(REMOVE_RECURSE [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===])\n"
         "file(MAKE_DIRECTORY [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===])\n"
+        "file(GLOB UEMETA_TEST_STALE_OUTPUT_FILES\n"
+        "    [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*bin]===]\n"
+        "    [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*json]===]\n"
+        ")\n"
+        "if(UEMETA_TEST_STALE_OUTPUT_FILES)\n"
+        "    file(REMOVE \${UEMETA_TEST_STALE_OUTPUT_FILES})\n"
+        "endif()\n"
+        "file(REMOVE [===[${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}]===])\n"
         "execute_process(\n"
         "    COMMAND \"$<TARGET_FILE:parser>\"\n"
         "        --compile-commands [===[${UEMETA_TEST_COMPILE_COMMANDS_JSON}]===]\n"
@@ -564,13 +507,16 @@ if(UEMETA_ENABLE_TESTING)
         "if(NOT UEMETA_TEST_PARSER_RESULT EQUAL 0)\n"
         "    message(FATAL_ERROR \"parser test target run failed with exit code \${UEMETA_TEST_PARSER_RESULT}\")\n"
         "endif()\n"
+        "file(GLOB UEMETA_TEST_PARSER_OUTPUT_FILES [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*bin]===])\n"
+        "if(NOT UEMETA_TEST_PARSER_OUTPUT_FILES)\n"
+        "    message(FATAL_ERROR \"parser test target produced no binary output in ${UEMETA_TEST_OUTPUT_DIR_JSON}\")\n"
+        "endif()\n"
+        "file(WRITE [===[${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}]===] \"ready\\n\")\n"
     )
     file(GENERATE OUTPUT "${UEMETA_TEST_PARSER_LAUNCHER}" CONTENT "${UEMETA_TEST_PARSER_LAUNCHER_CONTENT}")
 
-    add_custom_command(
-        OUTPUT "${UEMETA_TEST_PARSER_OUTPUT_MARKER}"
+    add_custom_target(uemeta-test-output
         COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_TEST_PARSER_LAUNCHER}"
-        COMMAND "${CMAKE_COMMAND}" -E touch "${UEMETA_TEST_PARSER_OUTPUT_MARKER}"
         DEPENDS
             parser
             "${UEMETA_TEST_PARSER_LAUNCHER}"
@@ -578,10 +524,6 @@ if(UEMETA_ENABLE_TESTING)
             ${UEMETA_TEST_TARGET_HEADERS}
         COMMENT "Preparing parser test output"
         VERBATIM
-    )
-
-    add_custom_target(uemeta-test-output
-        DEPENDS "${UEMETA_TEST_PARSER_OUTPUT_MARKER}"
     )
 
     add_executable(uemeta-parser-tests
@@ -623,10 +565,20 @@ if(UEMETA_ENABLE_TESTING)
         GTest::gtest_main
     )
 
+    add_test(
+        NAME uemeta-test-output-ctest
+        COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_TEST_PARSER_LAUNCHER}"
+    )
+    set_tests_properties(uemeta-test-output-ctest PROPERTIES
+        FIXTURES_SETUP uemeta-parser-output
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+
     gtest_discover_tests(uemeta-parser-tests
         DISCOVERY_MODE PRE_TEST
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         PROPERTIES
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            FIXTURES_REQUIRED uemeta-parser-output
     )
 endif()
 

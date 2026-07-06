@@ -1,15 +1,12 @@
 #pragma once
 #include <algorithm>
 #include <execution>
-#include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
-#if defined(DEBUG) || defined(TESTING)
-#include "buf/validate/validator.h"
-#endif
 #include "parser.pb.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclBase.h"
@@ -229,22 +226,6 @@ namespace UEMeta {
                 logger.Decrement();
                 if (!msg) return;
 
-                // validate if in debug
-                #if defined(DEBUG) || defined(TESTING)
-                auto validator = CreateValidator();
-                auto results = validator.Validate(*msg);
-                if (!results.ok()) {
-                    UEM_ERROR("Validation error encountered: {}", results.status().message());
-                    return;
-                }
-                if (const auto& validation_result = results.value(); !validation_result.success()) {
-                    for (const auto& err : validation_result.violations()) {
-                        UEM_ERROR("Proto validation failed: {}", err.proto().ShortDebugString());
-                    }
-                    return;
-                }
-                #endif
-
                 const auto GetOutData = [&] () -> std::pair<std::filesystem::path, google::protobuf::Message*> {
                     auto* p_decl = dynamic_cast<ParseResult::Declaration*>(msg); // fine until we throw in TLFileData
                     if (!p_decl) {
@@ -292,13 +273,6 @@ namespace UEMeta {
             logger.Stop();
             UEM_INFO("Serialized {} declarations!", to_serialize.size());
         }
-
-        #if defined(DEBUG) || defined(TESTING)
-        [[nodiscard]] buf::validate::Validator CreateValidator() const {
-            static std::unique_ptr<buf::validate::ValidatorFactory> factory = buf::validate::ValidatorFactory::New().value();
-            return factory->NewValidator(&arena);
-        }
-        #endif
 
     private:
         clang::ASTContext* context{};
