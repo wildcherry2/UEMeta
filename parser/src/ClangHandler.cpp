@@ -74,8 +74,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
 
     auto& context = data->GetContext();
-    auto* p_decl = data->Allocate<Declaration>();
-    auto* p_record_decl = p_decl->mutable_record();
+    auto* p_record_decl = data->Allocate<TLRecordDeclaration>();
     PopulateDeclarationMetadata(context, p_record_decl->mutable_metadata(), clang_decl);
     PopulateTemplateDetails(context, p_record_decl->mutable_template_details(), clang_decl);
     p_record_decl->set_is_complete_definition(clang_decl->isCompleteDefinition());
@@ -176,7 +175,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
         }
     }
 
-    data->AddVisitedDecl(clang_decl, p_decl);
+    data->AddVisitedDecl(clang_decl, p_record_decl);
     return data->OnAfterVisit(clang_decl, p_record_decl->metadata().identifier().qualified_name_hash());
 }
 
@@ -184,8 +183,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
 
     auto& context = data->GetContext();
-    auto* p_decl = data->Allocate<Declaration>();
-    auto* p_enum_decl = p_decl->mutable_enum_declaration();
+    auto* p_enum_decl = data->Allocate<TLEnumDeclaration>();
     PopulateDeclarationMetadata(context, p_enum_decl->mutable_metadata(), clang_decl);
     PopulateEnumDetails(context, p_enum_decl->mutable_details(), clang_decl);
     for (auto* enumerator : clang_decl->enumerators()) {
@@ -194,7 +192,7 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
         p_enumerator->set_value(llvm::toString(enumerator->getInitVal(), 10));
     }
 
-    data->AddVisitedDecl(clang_decl, p_decl);
+    data->AddVisitedDecl(clang_decl, p_enum_decl);
     return data->OnAfterVisit(clang_decl, p_enum_decl->mutable_metadata()->identifier().qualified_name_hash());
 }
 
@@ -202,26 +200,24 @@ bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* clang_decl) {
     if (clang_decl->isCXXClassMember() || data->OnVisit(clang_decl)) return true; // handled by VisitRecordDecl
 
     auto& context = data->GetContext();
-    auto* p_decl = data->Allocate<Declaration>();
-    auto* p_fun = p_decl->mutable_function();
+    auto* p_fun = data->Allocate<TLFreeFunctionDeclaration>();
     PopulateDeclarationMetadata(context, p_fun->mutable_metadata(), clang_decl);
     PopulateFunctionCommon(context, p_fun->mutable_common(), clang_decl);
-    data->AddVisitedDecl(clang_decl, p_decl);
+    data->AddVisitedDecl(clang_decl, p_fun);
     return data->OnAfterVisit(clang_decl, p_fun->metadata().identifier().qualified_name_hash());
 }
 
 bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
     auto& context = data->GetContext();
-    auto* p_decl = data->Allocate<Declaration>();
-    auto* p_alias = p_decl->mutable_alias();
+    auto* p_alias = data->Allocate<TLAliasDeclaration>();
     PopulateDeclarationMetadata(context, p_alias->mutable_metadata(), clang_decl);
     PopulateTemplateDetails(context, p_alias->mutable_template_details(), clang_decl);
     p_alias->set_alias(clang_decl->getNameAsString());
     p_alias->set_aliased_type(clang_decl->getUnderlyingType().getAsString());
     const auto str = ClangToString(context, clang_decl);
     p_alias->set_as_string(str);
-    data->AddVisitedDecl(clang_decl, p_decl);
+    data->AddVisitedDecl(clang_decl, p_alias);
     return data->OnAfterVisit(clang_decl, p_alias->metadata().identifier().qualified_name_hash());
 }
 
@@ -230,8 +226,7 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
         || data->OnVisit(clang_decl))
         return true;
     auto& context = data->GetContext();
-    auto* p_decl = data->Allocate<Declaration>();
-    auto* p_var = p_decl->mutable_variable();
+    auto* p_var = data->Allocate<TLGlobalVariableDeclaration>();
     PopulateDeclarationMetadata(context, p_var->mutable_metadata(), clang_decl);
     p_var->set_underlying_type(GetUnderlyingType(clang_decl->getType()).getAsString());
     p_var->set_type(clang_decl->getType().getAsString());
@@ -245,7 +240,7 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
         : VAR_STORAGE_CLASS_UNSPECIFIED);
     p_var->set_constant_evaluation_kind(clang_decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE); // vars can't be consteval
     p_var->set_default_value(ClangToString(context, clang_decl->getInit()));
-    data->AddVisitedDecl(clang_decl, p_decl);
+    data->AddVisitedDecl(clang_decl, p_var);
     return data->OnAfterVisit(clang_decl, p_var->metadata().identifier().qualified_name_hash());
 }
 

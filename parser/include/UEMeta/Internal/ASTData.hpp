@@ -16,6 +16,7 @@
 #include "../Cli.hpp"
 
 void PopulateEnumDetails(clang::ASTContext& context, ParseResult::EnumDetails* p_msg, const clang::EnumDecl* decl);
+void PopulateDeclarationMetadata(clang::ASTContext& context, ParseResult::DeclarationMetadata* p_msg, const clang::Decl* decl);
 void PopulateTemplateDetails(clang::ASTContext& context, ParseResult::TemplateDetails* p_msg, const clang::Decl* decl);
 
 namespace UEMeta {
@@ -43,8 +44,8 @@ namespace UEMeta {
             }
         }
 
-        void AddVisitedDecl(const clang::Decl* clang_decl, ParseResult::Declaration* p_decl) {
-            visited_decls.insert(std::pair{clang_decl, p_decl});
+        void AddVisitedDecl(const clang::Decl* clang_decl, google::protobuf::Message* msg) {
+            visited_decls.insert(std::pair{clang_decl, msg});
             all_unique_visited_decls.push_back(clang_decl);
         }
 
@@ -58,8 +59,8 @@ namespace UEMeta {
                     if (!visited_forward_decls.contains(decl)) {
                         // generate a new forward declaration message and return
                         auto& ast_context = GetContext();
-                        const auto p_decl = Allocate<ParseResult::Declaration>();
-                        auto* p_forward_decl = p_decl->mutable_forward_declaration();
+                        auto* p_forward_decl = Allocate<ParseResult::TLForwardDeclaration>();
+                        PopulateDeclarationMetadata(ast_context, p_forward_decl->mutable_metadata(), decl);
 
                         // assign the kind and template info
                         switch (as_tag->getTagKind()) {
@@ -83,9 +84,9 @@ namespace UEMeta {
                                 throw std::runtime_error("AddForwardDeclaration can't be called on a nonstandard declaration!");
                         }
 
-                        visited_forward_decls.insert(std::pair<const clang::Decl*, ParseResult::Declaration*>(decl, p_decl));
+                        visited_forward_decls.insert(std::pair<const clang::Decl*, google::protobuf::Message*>(decl, p_forward_decl));
                         all_unique_visited_decls.push_back(decl);
-                        return OnAfterVisit(as_tag, p_decl->mutable_forward_declaration()->metadata().identifier().qualified_name_hash());
+                        return OnAfterVisit(as_tag, p_forward_decl->metadata().identifier().qualified_name_hash());
                     }
                     return true;
                 }
@@ -101,7 +102,9 @@ namespace UEMeta {
             if (const auto decl_context = clang_decl->getDeclContext(); decl_context->isRecord()) {
                 auto* as_cls = llvm::cast<clang::RecordDecl>(decl_context);
                 if (const auto parent = visited_decls.find(as_cls); parent != visited_decls.end()) {
-                    parent->getSecond()->mutable_record()->add_nested_hashes(clang_decl_fqn_hash);
+                    if (auto* parent_record = dynamic_cast<ParseResult::TLRecordDeclaration*>(parent->getSecond())) {
+                        parent_record->add_nested_hashes(clang_decl_fqn_hash);
+                    }
                 }
             }
             logger.Increment();
@@ -191,30 +194,38 @@ namespace UEMeta {
             logger.SetStr("Serializing {} items...");
             logger.SetValue(to_serialize.size());
             logger.Start();
+            constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
             const auto& cfg = Config::GetConfig();
             if (cfg.DumpToJson()) {
-                std::string json = "[\n";
                 std::string buffer{};
-                constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
-                for (const auto* msg : to_serialize) {
-                    if (google::protobuf::util::MessageToJsonString(*msg, &buffer, options).ok()) {
-                        json += buffer + ",\n";
-                    }
-                    buffer.clear();
+                const auto wrapper = google::protobuf::Arena::Create<ParseResult::TLItemList>(&arena);
+                const auto list = wrapper->mutable_items();
+                for (auto* msg : to_serialize) {
+                    auto item = google::protobuf::Arena::Create<ParseResult::TLItem>(&arena);
+                    dynamic_cast<ParseResult::TLRecordDeclaration*>(msg) ? item->set_allocated_record(static_cast<ParseResult::TLRecordDeclaration*>(msg))
+                        : dynamic_cast<ParseResult::TLEnumDeclaration*>(msg) ? item->set_allocated_enum_declaration(static_cast<ParseResult::TLEnumDeclaration*>(msg))
+                        : dynamic_cast<ParseResult::TLForwardDeclaration*>(msg) ? item->set_allocated_forward_declaration(static_cast<ParseResult::TLForwardDeclaration*>(msg))
+                        : dynamic_cast<ParseResult::TLAliasDeclaration*>(msg) ? item->set_allocated_alias(static_cast<ParseResult::TLAliasDeclaration*>(msg))
+                        : dynamic_cast<ParseResult::TLFreeFunctionDeclaration*>(msg) ? item->set_allocated_function(static_cast<ParseResult::TLFreeFunctionDeclaration*>(msg))
+                        : dynamic_cast<ParseResult::TLGlobalVariableDeclaration*>(msg) ? item->set_allocated_variable(static_cast<ParseResult::TLGlobalVariableDeclaration*>(msg))
+                        : dynamic_cast<ParseResult::TLFileData*>(msg) ? item->set_allocated_file_data(static_cast<ParseResult::TLFileData*>(msg))
+                        : [&]{ UEM_WARN("Unsupported decl, dropping: {}", msg->DebugString()); }();
+                    list->AddAllocated(item);
                     logger.Decrement();
                 }
-                if (!to_serialize.empty()) {
-                    json.pop_back();
-                    json.pop_back();
+
+                if (google::protobuf::util::MessageToJsonString(*wrapper, &buffer, options).ok()) {
+                    const auto& log_path = Config::GetConfig().Log().UnderlyingPath();
+                    const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath()
+                        : log_path.parent_path()) / "dump.json";
+                    UEM_INFO("Dumping to {}", out_path.string());
+                    std::ofstream json_file(out_path, std::ios::trunc);
+                    json_file << buffer;
+                    json_file.close();
                 }
-                json += "\n]";
-                const auto& log_path = Config::GetConfig().Log().UnderlyingPath();
-                const auto out_path = (log_path.empty() ? StablePath::current_program_directory().UnderlyingPath()
-                    : log_path.parent_path()) / "dump.json";
-                UEM_INFO("Dumping to {}", out_path.string());
-                std::ofstream json_file(out_path, std::ios::trunc);
-                json_file << json;
-                json_file.close();
+                else {
+                    UEM_ERROR("Failed to serialize item list to JSON!");
+                }
                 return;
             }
 
@@ -227,24 +238,25 @@ namespace UEMeta {
                 if (!msg) return;
 
                 const auto GetOutData = [&] () -> std::pair<std::filesystem::path, google::protobuf::Message*> {
-                    auto* p_decl = dynamic_cast<ParseResult::Declaration*>(msg); // fine until we throw in TLFileData
-                    if (!p_decl) {
-                        const auto* p_file = dynamic_cast<ParseResult::TLFileData*>(msg);
-                        if (!p_file) {
-                            UEM_WARN("Skipping unsupported serialization message: {}", msg->GetTypeName());
-                            return {};
-                        }
+                    if (const auto* p_file = dynamic_cast<ParseResult::TLFileData*>(msg)) {
                         // file path is in format {filepathhash}-{fileoccurrenceindex}.file[bin|json]
                         return {out_dir / fmtquill::format("{}-{}.file{}",
                             p_file->path_hash(), p_file->file_occurrence(), is_json ? "json" : "bin"), msg};
                     }
 
                     // file path is in format {qualnamehash}-{contenthash}-{filepathhash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var][bin|json]
-                    auto [extension, meta, out_msg] = GetInfo(p_decl);
+                    DeclInfo* info{};
+                    try {
+                        info = &GetInfo(msg);
+                    } catch (const std::exception& ex) {
+                        UEM_WARN("Skipping unsupported serialization message: {}", ex.what());
+                        return std::pair<std::filesystem::path, google::protobuf::Message*>{};
+                    }
 
-                    const auto& ident = meta->identifier();
+                    const auto& ident = info->metadata->identifier();
                     return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
-                        meta->content_hash(), ident.file_path_hash(), meta->occurrence_index(), extension, is_json ? "json" : "bin"), msg};
+                        info->metadata->content_hash(), ident.file_path_hash(), info->metadata->occurrence_index(),
+                        info->extension, is_json ? "json" : "bin"), info->message};
                 };
 
                 const auto [path, resolved_msg] = GetOutData();
@@ -253,7 +265,6 @@ namespace UEMeta {
 
                 if (is_json) {
                     thread_local std::string buffer{};
-                    constexpr google::protobuf::json::PrintOptions options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
                     buffer.clear();
                     if (google::protobuf::util::MessageToJsonString(*resolved_msg, &buffer, options).ok()) {
                         out_file << buffer;
@@ -279,8 +290,8 @@ namespace UEMeta {
 
         // We use maps to make sure we aren't double visiting, and so we can lookup parent structures when
         // we see that a declaration is nested within another.
-        llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_decls{};
-        llvm::DenseMap<const clang::Decl*, ParseResult::Declaration*> visited_forward_decls{};
+        llvm::DenseMap<const clang::Decl*, google::protobuf::Message*> visited_decls{};
+        llvm::DenseMap<const clang::Decl*, google::protobuf::Message*> visited_forward_decls{};
 
         mutable google::protobuf::Arena arena{};
         mutable CountingHeartbeatLogger logger{"Visited {} nodes..."};
@@ -302,27 +313,45 @@ namespace UEMeta {
         struct DeclInfo {
             const char* extension;
             ParseResult::DeclarationMetadata* metadata;
-            const google::protobuf::Message* message;
+            google::protobuf::Message* message;
         };
 
-        DeclInfo& GetInfo(const clang::Decl* decl) {
+        DeclInfo& GetInfo(const clang::Decl* decl) const {
             return GetInfo(visited_decls.contains(decl) ? visited_decls.at(decl) : visited_forward_decls.at(decl));
         }
 
-        DeclInfo& GetInfo(ParseResult::Declaration* p_decl) {
-            static std::unordered_map<ParseResult::Declaration*, DeclInfo> cache{};
-            if (const auto existing = cache.find(p_decl); existing != cache.end()) {
+        static DeclInfo& GetInfo(google::protobuf::Message* msg) {
+            static std::unordered_map<google::protobuf::Message*, DeclInfo> cache{};
+            if (const auto existing = cache.find(msg); existing != cache.end()) {
                 return existing->second;
             }
 
-            return cache.insert(std::pair{p_decl, p_decl->has_alias() ? DeclInfo{"alias", p_decl->mutable_alias()->mutable_metadata(), &p_decl->alias()}
-            : p_decl->has_enum_declaration() ? DeclInfo{"enum", p_decl->mutable_enum_declaration()->mutable_metadata(), &p_decl->enum_declaration()}
-            : p_decl->has_forward_declaration() ? DeclInfo{"fwdecl", p_decl->mutable_forward_declaration()->mutable_metadata(), &p_decl->forward_declaration()}
-            : p_decl->has_function() ? DeclInfo{"function", p_decl->mutable_function()->mutable_metadata(), &p_decl->function()}
-            : p_decl->has_variable() ? DeclInfo{"var", p_decl->mutable_variable()->mutable_metadata(), &p_decl->variable()}
-            : p_decl->record().kind() == ParseResult::RECORD_KIND_CLASS ? DeclInfo{"class", p_decl->mutable_record()->mutable_metadata(), &p_decl->record()}
-            : p_decl->record().kind() == ParseResult::RECORD_KIND_STRUCT ? DeclInfo{"struct", p_decl->mutable_record()->mutable_metadata(), &p_decl->record()}
-            : DeclInfo{"union", p_decl->mutable_record()->mutable_metadata(), &p_decl->record()}}).first->second;
+            if (auto* p_alias = dynamic_cast<ParseResult::TLAliasDeclaration*>(msg)) {
+                return cache.insert(std::pair{msg, DeclInfo{"alias", p_alias->mutable_metadata(), p_alias}}).first->second;
+            }
+            if (auto* p_enum = dynamic_cast<ParseResult::TLEnumDeclaration*>(msg)) {
+                return cache.insert(std::pair{msg, DeclInfo{"enum", p_enum->mutable_metadata(), p_enum}}).first->second;
+            }
+            if (auto* p_forward_decl = dynamic_cast<ParseResult::TLForwardDeclaration*>(msg)) {
+                return cache.insert(std::pair{msg, DeclInfo{"fwdecl", p_forward_decl->mutable_metadata(), p_forward_decl}}).first->second;
+            }
+            if (auto* p_function = dynamic_cast<ParseResult::TLFreeFunctionDeclaration*>(msg)) {
+                return cache.insert(std::pair{msg, DeclInfo{"function", p_function->mutable_metadata(), p_function}}).first->second;
+            }
+            if (auto* p_variable = dynamic_cast<ParseResult::TLGlobalVariableDeclaration*>(msg)) {
+                return cache.insert(std::pair{msg, DeclInfo{"var", p_variable->mutable_metadata(), p_variable}}).first->second;
+            }
+            if (auto* p_record = dynamic_cast<ParseResult::TLRecordDeclaration*>(msg)) {
+                return cache.insert(std::pair{msg, DeclInfo{
+                    p_record->kind() == ParseResult::RECORD_KIND_CLASS ? "class"
+                    : p_record->kind() == ParseResult::RECORD_KIND_STRUCT ? "struct"
+                    : "union",
+                    p_record->mutable_metadata(),
+                    p_record
+                }}).first->second;
+            }
+
+            throw std::runtime_error(fmtquill::format("Unsupported declaration message type: {}", msg ? msg->GetTypeName() : "<null>"));
         }
 
         struct TransientFile {

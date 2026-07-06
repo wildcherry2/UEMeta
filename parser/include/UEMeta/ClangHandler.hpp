@@ -12,11 +12,6 @@
 #include <google/protobuf/arena.h>
 #include "UEMeta/HeartbeatLogger.hpp"
 
-namespace ParseResult {
-    class Declaration;
-    class TLFileData;
-}
-
 namespace clang::tooling {
     /**
      * @brief Forward declaration of Clang's command-line tool driver.

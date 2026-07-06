@@ -2,9 +2,8 @@ syntax = "proto3";
 
 package ParseResult;
 
-// todo make sure fields that are optional aren't always supplied
 // todo figure out common fields between variables, fields, and params
-// todo take out the concept of Declaration and just have the top-level stuff
+
 // Used directly for the .file payload emitted by declaration splitting.
 message TLFileData {
     string path = 1;
@@ -203,18 +202,6 @@ message DeclarationMetadata {
     optional bool is_anonymous = 4;
 }
 
-// The selected oneof member is the declaration-kind discriminator.
-message Declaration {
-    oneof value {
-        TLRecordDeclaration record = 1;
-        TLEnumDeclaration enum_declaration = 2;
-        TLForwardDeclaration forward_declaration = 3;
-        TLAliasDeclaration alias = 4;
-        TLFreeFunctionDeclaration function = 5;
-        TLGlobalVariableDeclaration variable = 6;
-    }
-}
-
 // Shared by record, function, variable, alias, and forward-declaration
 // templates. specialization_kind == NONE identifies a primary (unspecialized) template.
 message TemplateDetails {
@@ -324,4 +311,21 @@ message BaseSpecifier {
     optional bool is_virtual = 3;
     optional uint64 offset = 4;
     string as_string = 5;
+}
+
+// Any top level item
+message TLItem {
+    oneof value {
+        TLRecordDeclaration record = 1;
+        TLEnumDeclaration enum_declaration = 2;
+        TLForwardDeclaration forward_declaration = 3;
+        TLAliasDeclaration alias = 4;
+        TLFreeFunctionDeclaration function = 5;
+        TLGlobalVariableDeclaration variable = 6;
+        TLFileData file_data = 7;
+    }
+}
+
+message TLItemList {
+    repeated TLItem items = 1;
 }
