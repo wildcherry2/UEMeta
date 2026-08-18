@@ -66,6 +66,8 @@ message TLGlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
     string type = 3;
+    
+    // type without any pointers, references, or array brackets
     string underlying_type = 4;
     string as_string = 5;
     optional VariableStorageClass storage_class = 6;
@@ -302,6 +304,8 @@ message Field {
     uint64 content_hash = 8;
     optional string default_value = 9;
     string type = 10;
+
+    // type without any pointers, references, or array brackets
     string underlying_type = 11;
 }
 

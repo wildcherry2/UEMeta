@@ -2,6 +2,7 @@
 #include "EnumTypes.hpp"
 #include "ForwardDeclarationTypes.hpp"
 #include "FunctionTypes.hpp"
+#include "GlobalVariableTypes.cpp"
 #include "RecordTypes.hpp"
 
 namespace UEMeta::Testing::Types {

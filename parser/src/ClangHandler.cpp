@@ -246,10 +246,12 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
     p_var->set_storage_class(clang_decl->getTLSKind() != clang::VarDecl::TLS_None ? VAR_STORAGE_CLASS_THREAD_LOCAL
         : clang_decl->getStorageClass() == clang::SC_Static ? VAR_STORAGE_CLASS_STATIC
         : clang_decl->getStorageClass() == clang::SC_Extern && clang_decl->isExternC() ? VAR_STORAGE_CLASS_EXTERN_C
-        : clang_decl->getStorageClass() == clang::SC_Extern && clang_decl->isInExternCXXContext() ? VAR_STORAGE_CLASS_EXTERN
+        : clang_decl->getStorageClass() == clang::SC_Extern ? VAR_STORAGE_CLASS_EXTERN
         : VAR_STORAGE_CLASS_UNSPECIFIED);
     p_var->set_constant_evaluation_kind(clang_decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE); // vars can't be consteval
-    p_var->set_default_value(ClangToString(context, clang_decl->getInit()));
+    if (const auto* initializer = clang_decl->getInit()) {
+        p_var->set_default_value(ClangToString(context, initializer));
+    }
     data->AddVisitedDecl(clang_decl, p_var);
     return data->OnAfterVisit(clang_decl, p_var->metadata().identifier().qualified_name_hash());
 }

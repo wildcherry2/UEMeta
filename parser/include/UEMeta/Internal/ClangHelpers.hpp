@@ -89,7 +89,7 @@ inline std::string ClangToString(clang::ASTContext& context, const clang::Expr* 
     return s;
 }
 
-
+/// @brief Strips pointer/refs/array tokens from type
 inline clang::QualType GetUnderlyingType(clang::QualType in) {
     in = in.getNonReferenceType();
     while (in->isPointerType() || in->isArrayType()) {

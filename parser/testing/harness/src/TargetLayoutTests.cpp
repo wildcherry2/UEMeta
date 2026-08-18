@@ -16,5 +16,6 @@ TEST(TargetLayout, HasSingleTranslationUnitAndHeaders) {
     EXPECT_TRUE(fs::exists(TargetDirectory() / "include" / "EnumTypes.hpp"));
     EXPECT_TRUE(fs::exists(TargetDirectory() / "include" / "ForwardDeclarationTypes.hpp"));
     EXPECT_TRUE(fs::exists(TargetDirectory() / "include" / "FunctionTypes.hpp"));
+    EXPECT_TRUE(fs::exists(TargetDirectory() / "include" / "GlobalVariableTypes.cpp"));
     EXPECT_TRUE(fs::exists(TargetDirectory() / "include" / "RecordTypes.hpp"));
 }
