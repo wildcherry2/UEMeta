@@ -420,3 +420,59 @@ inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p
         p_param->set_default_value(ClangToString(context, param->getInit()));
     }
 }
+
+#define EMP(s) if(proto->s().empty()) return false
+#define NEZ(i) if(proto->i() <= 0) return false
+#define NEQ(i, v) if(proto->i() == v) return false
+
+inline bool Validate(const google::protobuf::Message* msg) {
+    if (!msg) return false;
+
+    const auto ValidateIdentifier = [](const Identifier* proto) {
+        EMP(name);
+        EMP(qualified_name);
+        EMP(file_path);
+        EMP(scope);
+        NEZ(file_path_hash);
+        NEZ(qualified_name_hash);
+        return true;
+    };
+
+    const auto ValidateMetadata = [&](const DeclarationMetadata* proto) {
+        if (!ValidateIdentifier(&proto->identifier())) return false;
+        NEZ(content_hash);
+        // no need to validate occurrence index since it can be zero
+        return true;
+    };
+
+    const auto ValidateTemplateDetails = [&] (const TemplateDetails* proto) {
+        const auto ValidateTemplateParam = [&] (this auto self, const TemplateParameter* proto) {
+            if (!ValidateIdentifier(&proto->identifier())) return false;
+            NEQ(kind, TEMPLATE_PARAMETER_KIND_UNSPECIFIED);
+            EMP(as_string);
+            for (auto& parameter : proto->parameters()) {
+                if (!self(&parameter)) return false;
+            }
+            return true;
+        };
+
+        for (auto& parameter : proto->parameters()) {
+            if (!ValidateTemplateParam(&parameter)) return false;
+        }
+
+        return true;
+    };
+
+    if (const auto* proto = dynamic_cast<const TLRecordDeclaration*>(msg)) {
+        NEQ(kind, RECORD_KIND_UNSPECIFIED);
+        if (!ValidateMetadata(&proto->metadata())) return false;
+        if (proto->has_template_details() && !ValidateTemplateDetails(&proto->template_details())) return false;
+
+    }
+
+    return true;
+}
+
+#undef EMP
+#undef NEZ
+#undef NEQ
