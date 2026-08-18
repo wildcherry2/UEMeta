@@ -119,7 +119,8 @@ namespace {
         const TLForwardDeclaration& declaration,
         const std::string_view expected_name,
         const std::uint32_t expected_occurrence_index,
-        const ForwardDeclarationKind expected_kind) {
+        const ForwardDeclarationKind expected_kind,
+        const std::string_view expected_as_string) {
         SCOPED_TRACE(expected_name);
 
         ASSERT_TRUE(declaration.has_metadata());
@@ -131,6 +132,7 @@ namespace {
             expected_occurrence_index,
             false);
         EXPECT_EQ(declaration.kind(), expected_kind);
+        EXPECT_EQ(declaration.as_string(), expected_as_string);
     }
 
     void ExpectPrimaryTemplate(
@@ -213,67 +215,117 @@ namespace {
 
 TEST(ForwardDeclarationTests, UntemplatedClass) {
     const auto& declaration = ForwardDeclarationAt(0);
-    ExpectForwardDeclaration(declaration, "ForwardClass", 0, FORWARD_DECLARATION_KIND_CLASS);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardClass",
+        0,
+        FORWARD_DECLARATION_KIND_CLASS,
+        R"(class ForwardClass)");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, UntemplatedStruct) {
     const auto& declaration = ForwardDeclarationAt(1);
-    ExpectForwardDeclaration(declaration, "ForwardStruct", 1, FORWARD_DECLARATION_KIND_STRUCT);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardStruct",
+        1,
+        FORWARD_DECLARATION_KIND_STRUCT,
+        R"(struct ForwardStruct)");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, UntemplatedUnion) {
     const auto& declaration = ForwardDeclarationAt(2);
-    ExpectForwardDeclaration(declaration, "ForwardUnion", 2, FORWARD_DECLARATION_KIND_UNION);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardUnion",
+        2,
+        FORWARD_DECLARATION_KIND_UNION,
+        R"(union ForwardUnion)");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, PrimaryClassTemplate) {
     const auto& declaration = ForwardDeclarationAt(3);
-    ExpectForwardDeclaration(declaration, "ForwardClassTemplate", 3, FORWARD_DECLARATION_KIND_CLASS);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardClassTemplate",
+        3,
+        FORWARD_DECLARATION_KIND_CLASS,
+        R"(template <typename ClassType, typename ClassValue> class ForwardClassTemplate)");
     ExpectPrimaryTemplate(declaration, "ForwardClassTemplate", "ClassType", "ClassValue");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, ExplicitClassTemplateSpecialization) {
     const auto& declaration = ForwardDeclarationAt(4);
-    ExpectForwardDeclaration(declaration, "ForwardClassTemplate", 4, FORWARD_DECLARATION_KIND_CLASS);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardClassTemplate",
+        4,
+        FORWARD_DECLARATION_KIND_CLASS,
+        R"(template <typename ClassType> class ForwardClassTemplate<ClassType, int>)");
     ExpectExplicitPartialSpecialization(declaration, "ForwardClassTemplate", "ClassType");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, PrimaryStructTemplate) {
     const auto& declaration = ForwardDeclarationAt(5);
-    ExpectForwardDeclaration(declaration, "ForwardStructTemplate", 5, FORWARD_DECLARATION_KIND_STRUCT);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardStructTemplate",
+        5,
+        FORWARD_DECLARATION_KIND_STRUCT,
+        R"(template <typename StructType, typename StructValue> struct ForwardStructTemplate)");
     ExpectPrimaryTemplate(declaration, "ForwardStructTemplate", "StructType", "StructValue");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, ExplicitStructTemplateSpecialization) {
     const auto& declaration = ForwardDeclarationAt(6);
-    ExpectForwardDeclaration(declaration, "ForwardStructTemplate", 6, FORWARD_DECLARATION_KIND_STRUCT);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardStructTemplate",
+        6,
+        FORWARD_DECLARATION_KIND_STRUCT,
+        R"(template <typename StructType> struct ForwardStructTemplate<StructType, int>)");
     ExpectExplicitPartialSpecialization(declaration, "ForwardStructTemplate", "StructType");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, PrimaryUnionTemplate) {
     const auto& declaration = ForwardDeclarationAt(7);
-    ExpectForwardDeclaration(declaration, "ForwardUnionTemplate", 7, FORWARD_DECLARATION_KIND_UNION);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardUnionTemplate",
+        7,
+        FORWARD_DECLARATION_KIND_UNION,
+        R"(template <typename UnionType, typename UnionValue> union ForwardUnionTemplate)");
     ExpectPrimaryTemplate(declaration, "ForwardUnionTemplate", "UnionType", "UnionValue");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, ExplicitUnionTemplateSpecialization) {
     const auto& declaration = ForwardDeclarationAt(8);
-    ExpectForwardDeclaration(declaration, "ForwardUnionTemplate", 8, FORWARD_DECLARATION_KIND_UNION);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardUnionTemplate",
+        8,
+        FORWARD_DECLARATION_KIND_UNION,
+        R"(template <typename UnionType> union ForwardUnionTemplate<UnionType, int>)");
     ExpectExplicitPartialSpecialization(declaration, "ForwardUnionTemplate", "UnionType");
     EXPECT_FALSE(declaration.has_enum_details());
 }
 
 TEST(ForwardDeclarationTests, UnscopedEnum) {
     const auto& declaration = ForwardDeclarationAt(9);
-    ExpectForwardDeclaration(declaration, "ForwardUnscopedEnum", 9, FORWARD_DECLARATION_KIND_ENUM);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardUnscopedEnum",
+        9,
+        FORWARD_DECLARATION_KIND_ENUM,
+        R"(enum ForwardUnscopedEnum : int)");
     ASSERT_TRUE(declaration.has_enum_details());
     UEMeta::Testing::ExpectEnumDetails(
         declaration.enum_details(),
@@ -284,7 +336,12 @@ TEST(ForwardDeclarationTests, UnscopedEnum) {
 
 TEST(ForwardDeclarationTests, ScopedEnum) {
     const auto& declaration = ForwardDeclarationAt(10);
-    ExpectForwardDeclaration(declaration, "ForwardScopedEnum", 10, FORWARD_DECLARATION_KIND_ENUM);
+    ExpectForwardDeclaration(
+        declaration,
+        "ForwardScopedEnum",
+        10,
+        FORWARD_DECLARATION_KIND_ENUM,
+        R"(enum class ForwardScopedEnum : int)");
     ASSERT_TRUE(declaration.has_enum_details());
     UEMeta::Testing::ExpectEnumDetails(
         declaration.enum_details(),

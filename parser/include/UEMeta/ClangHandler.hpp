@@ -83,12 +83,12 @@ namespace UEMeta {
         bool VisitFunctionDecl(clang::FunctionDecl* decl);
 
         /**
-         * @brief Visits top-level type alias declarations.
+         * @brief Visits top-level using and typedef declarations.
          *
-         * @param decl Type alias declaration supplied by Clang.
+         * @param decl Type alias or typedef declaration supplied by Clang.
          * @return True to continue traversal.
          */
-        bool VisitTypeAliasDecl(clang::TypeAliasDecl* decl);
+        bool VisitTypedefNameDecl(clang::TypedefNameDecl* decl);
 
         /**
          * @brief Visits global variable declarations and records top-level metadata.

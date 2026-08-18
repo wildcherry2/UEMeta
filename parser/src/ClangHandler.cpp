@@ -210,15 +210,22 @@ bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* clang_decl) {
     return data->OnAfterVisit(clang_decl, p_fun->metadata().identifier().qualified_name_hash());
 }
 
-bool UEMeta::ClangHandler::VisitTypeAliasDecl(clang::TypeAliasDecl* clang_decl) {
+bool UEMeta::ClangHandler::VisitTypedefNameDecl(clang::TypedefNameDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
     auto& context = data->GetContext();
     auto* p_alias = data->Allocate<TLAliasDeclaration>();
     PopulateDeclarationMetadata(context, p_alias->mutable_metadata(), clang_decl);
-    PopulateTemplateDetails(context, p_alias->mutable_template_details(), clang_decl);
+    const auto* type_alias = llvm::dyn_cast<clang::TypeAliasDecl>(clang_decl);
+    if (type_alias && type_alias->getDescribedAliasTemplate()) {
+        PopulateTemplateDetails(context, p_alias->mutable_template_details(), clang_decl);
+    }
     p_alias->set_alias(clang_decl->getNameAsString());
     p_alias->set_aliased_type(clang_decl->getUnderlyingType().getAsString());
-    const auto str = ClangToString(context, clang_decl);
+    const auto str = ClangToString(
+        context,
+        type_alias && type_alias->getDescribedAliasTemplate()
+            ? static_cast<const clang::Decl*>(type_alias->getDescribedAliasTemplate())
+            : clang_decl);
     p_alias->set_as_string(str);
     data->AddVisitedDecl(clang_decl, p_alias);
     return data->OnAfterVisit(clang_decl, p_alias->metadata().identifier().qualified_name_hash());

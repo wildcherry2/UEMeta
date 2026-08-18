@@ -15,6 +15,7 @@
 #include "clang/AST/Decl.h"
 #include "../Cli.hpp"
 
+std::string ClangToString(clang::ASTContext& context, const clang::Decl* decl);
 void PopulateEnumDetails(clang::ASTContext& context, ParseResult::EnumDetails* p_msg, const clang::EnumDecl* decl);
 void PopulateDeclarationMetadata(clang::ASTContext& context, ParseResult::DeclarationMetadata* p_msg, const clang::Decl* decl);
 void PopulateTemplateDetails(clang::ASTContext& context, ParseResult::TemplateDetails* p_msg, const clang::Decl* decl);
@@ -61,6 +62,15 @@ namespace UEMeta {
                         auto& ast_context = GetContext();
                         auto* p_forward_decl = Allocate<ParseResult::TLForwardDeclaration>();
                         PopulateDeclarationMetadata(ast_context, p_forward_decl->mutable_metadata(), decl);
+
+                        // when the forward declaration is templated, we need to explicitly get the template decl
+                        const clang::Decl* printable_decl = decl;
+                        if (const auto* record_decl = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+                            if (const auto* template_decl = record_decl->getDescribedClassTemplate()) {
+                                printable_decl = template_decl;
+                            }
+                        }
+                        p_forward_decl->set_as_string(ClangToString(ast_context, printable_decl));
 
                         // assign the kind and template info
                         switch (as_tag->getTagKind()) {

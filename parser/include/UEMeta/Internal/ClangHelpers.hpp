@@ -200,6 +200,9 @@ inline void PopulateDeclarationMetadata(clang::ASTContext& context, DeclarationM
     else if (auto* as_record = llvm::dyn_cast_or_null<clang::RecordDecl>(decl)) {
         p_msg->set_is_anonymous(as_record->isAnonymousStructOrUnion() || as_record->getName().empty()); // catches nested anon structs as well
     }
+    else {
+        p_msg->set_is_anonymous(false);
+    }
     p_msg->set_content_hash(std::hash<std::string_view>::operator()(ClangToString(context, decl)));
 }
 
