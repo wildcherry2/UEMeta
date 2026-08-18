@@ -1,5 +1,6 @@
 #include "AliasTypes.hpp"
 #include "EnumTypes.hpp"
+#include "ForwardDeclarationTypes.hpp"
 #include "FunctionTypes.hpp"
 #include "RecordTypes.hpp"
 

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "DeclarationMetadataTestHelpers.hpp"
+#include "EnumDetailsTestHelpers.hpp"
 #include "IdentifierTestHelpers.hpp"
 #include "parser.pb.h"
 
@@ -103,13 +104,7 @@ namespace {
             false);
 
         ASSERT_TRUE(declaration.has_details());
-        EXPECT_TRUE(declaration.details().has_scope());
-        EXPECT_EQ(declaration.details().scope(), scope);
-
-        if (!underlying_type.empty()) {
-            EXPECT_TRUE(declaration.details().has_underlying_type());
-            EXPECT_EQ(declaration.details().underlying_type(), underlying_type);
-        }
+        UEMeta::Testing::ExpectEnumDetails(declaration.details(), scope, underlying_type);
 
         ASSERT_EQ(declaration.enumerators_size(), expected_enumerators.size());
         int index = 0;
@@ -202,7 +197,7 @@ TEST(EnumTests, AnonymousUnscoped) {
         13,
         true);
     ASSERT_TRUE(declaration->has_details());
-    EXPECT_EQ(declaration->details().scope(), ENUM_SCOPE_UNSCOPED);
+    UEMeta::Testing::ExpectEnumDetails(declaration->details(), ENUM_SCOPE_UNSCOPED);
 
     const auto& enumerator = declaration->enumerators(0);
     UEMeta::Testing::ExpectIdentifier(
