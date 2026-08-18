@@ -38,6 +38,13 @@ namespace UEMeta::Testing::Types {
     enum class NaturalClassInt : int {};
     enum struct NaturalStructInt : int {};
 
+    enum {
+        AnonymousUnscopedItem
+    };
+
+    // NOTE we're skipping testing something like `inline enum { AnonymousUnscopedItem } name`, since it's currently
+    // an antipattern anyways
+
     enum AssignedUnscopedEmpty {};
     enum AssignedUnscopedSingle {
         AssignedUnscopedSingleItem = 17

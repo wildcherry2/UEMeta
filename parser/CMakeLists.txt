@@ -436,6 +436,7 @@ if(UEMETA_ENABLE_TESTING)
     set(UEMETA_TEST_TARGET_DIR "${PROJECT_SOURCE_DIR}/testing/target")
     set(UEMETA_TEST_TARGET_INCLUDE_DIR "${UEMETA_TEST_TARGET_DIR}/include")
     set(UEMETA_TEST_TARGET_SOURCE_DIR "${UEMETA_TEST_TARGET_DIR}/src")
+    set(UEMETA_TEST_HARNESS_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/testing/harness/include")
     set(UEMETA_TEST_HARNESS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/testing/harness/src")
     set(UEMETA_TEST_OUTPUT_DIR "${PROJECT_SOURCE_DIR}/testing/output")
     set(UEMETA_TEST_TARGET_SOURCE "${UEMETA_TEST_TARGET_SOURCE_DIR}/test.cpp")
@@ -448,6 +449,10 @@ if(UEMETA_ENABLE_TESTING)
     )
     file(GLOB UEMETA_TEST_HARNESS_SOURCES CONFIGURE_DEPENDS
         "${UEMETA_TEST_HARNESS_SOURCE_DIR}/*.cpp"
+    )
+    file(GLOB UEMETA_TEST_HARNESS_HEADERS CONFIGURE_DEPENDS
+        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}/*.h"
+        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}/*.hpp"
     )
 
     if(NOT EXISTS "${UEMETA_TEST_TARGET_SOURCE}")
@@ -528,6 +533,7 @@ if(UEMETA_ENABLE_TESTING)
 
     add_executable(uemeta-parser-tests
         ${UEMETA_TEST_HARNESS_SOURCES}
+        ${UEMETA_TEST_HARNESS_HEADERS}
         ${UEMETA_PROTO_GENERATED_SOURCES}
     )
     add_dependencies(uemeta-parser-tests uemeta-test-output)
@@ -554,6 +560,10 @@ if(UEMETA_ENABLE_TESTING)
 
     target_include_directories(uemeta-parser-tests SYSTEM PRIVATE
         "${UEMETA_PROTO_GENERATED_DIR}"
+    )
+
+    target_include_directories(uemeta-parser-tests PRIVATE
+        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}"
     )
 
     target_compile_options(uemeta-parser-tests PRIVATE

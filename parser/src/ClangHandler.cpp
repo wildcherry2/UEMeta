@@ -188,6 +188,9 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     PopulateEnumDetails(context, p_enum_decl->mutable_details(), clang_decl);
     for (auto* enumerator : clang_decl->enumerators()) {
         auto p_enumerator = p_enum_decl->add_enumerators();
+        // note that this retains C++ enumerator scoping rules; for an unscoped (non class/struct) enum,
+        // enumerator constants exist in the enclosing scope, rather than within the scope of the enum
+        // declaration
         PopulateIdentifier(context, p_enumerator->mutable_identifier(), enumerator);
         p_enumerator->set_value(llvm::toString(enumerator->getInitVal(), 10));
     }
