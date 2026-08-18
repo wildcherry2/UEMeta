@@ -261,7 +261,9 @@ namespace UEMeta {
 
                 const auto [path, resolved_msg] = GetOutData();
                 if (path.empty()) return;
-                std::ofstream out_file(path, std::ios::trunc);
+                std::ofstream out_file(
+                    path,
+                    std::ios::trunc | (is_json ? std::ios::openmode{} : std::ios::binary));
 
                 if (is_json) {
                     thread_local std::string buffer{};

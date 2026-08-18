@@ -528,6 +528,7 @@ if(UEMETA_ENABLE_TESTING)
 
     add_executable(uemeta-parser-tests
         ${UEMETA_TEST_HARNESS_SOURCES}
+        ${UEMETA_PROTO_GENERATED_SOURCES}
     )
     add_dependencies(uemeta-parser-tests uemeta-test-output)
 
@@ -551,6 +552,10 @@ if(UEMETA_ENABLE_TESTING)
         UEMETA_TEST_PARSER_OUTPUT_MARKER="${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}"
     )
 
+    target_include_directories(uemeta-parser-tests SYSTEM PRIVATE
+        "${UEMETA_PROTO_GENERATED_DIR}"
+    )
+
     target_compile_options(uemeta-parser-tests PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
         $<$<CXX_COMPILER_ID:MSVC>:/W4>
@@ -563,6 +568,7 @@ if(UEMETA_ENABLE_TESTING)
 
     target_link_libraries(uemeta-parser-tests PRIVATE
         GTest::gtest_main
+        protobuf::libprotobuf
     )
 
     add_test(
