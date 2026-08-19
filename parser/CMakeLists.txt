@@ -569,6 +569,7 @@ if(UEMETA_ENABLE_TESTING)
 
     target_compile_options(uemeta-parser-tests PRIVATE
         $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+        $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
         $<$<CXX_COMPILER_ID:MSVC>:/W4>
         $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
         $<$<CXX_COMPILER_ID:MSVC>:/external:W0>

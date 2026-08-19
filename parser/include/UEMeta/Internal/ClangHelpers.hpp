@@ -364,7 +364,9 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
 }
 
 inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p_msg, clang::FunctionDecl* decl) {
-    PopulateTemplateDetails(context, p_msg->mutable_template_details(), decl);
+    if (decl->getDescribedFunctionTemplate() || decl->getPrimaryTemplate()) {
+        PopulateTemplateDetails(context, p_msg->mutable_template_details(), decl);
+    }
     PopulateIdentifier(context, p_msg->mutable_identifier(), decl);
     p_msg->set_return_type(decl->getReturnType().getAsString());
     if (const auto as_cxx = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
@@ -401,8 +403,8 @@ inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p
         p_msg->set_inline_definition(ClangToString(context, decl->getBody()));
     }
 
-    p_msg->set_storage_class(decl->getStorageClass() == clang::SC_Extern && decl->isExternCXXContext() ? FUN_VAR_STORAGE_CLASS_EXTERN
-            : decl->getStorageClass() == clang::SC_Extern && decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
+    p_msg->set_storage_class(decl->getStorageClass() == clang::SC_Extern && decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
+            : decl->getStorageClass() == clang::SC_Extern ? FUN_VAR_STORAGE_CLASS_EXTERN
             : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
 
     static clang::PrintingPolicy fn_sig_pp = [&] {

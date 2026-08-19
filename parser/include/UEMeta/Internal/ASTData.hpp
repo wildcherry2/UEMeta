@@ -137,11 +137,17 @@ namespace UEMeta {
                 const auto& sm = context->getSourceManager();
                 HeartbeatLogger sort_logger{fmtquill::format("Sorting {} declarations by occurrence...", all_unique_visited_decls.size())};
                 sort_logger.Start();
-                // sort by occurrence in TU
-                std::sort(std::execution::par_unseq, all_unique_visited_decls.begin(), all_unique_visited_decls.end(),
-                [&](const clang::Decl* lhs, const clang::Decl* rhs) {
-                    return sm.isBeforeInTranslationUnit(lhs->getLocation(), rhs->getLocation());
-                });
+                // Declarations produced by a macro can share an expansion location. Keep
+                // their visitation order so occurrence indices remain deterministic.
+                std::stable_sort(
+                    std::execution::par_unseq,
+                    all_unique_visited_decls.begin(),
+                    all_unique_visited_decls.end(),
+                    [&](const clang::Decl* lhs, const clang::Decl* rhs) {
+                        return sm.isBeforeInTranslationUnit(
+                            sm.getExpansionLoc(lhs->getLocation()),
+                            sm.getExpansionLoc(rhs->getLocation()));
+                    });
                 sort_logger.Stop();
                 UEM_INFO("Sorted {} declarations!", all_unique_visited_decls.size());
             }
