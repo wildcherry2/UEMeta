@@ -89,8 +89,7 @@ inline std::string ClangToString(clang::ASTContext& context, const clang::Expr* 
     return s;
 }
 
-/// @brief Strips pointer/refs/array tokens from type
-/// todo ensure this strips out `const` as well; getCanonicalType may work just as well
+/// @brief Strips pointer, reference, array, and cv-qualifier tokens from a type.
 inline clang::QualType GetUnderlyingType(clang::QualType in) {
     in = in.getNonReferenceType();
     while (in->isPointerType() || in->isArrayType()) {
@@ -142,29 +141,25 @@ inline void PopulateTypeInfo(clang::ASTContext& context, TypeInfo* p_msg, const 
     const clang::QualType underlying_type = GetUnderlyingType(type);
     p_msg->set_type(type.getAsString());
     p_msg->set_underlying_type(underlying_type.getAsString());
-    const bool is_template_type = (type->isDependentType() && type->getAs<clang::DependentNameType>()) || type->getAs<clang::TemplateTypeParmType>();
-    p_msg->set_is_templated_type(is_template_type);
-    if (is_template_type || type->isBuiltinType()) return;
+    const bool is_dependent_type = type->isDependentType();
+    p_msg->set_is_templated_type(is_dependent_type);
 
-    // if it's the type of a record type
-    if (auto* as_tag = type->getAs<clang::TagType>()) {
-        // ...and it's defined somewhere
-        if (const auto* definition = as_tag->getDecl()->getDefinition()) {
-            p_msg->set_source_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, definition)));
+    const auto SetSourcePathHash = [&](const clang::Decl* decl) {
+        if (decl) {
+            p_msg->set_source_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, decl)));
         }
+    };
+
+    if (is_dependent_type || underlying_type->isBuiltinType()) return;
+
+    if (const auto* as_typedef = underlying_type->getAs<clang::TypedefType>()) {
+        SetSourcePathHash(as_typedef->getDecl());
     }
-
-    // if it's from an alias or typedef
-    else if (auto* as_typedef = type->getAs<clang::TypedefType>()) {
-        // ... and we know where it's from
-        if (const auto* definition = as_typedef->getDecl()) {
-            p_msg->set_source_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, definition)));
-        }
+    else if (const auto* as_tag = underlying_type->getAs<clang::TagType>()) {
+        const auto* declaration = as_tag->getDecl();
+        SetSourcePathHash(declaration->getDefinition() ? declaration->getDefinition() : declaration);
     }
 }
-
-
-
 
 /// @brief Fills out an Identifier from a Decl
 inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, const clang::Decl* decl) {
@@ -260,18 +255,12 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
                 p_param->set_kind(TEMPLATE_PARAMETER_KIND_NON_TYPE);
                 p_param->set_type(non_type_param->getType().getAsString(policy));
                 if (non_type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
-                if (non_type_param->hasDefaultArgument()) {
-                    PopulateTypeInfo(context, p_param->mutable_default_value(), non_type_param->getDefaultArgument().getArgument().getAsType());
-                }
             }
             else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
                 p_param->set_kind(template_param->wasDeclaredWithTypename()
                                       ? TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
                                       : TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                 if (template_param->isParameterPack()) p_param->set_is_parameter_pack(true);
-                if (template_param->hasDefaultArgument()) {
-                    PopulateTypeInfo(context, p_param->mutable_default_value(), template_param->getDefaultArgument().getArgument().getAsType());
-                }
                 self(template_param->getTemplateParameters(), p_param);
             }
         }

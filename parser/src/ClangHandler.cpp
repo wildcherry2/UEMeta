@@ -274,6 +274,10 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
     auto& context = data->GetContext();
     auto* p_var = data->Allocate<TLGlobalVariableDeclaration>();
     PopulateDeclarationMetadata(context, p_var->mutable_metadata(), clang_decl);
+    if (clang_decl->getDescribedVarTemplate()
+        || llvm::isa<clang::VarTemplateSpecializationDecl>(clang_decl)) {
+        PopulateTemplateDetails(context, p_var->mutable_template_details(), clang_decl);
+    }
     PopulateTypeInfo(context, p_var->mutable_type_info(), clang_decl->getType());
     const auto str = ClangToString(context, clang_decl);
     p_var->set_as_string(str);

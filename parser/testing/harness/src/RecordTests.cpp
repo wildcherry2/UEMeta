@@ -2769,7 +2769,44 @@ TEST(RecordTests, UnionTwoParametersDoublyNestedNoBaseRecord_ExplicitInstantiati
                                 TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
 }
 
+TEST(RecordTests, ConcreteTemplateBaseTypeInfo) {
+    const auto qualified_name = QualifiedName("TypeInfoTemplatedBaseRecord");
+    const auto& declaration = FindRecord(qualified_name);
+    ExpectRecordCore(
+        declaration,
+        "TypeInfoTemplatedBaseRecord",
+        qualified_name,
+        RECORD_KIND_STRUCT,
+        true,
+        8,
+        4,
+        0,
+        0,
+        1,
+        0);
+    EXPECT_FALSE(declaration.has_template_details());
+    ExpectNoNestedHashes(declaration);
+
+    ASSERT_EQ(declaration.bases_size(), 1);
+    const auto& base = declaration.bases(0);
+    EXPECT_EQ(base.access(), ACCESS_SPECIFIER_PUBLIC);
+    ASSERT_TRUE(base.has_is_virtual());
+    EXPECT_FALSE(base.is_virtual());
+    ASSERT_TRUE(base.has_offset());
+    EXPECT_EQ(base.offset(), 0);
+    EXPECT_EQ(base.as_string(), "ClassOneParameterNoNestedNoBaseRecord<char>");
+    ASSERT_TRUE(base.has_type_info());
+    UEMeta::Testing::ExpectTypeInfo(
+        base.type_info(),
+        {
+            "ClassOneParameterNoNestedNoBaseRecord<char>",
+            "ClassOneParameterNoNestedNoBaseRecord<char>",
+            false,
+            RecordSourcePath()
+        });
+}
+
 TEST(RecordTests, CoversEveryRecordDeclarationInRecordTypes) {
-    // 210 outer matrix records + 210 explicitly checked nested records + 8 support/layout records.
-    EXPECT_EQ(RecordDeclarations().size(), 428);
+    // 210 outer matrix records + 210 explicitly checked nested records + 9 support/layout records.
+    EXPECT_EQ(RecordDeclarations().size(), 429);
 }

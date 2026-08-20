@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AliasTypes.hpp"
+
 namespace UEMeta::Testing::Types {
     // Every declaration is written explicitly so each serialized function can
     // be matched directly to its storage, evaluation, definition, parameter,
@@ -2518,6 +2520,11 @@ namespace UEMeta::Testing::Types {
     }
     template int TemplateTwoStaticConstevalWithDefinitionTwoParametersInt<long, long long>(int First, long Second);
 
-    // Explicit declarations above serialize to 1404 TLFreeFunction records.
+    const Beta* TypeInfoDeclaredFunction(const Beta *const (&Value)[2]);
+
+    template<typename ValueType>
+    ValueType* TypeInfoDependentFunction(ValueType* Value);
+
+    // Explicit declarations above serialize to 1406 TLFreeFunction records.
     // The 54 inline variables only force ordinary implicit instantiation.
 } // namespace UEMeta::Testing::Types

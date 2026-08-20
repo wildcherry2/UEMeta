@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "DeclarationMetadataTestHelpers.hpp"
+#include "TemplateDetailsTestHelpers.hpp"
 #include "TypeInfoHelpers.hpp"
 #include "parser.pb.h"
 
@@ -20,6 +21,8 @@ namespace {
     using ParseResult::CONSTANT_EVALUATION_CONSTEXPR;
     using ParseResult::CONSTANT_EVALUATION_NONE;
     using ParseResult::ConstantEvaluationKind;
+    using ParseResult::TEMPLATE_PARAMETER_KIND_TYPENAME;
+    using ParseResult::TEMPLATE_SPECIALIZATION_NONE;
     using ParseResult::TLGlobalVariableDeclaration;
     using ParseResult::VAR_STORAGE_CLASS_EXTERN;
     using ParseResult::VAR_STORAGE_CLASS_EXTERN_C;
@@ -75,7 +78,8 @@ namespace {
         const std::string_view expected_as_string,
         const VariableStorageClass expected_storage_class,
         const ConstantEvaluationKind expected_evaluation_kind,
-        const std::optional<std::string_view> expected_default_value) {
+        const std::optional<std::string_view> expected_default_value,
+        const std::optional<UEMeta::Testing::ExpectedTypeInfo>& expected_type_info = std::nullopt) {
         SCOPED_TRACE(expected_name);
 
         const auto& declarations = GlobalVariableDeclarations();
@@ -95,9 +99,10 @@ namespace {
 
         EXPECT_FALSE(declaration.has_template_details());
         ASSERT_TRUE(declaration.has_type_info());
+        const UEMeta::Testing::ExpectedTypeInfo default_type_info{expected_type, "int"};
         UEMeta::Testing::ExpectTypeInfo(
             declaration.type_info(),
-            {expected_type, "int"});
+            expected_type_info ? *expected_type_info : default_type_info);
         EXPECT_EQ(declaration.as_string(), expected_as_string);
 
         ASSERT_TRUE(declaration.has_storage_class());
@@ -909,6 +914,58 @@ TEST(GlobalVariableTests, ReferenceThreadLocalConstexprWithDefault) {
         R"(PlainExternNoneWithoutDefault)");
 }
 
+TEST(GlobalVariableTests, DeclaredPointerTypeInfo) {
+    ExpectGlobalVariable(
+        "TypeInfoDeclaredPointer",
+        72,
+        "const Beta *const",
+        R"(const Beta *const TypeInfoDeclaredPointer = nullptr)",
+        VAR_STORAGE_CLASS_UNSPECIFIED,
+        CONSTANT_EVALUATION_NONE,
+        R"(nullptr)",
+        UEMeta::Testing::ExpectedTypeInfo{
+            "const Beta *const",
+            "Beta",
+            false,
+            fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "AliasTypes.hpp"
+        });
+}
+
+TEST(GlobalVariableTests, DependentPointerTypeInfo) {
+    const auto& declarations = GlobalVariableDeclarations();
+    const auto found = declarations.find("TypeInfoDependentPointer");
+    ASSERT_NE(found, declarations.end());
+
+    const auto& declaration = found->second;
+    ASSERT_TRUE(declaration.has_metadata());
+    UEMeta::Testing::ExpectDeclarationMetadata(
+        declaration.metadata(),
+        "TypeInfoDependentPointer",
+        QualifiedName("TypeInfoDependentPointer"),
+        GlobalVariableSourcePath(),
+        73,
+        false);
+
+    ASSERT_TRUE(declaration.has_template_details());
+    UEMeta::Testing::ExpectTemplateDetails(
+        declaration.template_details(),
+        TEMPLATE_SPECIALIZATION_NONE,
+        QualifiedName("TypeInfoDependentPointer"),
+        GlobalVariableSourcePath(),
+        {{
+            "VariableType",
+            QualifiedName("VariableType"),
+            TEMPLATE_PARAMETER_KIND_TYPENAME,
+            "typename VariableType"
+        }},
+        R"()");
+
+    ASSERT_TRUE(declaration.has_type_info());
+    UEMeta::Testing::ExpectTypeInfo(
+        declaration.type_info(),
+        {"VariableType *", "VariableType", true});
+}
+
 TEST(GlobalVariableCoverageTests, AccountsForEveryTargetDeclaration) {
-    EXPECT_EQ(GlobalVariableDeclarations().size(), 72);
+    EXPECT_EQ(GlobalVariableDeclarations().size(), 74);
 }

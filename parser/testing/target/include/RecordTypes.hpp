@@ -1086,4 +1086,6 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) >
                   0);
 
+    struct TypeInfoTemplatedBaseRecord : ClassOneParameterNoNestedNoBaseRecord<char> {};
+
 } // namespace UEMeta::Testing::Types

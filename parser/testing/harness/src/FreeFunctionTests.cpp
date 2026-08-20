@@ -44,6 +44,7 @@ namespace {
     enum class SourceReturnType { Auto, Void, Int };
 
     fs::path FreeFunctionSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "FreeFunctionTypes.hpp"; }
+    fs::path AliasSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "AliasTypes.hpp"; }
 
     std::string QualifiedName(const std::string_view name) { return "UEMeta::Testing::Types::" + std::string{name}; }
 
@@ -219,11 +220,15 @@ namespace {
         const auto expected_return_type =
             EffectiveReturnType(expected_source_return_type, expected_has_inline_definition,
                                 expected_specialization_kind);
+        const bool expected_return_type_is_templated =
+            expected_return_type == "auto"
+            && expected_specialization_kind == TEMPLATE_SPECIALIZATION_NONE;
 
         const auto expect = [&](const std::initializer_list<ExpectedFunctionParameter> parameters) {
             UEMeta::Testing::ExpectFunctionCommon(
                 declaration.common(), expected_name, qualified_name, FreeFunctionSourcePath(), FUNCTION_KIND_FREE,
-                expected_as_string, ExpectedTypeInfo{expected_return_type, expected_return_type},
+                expected_as_string,
+                ExpectedTypeInfo{expected_return_type, expected_return_type, expected_return_type_is_templated},
                 expected_storage_class, expected_evaluation_kind, std::nullopt, expected_inline_definition,
                 expected_template_details, parameters, std::nullopt);
         };
@@ -8825,8 +8830,74 @@ TEST(FreeFunctionTests, TemplateTwoStaticConstevalWithDefinitionTwoParametersInt
                                 SourceReturnType::Int, 2, TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION);
 }
 
+TEST(FreeFunctionTests, DeclaredTypeInfo) {
+    const auto name = std::string_view{"TypeInfoDeclaredFunction"};
+    const auto& declarations = FreeFunctionDeclarations();
+    const auto found = declarations.find(FreeFunctionKey(name, std::nullopt));
+    ASSERT_NE(found, declarations.end());
+
+    const auto qualified_name = QualifiedName(name);
+    UEMeta::Testing::ExpectFunctionCommon(
+        found->second.common(),
+        name,
+        qualified_name,
+        FreeFunctionSourcePath(),
+        FUNCTION_KIND_FREE,
+        "const Beta *TypeInfoDeclaredFunction(const Beta *const (&Value)[2])",
+        ExpectedTypeInfo{"const Beta *", "Beta", false, AliasSourcePath()},
+        FUN_VAR_STORAGE_CLASS_UNSPECIFIED,
+        CONSTANT_EVALUATION_NONE,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        {{
+            "Value",
+            qualified_name + "::Value",
+            {"const Beta *const (&)[2]", "Beta", false, AliasSourcePath()},
+            "",
+            "const Beta *const (&Value)[2]"
+        }},
+        std::nullopt);
+}
+
+TEST(FreeFunctionTests, DependentTypeInfo) {
+    const auto name = std::string_view{"TypeInfoDependentFunction"};
+    const auto& declarations = FreeFunctionDeclarations();
+    const auto found = declarations.find(FreeFunctionKey(name, TEMPLATE_SPECIALIZATION_NONE));
+    ASSERT_NE(found, declarations.end());
+
+    const auto qualified_name = QualifiedName(name);
+    const ExpectedFunctionTemplateDetails template_details{
+        TEMPLATE_SPECIALIZATION_NONE,
+        qualified_name,
+        {{"ValueType", "ValueType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename ValueType"}},
+        R"()"
+    };
+    UEMeta::Testing::ExpectFunctionCommon(
+        found->second.common(),
+        name,
+        qualified_name,
+        FreeFunctionSourcePath(),
+        FUNCTION_KIND_FREE,
+        "ValueType *TypeInfoDependentFunction(ValueType *Value)",
+        ExpectedTypeInfo{"ValueType *", "ValueType", true},
+        FUN_VAR_STORAGE_CLASS_UNSPECIFIED,
+        CONSTANT_EVALUATION_NONE,
+        std::nullopt,
+        std::nullopt,
+        template_details,
+        {{
+            "Value",
+            qualified_name + "::Value",
+            {"ValueType *", "ValueType", true},
+            "",
+            "ValueType *Value"
+        }},
+        std::nullopt);
+}
+
 TEST(FreeFunctionCoverageTests, AccountsForEveryTargetDeclaration) {
-    constexpr std::size_t expected_declaration_count = 1404;
+    constexpr std::size_t expected_declaration_count = 1406;
     constexpr std::size_t implicit_instantiation_anchor_count = 54;
 
     const auto& declarations = FreeFunctionDeclarations();

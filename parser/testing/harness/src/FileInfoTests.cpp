@@ -171,8 +171,8 @@ TEST(FileInfoTests, AliasTypes) {
 
     EXPECT_EQ(file_info.path(), source_path.string());
     EXPECT_EQ(file_info.file_occurrence(), 0);
-    ASSERT_EQ(declaration_hashes.defined.size(), 4);
-    ASSERT_TRUE(declaration_hashes.forward_declared.empty());
+    ASSERT_EQ(declaration_hashes.defined.size(), 14);
+    ASSERT_EQ(declaration_hashes.forward_declared.size(), 1);
     ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
     ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
 }

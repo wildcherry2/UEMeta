@@ -333,7 +333,7 @@ message TypeInfo {
     // whether the type is a template or dependent type (like 'T' in 'template<typename T> void f(T t)' or 'type' in 'typename T::type')
     optional bool is_templated_type = 3;
 
-    // the hash of the source path for this type; may be empty if it's a builtin type
+    // the hash of the source path for this type; may be empty if it's a builtin or templated type
     optional uint64 source_path_hash = 4;
 }
 

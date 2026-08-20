@@ -1,6 +1,8 @@
 #ifndef UEMETA_TESTING_GLOBAL_VARIABLE_TYPES_CPP
 #define UEMETA_TESTING_GLOBAL_VARIABLE_TYPES_CPP
 
+#include "AliasTypes.hpp"
+
 namespace UEMeta::Testing::Types {
     int PlainUnspecifiedNoneWithoutDefault;
     int PlainUnspecifiedNoneWithDefault = 17;
@@ -78,6 +80,11 @@ namespace UEMeta::Testing::Types {
     static constexpr int& ReferenceStaticConstexprWithDefault = PlainExternNoneWithoutDefault;
     thread_local int& ReferenceThreadLocalNoneWithDefault = PlainExternNoneWithoutDefault;
     thread_local constexpr int& ReferenceThreadLocalConstexprWithDefault = PlainExternNoneWithoutDefault;
+
+    const Beta *const TypeInfoDeclaredPointer = nullptr;
+
+    template<typename VariableType>
+    VariableType* TypeInfoDependentPointer;
 }
 
 #endif
