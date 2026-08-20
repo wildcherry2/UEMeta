@@ -140,7 +140,7 @@ namespace UEMeta {
                 // Declarations produced by a macro can share an expansion location. Keep
                 // their visitation order so occurrence indices remain deterministic.
                 std::stable_sort(
-                    std::execution::par_unseq,
+                    std::execution::seq,
                     all_unique_visited_decls.begin(),
                     all_unique_visited_decls.end(),
                     [&](const clang::Decl* lhs, const clang::Decl* rhs) {
