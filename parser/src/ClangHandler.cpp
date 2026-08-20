@@ -203,6 +203,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
                 p_base->set_offset(offset.getQuantity());
             }
             p_base->set_as_string(base.getType().getAsString());
+            PopulateTypeInfo(context, p_base->mutable_type_info(), base.getType());
         }
     }
 

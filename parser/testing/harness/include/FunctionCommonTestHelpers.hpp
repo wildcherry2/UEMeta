@@ -2,6 +2,7 @@
 
 #include "IdentifierTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
+#include "TypeInfoHelpers.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -13,7 +14,7 @@ namespace UEMeta::Testing {
     struct ExpectedFunctionParameter {
         std::string_view name;
         std::string_view qualified_name;
-        std::string_view type;
+        ExpectedTypeInfo type_info;
         std::string_view default_value;
         std::string_view as_string;
     };
@@ -32,7 +33,7 @@ namespace UEMeta::Testing {
         const std::filesystem::path& expected_file_path,
         const ParseResult::FunctionKind expected_kind,
         const std::string_view expected_as_string,
-        const std::optional<std::string_view> expected_return_type,
+        const std::optional<ExpectedTypeInfo>& expected_return_type,
         const std::optional<ParseResult::FunctionStorageClass> expected_storage_class,
         const std::optional<ParseResult::ConstantEvaluationKind> expected_consteval_kind,
         const std::optional<bool> expected_is_explicit,
@@ -52,7 +53,7 @@ namespace UEMeta::Testing {
 
         EXPECT_EQ(common.has_return_type(), expected_return_type.has_value());
         if (expected_return_type) {
-            EXPECT_EQ(common.return_type(), *expected_return_type);
+            ExpectTypeInfo(common.return_type(), *expected_return_type);
         }
 
         EXPECT_EQ(common.has_storage_class(), expected_storage_class.has_value());
@@ -98,7 +99,8 @@ namespace UEMeta::Testing {
                 expected_parameter.name,
                 expected_parameter.qualified_name,
                 expected_file_path);
-            EXPECT_EQ(parameter.type(), expected_parameter.type);
+            ASSERT_TRUE(parameter.has_type_info());
+            ExpectTypeInfo(parameter.type_info(), expected_parameter.type_info);
             EXPECT_EQ(parameter.default_value(), expected_parameter.default_value);
             EXPECT_EQ(parameter.as_string(), expected_parameter.as_string);
 

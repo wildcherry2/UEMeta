@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "DeclarationMetadataTestHelpers.hpp"
+#include "TypeInfoHelpers.hpp"
 #include "parser.pb.h"
 
 #include <cstdint>
@@ -93,8 +94,10 @@ namespace {
             false);
 
         EXPECT_FALSE(declaration.has_template_details());
-        EXPECT_EQ(declaration.type(), expected_type);
-        EXPECT_EQ(declaration.underlying_type(), "int");
+        ASSERT_TRUE(declaration.has_type_info());
+        UEMeta::Testing::ExpectTypeInfo(
+            declaration.type_info(),
+            {expected_type, "int"});
         EXPECT_EQ(declaration.as_string(), expected_as_string);
 
         ASSERT_TRUE(declaration.has_storage_class());

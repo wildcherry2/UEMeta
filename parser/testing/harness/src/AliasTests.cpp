@@ -2,6 +2,7 @@
 
 #include "DeclarationMetadataTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
+#include "TypeInfoHelpers.hpp"
 #include "parser.pb.h"
 
 #include <cstdint>
@@ -18,6 +19,7 @@ namespace {
     using ParseResult::TEMPLATE_PARAMETER_KIND_TYPENAME;
     using ParseResult::TEMPLATE_SPECIALIZATION_NONE;
     using ParseResult::TLAliasDeclaration;
+    using UEMeta::Testing::ExpectedTypeInfo;
 
     fs::path AliasSourcePath() {
         return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "AliasTypes.hpp";
@@ -59,7 +61,7 @@ namespace {
     const TLAliasDeclaration& ExpectAlias(
         const std::string_view expected_alias,
         const std::uint32_t expected_occurrence_index,
-        const std::string_view expected_aliased_type,
+        const ExpectedTypeInfo& expected_aliased_type,
         const std::string_view expected_as_string) {
         SCOPED_TRACE(expected_alias);
 
@@ -81,7 +83,8 @@ namespace {
             expected_occurrence_index,
             false);
         EXPECT_EQ(declaration.alias(), expected_alias);
-        EXPECT_EQ(declaration.aliased_type(), expected_aliased_type);
+        EXPECT_TRUE(declaration.has_aliased_type());
+        UEMeta::Testing::ExpectTypeInfo(declaration.aliased_type(), expected_aliased_type);
         EXPECT_EQ(declaration.as_string(), expected_as_string);
         return declaration;
     }
@@ -91,7 +94,7 @@ TEST(AliasTests, UsingDeclaration) {
     const auto& declaration = ExpectAlias(
         "Alpha",
         1,
-        "Beta",
+        {"Beta", "Beta", false, AliasSourcePath()},
         R"(using Alpha = Beta)");
     EXPECT_FALSE(declaration.has_template_details());
 }
@@ -100,7 +103,7 @@ TEST(AliasTests, TemplatedUsingDeclaration) {
     const auto& declaration = ExpectAlias(
         "TemplatedAlpha",
         2,
-        "AliasType",
+        {"AliasType", "AliasType", true},
         R"(template <typename AliasType> using TemplatedAlpha = AliasType)");
 
     ASSERT_TRUE(declaration.has_template_details());
@@ -125,7 +128,7 @@ TEST(AliasTests, TypedefDeclaration) {
     const auto& declaration = ExpectAlias(
         "LegacyAlpha",
         3,
-        "Beta",
+        {"Beta", "Beta", false, AliasSourcePath()},
         R"(typedef Beta LegacyAlpha)");
     EXPECT_FALSE(declaration.has_template_details());
 }
