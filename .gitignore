@@ -5,3 +5,6 @@
 /.idea/
 /uemeta_scope_fixture_out/
 /UEMeta/
+*.exe
+intermediate
+__pycache__

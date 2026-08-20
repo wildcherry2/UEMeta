@@ -5,9 +5,12 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 #include <clang/AST/DeclTemplate.h>
 #include <llvm/ADT/DenseSet.h>
-#include <thread>
-
-#include "UEMeta/JsonBuilders.hpp"
+#include <llvm/ADT/DenseMap.h>
+#include <atomic>
+#include <filesystem>
+#include <memory>
+#include <google/protobuf/arena.h>
+#include "UEMeta/HeartbeatLogger.hpp"
 
 namespace clang::tooling {
     /**
@@ -17,6 +20,8 @@ namespace clang::tooling {
 }
 
 namespace UEMeta {
+    class ASTData;
+
     /**
      * @brief Runs a configured Clang tool with UEMeta's AST frontend action.
      *
@@ -60,20 +65,12 @@ namespace UEMeta {
         bool VisitRecordDecl(clang::RecordDecl* decl);
 
         /**
-         * @brief Visits class template declarations through their templated record declaration.
-         *
-         * @param decl Class template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitClassTemplateDecl(clang::ClassTemplateDecl* decl);
-
-        /**
          * @brief Visits enum declarations and records top-level metadata.
          *
-         * @param decl Enum declaration supplied by Clang.
+         * @param clang_decl Enum declaration supplied by Clang.
          * @return True to continue traversal.
          */
-        bool VisitEnumDecl(clang::EnumDecl* decl);
+        bool VisitEnumDecl(clang::EnumDecl* clang_decl);
 
         /**
          * @brief Visits free function declarations and records top-level metadata.
@@ -86,28 +83,12 @@ namespace UEMeta {
         bool VisitFunctionDecl(clang::FunctionDecl* decl);
 
         /**
-         * @brief Visits function templates through their templated function declaration.
+         * @brief Visits top-level using and typedef declarations.
          *
-         * @param decl Function template declaration supplied by Clang.
+         * @param decl Type alias or typedef declaration supplied by Clang.
          * @return True to continue traversal.
          */
-        bool VisitFunctionTemplateDecl(clang::FunctionTemplateDecl* decl);
-
-        /**
-         * @brief Visits top-level type alias declarations.
-         *
-         * @param decl Type alias declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitTypeAliasDecl(clang::TypeAliasDecl* decl);
-
-        /**
-         * @brief Visits type alias templates through their templated alias declaration.
-         *
-         * @param decl Type alias template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitTypeAliasTemplateDecl(clang::TypeAliasTemplateDecl* decl);
+        bool VisitTypedefNameDecl(clang::TypedefNameDecl* decl);
 
         /**
          * @brief Visits global variable declarations and records top-level metadata.
@@ -119,13 +100,7 @@ namespace UEMeta {
          */
         bool VisitVarDecl(clang::VarDecl* decl);
 
-        /**
-         * @brief Visits variable templates through their templated variable declaration.
-         *
-         * @param decl Variable template declaration supplied by Clang.
-         * @return True to continue traversal.
-         */
-        bool VisitVarTemplateDecl(clang::VarTemplateDecl* decl);
+        ClangHandler();
 
     protected:
         /**
@@ -139,24 +114,20 @@ namespace UEMeta {
 
     private:
         /**
-         * @brief Resets per-translation-unit state before traversal starts.
+         * @brief Logs that declaration traversal is starting.
          *
          * @param ctx AST context for the translation unit.
          */
         void BeginTranslationUnit(clang::ASTContext& ctx);
 
         /**
-         * @brief Writes collected JSON output and include-order artifacts after traversal completes.
+         * @brief Logs that declaration traversal has completed.
          *
          * @param ctx AST context for the translation unit.
          */
         void EndTranslationUnit(clang::ASTContext& ctx);
 
-        clang::ASTContext* context{};
-        JsonTopLevelDeclarations declarations{};
-        std::vector<JsonIncludeOrder> include_order{};
-        llvm::DenseSet<const clang::Decl*> visited_decls{};
-        llvm::DenseSet<const clang::Decl*> visited_forward_decls{};
-        std::jthread ticker_thread{};
+        std::unique_ptr<ASTData> data;
+        CountingHeartbeatLogger logger;
     };
 }

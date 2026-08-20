@@ -7,6 +7,9 @@ endif()
 project(parser LANGUAGES CXX)
 
 include(FetchContent)
+find_package(Python3 3.14 REQUIRED COMPONENTS Interpreter)
+
+option(UEMETA_ENABLE_TESTING "Build parser testing harness" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(FETCHCONTENT_QUIET OFF CACHE BOOL "Show FetchContent population progress" FORCE)
@@ -59,11 +62,6 @@ set(UEMETA_LLVM_PREBUILT_URL_HASH
     "${UEMETA_LLVM_DEFAULT_PREBUILT_URL_HASH}"
     CACHE STRING "LLVM binary release archive hash"
 )
-set(UEMETA_GLAZE_VERSION "7.3.3" CACHE STRING "Glaze release fetched by CMake")
-set(UEMETA_GLAZE_GIT_TAG
-    "dbf6caec935b768546587a413e45d033480c4483"
-    CACHE STRING "Glaze Git commit fetched by CMake"
-)
 set(UEMETA_CLI11_VERSION "2.6.2" CACHE STRING "CLI11 release fetched by CMake")
 set(UEMETA_CLI11_GIT_TAG
     "37bb6edc5317e99af72ef48405e65d9ca5218861"
@@ -74,16 +72,25 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
-set(UEMETA_INDICATORS_VERSION "2.3" CACHE STRING "indicators release fetched by CMake")
-set(UEMETA_INDICATORS_GIT_TAG
-    "v2.3"
-    CACHE STRING "indicators Git tag fetched by CMake"
+set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
+set(UEMETA_PROTOBUF_GIT_TAG
+    "v${UEMETA_PROTOBUF_VERSION}"
+    CACHE STRING "Protobuf Git tag fetched by CMake"
+)
+set(UEMETA_GOOGLETEST_VERSION "1.14.0" CACHE STRING "GoogleTest release fetched by CMake")
+set(UEMETA_GOOGLETEST_GIT_TAG
+    "v${UEMETA_GOOGLETEST_VERSION}"
+    CACHE STRING "GoogleTest Git tag fetched by CMake"
 )
 set(UEMETA_MSVC_DISABLED_WARNINGS
     /wd4100 # unreferenced formal parameter
     /wd4244 # conversion, possible loss of data
     /wd4189 # local variable initialized but not referenced
     /wd4702 # unreachable code
+)
+set(UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS
+    /w # suppress warnings while compiling non-project targets
+    /wd4530 # external code may intentionally compile without unwind semantics
 )
 
 FetchContent_Declare(llvm_prebuilt
@@ -95,18 +102,12 @@ FetchContent_Declare(llvm_prebuilt
     SOURCE_SUBDIR cmake-do-not-add
 )
 
-FetchContent_Declare(glaze
-    GIT_REPOSITORY https://github.com/stephenberry/glaze.git
-    GIT_TAG "${UEMETA_GLAZE_GIT_TAG}"
-    GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/glaze-${UEMETA_GLAZE_VERSION}"
-)
-
 FetchContent_Declare(cli11
     GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
     GIT_TAG "${UEMETA_CLI11_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/cli11-${UEMETA_CLI11_VERSION}"
+    SYSTEM
 )
 
 FetchContent_Declare(quill
@@ -114,13 +115,15 @@ FetchContent_Declare(quill
     GIT_TAG "${UEMETA_QUILL_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/quill-${UEMETA_QUILL_VERSION}"
+    SYSTEM
 )
 
-FetchContent_Declare(indicators
-    GIT_REPOSITORY https://github.com/p-ranav/indicators.git
-    GIT_TAG "${UEMETA_INDICATORS_GIT_TAG}"
+FetchContent_Declare(protobuf
+    GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+    GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
     GIT_PROGRESS TRUE
-    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/indicators-${UEMETA_INDICATORS_VERSION}"
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protobuf-${UEMETA_PROTOBUF_VERSION}"
+    SYSTEM
 )
 
 function(UEMeta_FetchContent_MakeAvailable name)
@@ -140,11 +143,73 @@ function(UEMeta_FetchContent_MakeAvailable name)
     set(${name_lc}_POPULATED "${${name_lc}_POPULATED}" PARENT_SCOPE)
 endfunction()
 
+function(UEMeta_ConfigureMSVCDependencyTargets directory runtime_library)
+    get_property(_uemeta_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+
+    foreach(_uemeta_target IN LISTS _uemeta_targets)
+        get_target_property(_uemeta_imported "${_uemeta_target}" IMPORTED)
+        get_target_property(_uemeta_type "${_uemeta_target}" TYPE)
+
+        if(NOT _uemeta_imported
+            AND NOT _uemeta_type STREQUAL "INTERFACE_LIBRARY"
+            AND NOT _uemeta_type STREQUAL "UTILITY")
+            set_target_properties("${_uemeta_target}" PROPERTIES
+                MSVC_RUNTIME_LIBRARY "${runtime_library}"
+            )
+            target_compile_options("${_uemeta_target}" PRIVATE ${ARGN})
+        endif()
+    endforeach()
+
+    get_property(_uemeta_subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+
+    foreach(_uemeta_subdirectory IN LISTS _uemeta_subdirectories)
+        UEMeta_ConfigureMSVCDependencyTargets("${_uemeta_subdirectory}" "${runtime_library}" ${ARGN})
+    endforeach()
+endfunction()
+
+function(UEMeta_AppendTargetInterfaceIncludes target)
+    get_target_property(_uemeta_aliased_target "${target}" ALIASED_TARGET)
+
+    if(_uemeta_aliased_target)
+        set(_uemeta_target "${_uemeta_aliased_target}")
+    else()
+        set(_uemeta_target "${target}")
+    endif()
+
+    if(TARGET "${_uemeta_target}")
+        target_include_directories("${_uemeta_target}" INTERFACE ${ARGN})
+    endif()
+endfunction()
+
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
-UEMeta_FetchContent_MakeAvailable(glaze)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
-UEMeta_FetchContent_MakeAvailable(indicators)
+
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_LIBPROTOC ON CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES ON CACHE BOOL "" FORCE)
+set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+UEMeta_FetchContent_MakeAvailable(protobuf)
+include("${protobuf_SOURCE_DIR}/cmake/protobuf-generate.cmake")
+UEMeta_AppendTargetInterfaceIncludes(
+    protobuf::libprotobuf
+    "${protobuf_SOURCE_DIR}/src"
+    "${protobuf_SOURCE_DIR}/third_party/utf8_range"
+)
+
+if(MSVC)
+    # The official LLVM Windows archive is release-built with /MT and STL debug
+    # iterators disabled, so every static dependency in the final binary must
+    # use the same runtime even for the Debug preset.
+    set(UEMETA_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    UEMeta_ConfigureMSVCDependencyTargets(
+        "${protobuf_SOURCE_DIR}"
+        "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+        ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
+    )
+endif()
 
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
@@ -186,11 +251,61 @@ if(MSVC AND TARGET LLVMDebugInfoPDB)
     endif()
 endif()
 
-add_executable(parser src/main.cpp src/ClangHandler.cpp
+set(UEMETA_PROTO_ROOT "${PROJECT_SOURCE_DIR}/../proto")
+set(UEMETA_PROTO_BUILD_SCRIPT "${UEMETA_PROTO_ROOT}/build.py")
+set(UEMETA_PROTO_GENERATED_DIR "${PROJECT_SOURCE_DIR}/intermediate/generated")
+
+file(GLOB UEMETA_PROTO_INPUTS CONFIGURE_DEPENDS "${UEMETA_PROTO_ROOT}/files/*.proto")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${UEMETA_PROTO_BUILD_SCRIPT}"
+    "${UEMETA_PROTO_ROOT}/buf.yaml"
+    ${UEMETA_PROTO_INPUTS}
+)
+
+message(STATUS "Generating parser protobuf C++ sources")
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" "${UEMETA_PROTO_BUILD_SCRIPT}"
+        --language cpp
+        --output parser/intermediate/generated
+        --modules parser
+    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/.."
+    RESULT_VARIABLE UEMETA_PROTO_BUILD_RESULT
+    OUTPUT_VARIABLE UEMETA_PROTO_BUILD_OUTPUT
+    ERROR_VARIABLE UEMETA_PROTO_BUILD_ERROR
+)
+
+if(NOT UEMETA_PROTO_BUILD_RESULT EQUAL 0)
+    message(FATAL_ERROR
+        "Failed to generate parser protobuf C++ sources.\n"
+        "stdout:\n${UEMETA_PROTO_BUILD_OUTPUT}\n"
+        "stderr:\n${UEMETA_PROTO_BUILD_ERROR}"
+    )
+endif()
+
+file(GLOB UEMETA_PROTO_GENERATED_SOURCES CONFIGURE_DEPENDS
+    "${UEMETA_PROTO_GENERATED_DIR}/*.cc"
+)
+file(GLOB UEMETA_PROTO_GENERATED_HEADERS CONFIGURE_DEPENDS
+    "${UEMETA_PROTO_GENERATED_DIR}/*.h"
+)
+
+if(NOT UEMETA_PROTO_GENERATED_SOURCES OR NOT UEMETA_PROTO_GENERATED_HEADERS)
+    message(FATAL_ERROR "Expected generated protobuf C++ files in ${UEMETA_PROTO_GENERATED_DIR}")
+endif()
+
+source_group("Generated\\Protobuf" FILES
+    ${UEMETA_PROTO_GENERATED_SOURCES}
+    ${UEMETA_PROTO_GENERATED_HEADERS}
+)
+
+add_executable(parser
+        src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
-        src/JsonHelpers.cpp
         src/MakeTool.cpp
-        src/StablePath.cpp)
+        src/StablePath.cpp
+        ${UEMETA_PROTO_GENERATED_SOURCES}
+        ${UEMETA_PROTO_GENERATED_HEADERS}
+        src/HeartbeatLogger.cpp)
 
 set_target_properties(parser PROPERTIES
     CXX_STANDARD 23
@@ -199,9 +314,21 @@ set_target_properties(parser PROPERTIES
     RUNTIME_OUTPUT_NAME parser
 )
 
-target_include_directories(parser PRIVATE "${PROJECT_SOURCE_DIR}/include")
+if(MSVC)
+    set_target_properties(parser PROPERTIES
+        MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+    )
+    set_source_files_properties(${UEMETA_PROTO_GENERATED_SOURCES} PROPERTIES
+        COMPILE_OPTIONS "${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}"
+    )
+endif()
+
+target_include_directories(parser PRIVATE
+    "${PROJECT_SOURCE_DIR}/include"
+)
 
 target_include_directories(parser SYSTEM PRIVATE
+    "${UEMETA_PROTO_GENERATED_DIR}"
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )
@@ -216,19 +343,19 @@ target_compile_options(parser PRIVATE
     $<$<CXX_COMPILER_ID:Clang>:-std=c++2c>
     $<$<CXX_COMPILER_ID:GNU>:-std=c++2c>
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
+    $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Od>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Zi>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/RTC1>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/O2>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Ob2>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/DNDEBUG>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
     $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Debug>>:-O0>
     $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Debug>>:-g>
     $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Release>>:-O3>
-    $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Release>>:-DNDEBUG>
 )
 
 target_link_options(parser PRIVATE
@@ -241,10 +368,9 @@ target_link_libraries(parser PRIVATE
     clangTooling
     clangFrontend
     clangASTMatchers
-    glaze::glaze
     CLI11::CLI11
     quill::quill
-    indicators::indicators
+    protobuf::libprotobuf
 )
 
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
@@ -253,6 +379,7 @@ set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
 target_compile_definitions(parser PRIVATE
     QUILL_DISABLE_FUNCTION_NAME
     QUILL_DISABLE_FILE_INFO
+    $<$<CONFIG:Debug>:DEBUG=1>
 )
 
 set_property(DIRECTORY APPEND PROPERTY
@@ -277,23 +404,247 @@ add_custom_command(TARGET parser POST_BUILD
     VERBATIM
 )
 
-enable_testing()
-find_program(UEMETA_POWERSHELL NAMES pwsh powershell)
-if(UEMETA_POWERSHELL)
-    if(WIN32)
-        set(UEMETA_SMOKE_CLANG "${PARSER_LLVM_BIN_DIR}/clang++.exe")
-        set(UEMETA_POWERSHELL_POLICY -ExecutionPolicy Bypass)
-    else()
-        set(UEMETA_SMOKE_CLANG "${PARSER_LLVM_BIN_DIR}/clang++")
-        set(UEMETA_POWERSHELL_POLICY)
+set(UEMETA_CLANG_CL_CONFIG_DEFINITION "$<IF:$<CONFIG:Debug>,/DDEBUG,/DNDEBUG>")
+set(UEMETA_CLANG_CL_CONFIG_OPTIMIZATION "$<IF:$<CONFIG:Debug>,/Od,/O2>")
+set(UEMETA_CLANG_CL_CONFIG_INLINE_EXPANSION "$<IF:$<CONFIG:Debug>,/Ob0,/Ob2>")
+
+if(UEMETA_ENABLE_TESTING)
+    enable_testing()
+    include(GoogleTest)
+
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    set(gtest_force_shared_crt OFF CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG "${UEMETA_GOOGLETEST_GIT_TAG}"
+        GIT_PROGRESS TRUE
+        SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/googletest-${UEMETA_GOOGLETEST_VERSION}"
+        SYSTEM
+    )
+
+    UEMeta_FetchContent_MakeAvailable(googletest)
+
+    if(MSVC)
+        UEMeta_ConfigureMSVCDependencyTargets(
+            "${googletest_SOURCE_DIR}"
+            "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+            ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
+        )
     endif()
 
-    add_test(NAME split_strategy_smoke
-        COMMAND "${UEMETA_POWERSHELL}" -NoProfile ${UEMETA_POWERSHELL_POLICY}
-            -File "${PROJECT_SOURCE_DIR}/tests/smoke_split_strategy.ps1"
-            -ParserExe "$<TARGET_FILE:parser>"
-            -ClangExe "${UEMETA_SMOKE_CLANG}"
-            -WorkingRoot "${CMAKE_CURRENT_BINARY_DIR}/smoke/split_strategy"
+    set(UEMETA_TEST_TARGET_DIR "${PROJECT_SOURCE_DIR}/testing/target")
+    set(UEMETA_TEST_TARGET_INCLUDE_DIR "${UEMETA_TEST_TARGET_DIR}/include")
+    set(UEMETA_TEST_TARGET_SOURCE_DIR "${UEMETA_TEST_TARGET_DIR}/src")
+    set(UEMETA_TEST_HARNESS_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/testing/harness/include")
+    set(UEMETA_TEST_HARNESS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/testing/harness/src")
+    set(UEMETA_TEST_OUTPUT_DIR "${PROJECT_SOURCE_DIR}/testing/output")
+    set(UEMETA_TEST_TARGET_SOURCE "${UEMETA_TEST_TARGET_SOURCE_DIR}/test.cpp")
+    set(UEMETA_TEST_PARSER_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/RunParserForTests.cmake")
+    set(UEMETA_TEST_PARSER_OUTPUT_MARKER "${CMAKE_CURRENT_BINARY_DIR}/uemeta-test-parser-output.ready")
+
+    file(GLOB UEMETA_TEST_TARGET_HEADERS CONFIGURE_DEPENDS
+        "${UEMETA_TEST_TARGET_INCLUDE_DIR}/*.h"
+        "${UEMETA_TEST_TARGET_INCLUDE_DIR}/*.hpp"
+        "${UEMETA_TEST_TARGET_INCLUDE_DIR}/*.cpp"
     )
-    set_tests_properties(split_strategy_smoke PROPERTIES DEPENDS parser)
+    file(GLOB UEMETA_TEST_HARNESS_SOURCES CONFIGURE_DEPENDS
+        "${UEMETA_TEST_HARNESS_SOURCE_DIR}/*.cpp"
+    )
+    file(GLOB UEMETA_TEST_HARNESS_HEADERS CONFIGURE_DEPENDS
+        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}/*.h"
+        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}/*.hpp"
+    )
+
+    if(NOT EXISTS "${UEMETA_TEST_TARGET_SOURCE}")
+        message(FATAL_ERROR "Expected parser test target source at ${UEMETA_TEST_TARGET_SOURCE}")
+    endif()
+
+    if(NOT UEMETA_TEST_TARGET_HEADERS)
+        message(FATAL_ERROR "Expected parser test target headers in ${UEMETA_TEST_TARGET_INCLUDE_DIR}")
+    endif()
+
+    if(NOT UEMETA_TEST_HARNESS_SOURCES)
+        message(FATAL_ERROR "Expected GoogleTest harness sources in ${UEMETA_TEST_HARNESS_SOURCE_DIR}")
+    endif()
+
+    file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" UEMETA_TEST_WORKING_DIRECTORY_JSON)
+    file(TO_CMAKE_PATH "${UEMETA_TEST_TARGET_SOURCE}" UEMETA_TEST_TARGET_SOURCE_JSON)
+    file(TO_CMAKE_PATH "${UEMETA_TEST_TARGET_DIR}" UEMETA_TEST_TARGET_DIR_JSON)
+    file(TO_CMAKE_PATH "${UEMETA_TEST_TARGET_INCLUDE_DIR}" UEMETA_TEST_TARGET_INCLUDE_DIR_JSON)
+    file(TO_CMAKE_PATH "${UEMETA_TEST_OUTPUT_DIR}" UEMETA_TEST_OUTPUT_DIR_JSON)
+    file(TO_CMAKE_PATH "${UEMETA_TEST_PARSER_OUTPUT_MARKER}" UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON)
+
+    set(UEMETA_TEST_CLANG_EXECUTABLE "${PARSER_BUNDLE_CLANG_DIR}/clang-cl${CMAKE_EXECUTABLE_SUFFIX}")
+    set(UEMETA_TEST_COMPILE_COMMAND
+        "clang-cl${CMAKE_EXECUTABLE_SUFFIX} /nologo /TP /std:c++latest /EHsc /Zc:preprocessor /bigobj /DWIN32 /D_WINDOWS ${UEMETA_CLANG_CL_CONFIG_DEFINITION} /MT ${UEMETA_CLANG_CL_CONFIG_OPTIMIZATION} ${UEMETA_CLANG_CL_CONFIG_INLINE_EXPANSION} /I\"${UEMETA_TEST_TARGET_INCLUDE_DIR_JSON}\" /c \"${UEMETA_TEST_TARGET_SOURCE_JSON}\""
+    )
+    file(TO_CMAKE_PATH "${UEMETA_TEST_CLANG_EXECUTABLE}" UEMETA_TEST_CLANG_EXECUTABLE_JSON)
+    string(REPLACE "\"" "\\\"" UEMETA_TEST_COMPILE_COMMAND_JSON "${UEMETA_TEST_COMPILE_COMMAND}")
+    string(CONCAT UEMETA_TEST_COMPILE_COMMANDS_JSON
+        "[\n"
+        "  {\n"
+        "    \"directory\": \"${UEMETA_TEST_WORKING_DIRECTORY_JSON}\",\n"
+        "    \"command\": \"${UEMETA_TEST_COMPILE_COMMAND_JSON}\",\n"
+        "    \"file\": \"${UEMETA_TEST_TARGET_SOURCE_JSON}\"\n"
+        "  }\n"
+        "]\n"
+    )
+
+    string(CONCAT UEMETA_TEST_PARSER_LAUNCHER_CONTENT
+        "file(MAKE_DIRECTORY [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===])\n"
+        "file(GLOB UEMETA_TEST_STALE_OUTPUT_FILES\n"
+        "    [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*bin]===]\n"
+        "    [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*json]===]\n"
+        ")\n"
+        "if(UEMETA_TEST_STALE_OUTPUT_FILES)\n"
+        "    file(REMOVE \${UEMETA_TEST_STALE_OUTPUT_FILES})\n"
+        "endif()\n"
+        "file(REMOVE [===[${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}]===])\n"
+        "execute_process(\n"
+        "    COMMAND \"$<TARGET_FILE:parser>\"\n"
+        "        --compile-commands [===[${UEMETA_TEST_COMPILE_COMMANDS_JSON}]===]\n"
+        "        --clang-path [===[${UEMETA_TEST_CLANG_EXECUTABLE_JSON}]===]\n"
+        "        --output [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===]\n"
+        "        --format binary\n"
+        "        --path-begin [===[${UEMETA_TEST_WORKING_DIRECTORY_JSON}]===]\n"
+        "    RESULT_VARIABLE UEMETA_TEST_PARSER_RESULT\n"
+        ")\n"
+        "if(NOT UEMETA_TEST_PARSER_RESULT EQUAL 0)\n"
+        "    message(FATAL_ERROR \"parser test target run failed with exit code \${UEMETA_TEST_PARSER_RESULT}\")\n"
+        "endif()\n"
+        "file(GLOB UEMETA_TEST_PARSER_OUTPUT_FILES [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*bin]===])\n"
+        "if(NOT UEMETA_TEST_PARSER_OUTPUT_FILES)\n"
+        "    message(FATAL_ERROR \"parser test target produced no binary output in ${UEMETA_TEST_OUTPUT_DIR_JSON}\")\n"
+        "endif()\n"
+        "file(WRITE [===[${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}]===] \"ready\\n\")\n"
+    )
+    file(GENERATE OUTPUT "${UEMETA_TEST_PARSER_LAUNCHER}" CONTENT "${UEMETA_TEST_PARSER_LAUNCHER_CONTENT}")
+
+    add_custom_target(uemeta-test-output
+        COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_TEST_PARSER_LAUNCHER}"
+        DEPENDS
+            parser
+            "${UEMETA_TEST_PARSER_LAUNCHER}"
+            "${UEMETA_TEST_TARGET_SOURCE}"
+            ${UEMETA_TEST_TARGET_HEADERS}
+        COMMENT "Preparing parser test output"
+        VERBATIM
+    )
+
+    add_executable(uemeta-parser-tests
+        ${UEMETA_TEST_HARNESS_SOURCES}
+        ${UEMETA_TEST_HARNESS_HEADERS}
+        ${UEMETA_PROTO_GENERATED_SOURCES}
+    )
+    add_dependencies(uemeta-parser-tests uemeta-test-output)
+
+    set_target_properties(uemeta-parser-tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    if(MSVC)
+        set_target_properties(uemeta-parser-tests PROPERTIES
+            MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+        )
+    endif()
+
+    target_compile_definitions(uemeta-parser-tests PRIVATE
+        UEMETA_TEST_OUTPUT_DIR="${UEMETA_TEST_OUTPUT_DIR_JSON}"
+        UEMETA_TEST_TARGET_DIR="${UEMETA_TEST_TARGET_DIR_JSON}"
+        UEMETA_TEST_TARGET_INCLUDE_DIR="${UEMETA_TEST_TARGET_INCLUDE_DIR_JSON}"
+        UEMETA_TEST_TARGET_SOURCE="${UEMETA_TEST_TARGET_SOURCE_JSON}"
+        UEMETA_TEST_PARSER_OUTPUT_MARKER="${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}"
+    )
+
+    target_include_directories(uemeta-parser-tests SYSTEM PRIVATE
+        "${UEMETA_PROTO_GENERATED_DIR}"
+    )
+
+    target_include_directories(uemeta-parser-tests PRIVATE
+        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}"
+    )
+
+    target_compile_options(uemeta-parser-tests PRIVATE
+        $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+        $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
+        $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
+    )
+
+    target_link_libraries(uemeta-parser-tests PRIVATE
+        GTest::gtest_main
+        protobuf::libprotobuf
+    )
+
+    add_test(
+        NAME uemeta-test-output-ctest
+        COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_TEST_PARSER_LAUNCHER}"
+    )
+    set_tests_properties(uemeta-test-output-ctest PROPERTIES
+        FIXTURES_SETUP uemeta-parser-output
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+
+    gtest_discover_tests(uemeta-parser-tests
+        DISCOVERY_MODE PRE_TEST
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        PROPERTIES
+            FIXTURES_REQUIRED uemeta-parser-output
+    )
 endif()
+
+set(UEMETA_PLAYGROUND_SOURCE "${PROJECT_SOURCE_DIR}/playground/pg.cpp")
+set(UEMETA_PLAYGROUND_COMPILE_COMMANDS "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/playground_compile_commands.json")
+set(UEMETA_PLAYGROUND_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/RunPlayground.cmake")
+
+file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON)
+file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_SOURCE}" UEMETA_PLAYGROUND_SOURCE_JSON)
+file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_COMPILE_COMMANDS}" UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON)
+
+string(CONCAT UEMETA_PLAYGROUND_COMPILE_COMMANDS_CONTENT
+    "[\n"
+    "  {\n"
+    "    \"directory\": \"${UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON}\",\n"
+    "    \"arguments\": [\n"
+    "      \"clang-cl${CMAKE_EXECUTABLE_SUFFIX}\",\n"
+    "      \"/nologo\", \"/TP\", \"/std:c++latest\", \"/EHsc\", \"/Zc:preprocessor\", \"/bigobj\",\n"
+    "      \"/DWIN32\", \"/D_WINDOWS\", \"${UEMETA_CLANG_CL_CONFIG_DEFINITION}\", \"/MT\",\n"
+    "      \"${UEMETA_CLANG_CL_CONFIG_OPTIMIZATION}\", \"${UEMETA_CLANG_CL_CONFIG_INLINE_EXPANSION}\", \"/c\",\n"
+    "      \"${UEMETA_PLAYGROUND_SOURCE_JSON}\"\n"
+    "    ],\n"
+    "    \"file\": \"${UEMETA_PLAYGROUND_SOURCE_JSON}\"\n"
+    "  }\n"
+    "]\n"
+)
+file(GENERATE
+    OUTPUT "${UEMETA_PLAYGROUND_COMPILE_COMMANDS}"
+    CONTENT "${UEMETA_PLAYGROUND_COMPILE_COMMANDS_CONTENT}"
+)
+string(CONCAT UEMETA_PLAYGROUND_LAUNCHER_CONTENT
+    "execute_process(\n"
+    "    COMMAND \"$<TARGET_FILE:parser>\"\n"
+    "        --compile-commands [===[${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}]===]\n"
+    "        --clang-path [===[${PARSER_BUNDLE_CLANG_DIR}/clang-cl${CMAKE_EXECUTABLE_SUFFIX}]===]\n"
+    "        --dump\n"
+    "    RESULT_VARIABLE UEMETA_PLAYGROUND_RESULT\n"
+    ")\n"
+    "if(NOT UEMETA_PLAYGROUND_RESULT EQUAL 0)\n"
+    "    message(FATAL_ERROR \"playground parser run failed with exit code \${UEMETA_PLAYGROUND_RESULT}\")\n"
+    "endif()\n"
+)
+file(GENERATE OUTPUT "${UEMETA_PLAYGROUND_LAUNCHER}" CONTENT "${UEMETA_PLAYGROUND_LAUNCHER_CONTENT}")
+
+add_custom_target(playground
+    COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_PLAYGROUND_LAUNCHER}"
+    DEPENDS parser "${UEMETA_PLAYGROUND_SOURCE}"
+    COMMENT "Running parser over playground/pg.cpp"
+    USES_TERMINAL
+    VERBATIM
+)

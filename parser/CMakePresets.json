@@ -44,6 +44,21 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "playground",
+      "displayName": "Playground",
+      "inherits": "ninja-debug",
+      "binaryDir": "${sourceDir}/intermediate/build/playground"
+    },
+    {
+      "name": "testing",
+      "displayName": "Testing",
+      "inherits": "ninja-release",
+      "binaryDir": "${sourceDir}/intermediate/build/testing",
+      "cacheVariables": {
+        "UEMETA_ENABLE_TESTING": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -80,6 +95,34 @@
       "targets": [
         "parser"
       ]
+    },
+    {
+      "name": "playground",
+      "displayName": "Playground",
+      "inherits": "ninja-debug",
+      "configurePreset": "playground",
+      "targets": [
+        "playground"
+      ]
+    },
+    {
+      "name": "testing",
+      "displayName": "Testing",
+      "inherits": "ninja-release",
+      "configurePreset": "testing",
+      "targets": [
+        "uemeta-parser-tests"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "testing",
+      "displayName": "Testing",
+      "configurePreset": "testing",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

@@ -2,8 +2,11 @@
 #include <filesystem>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <atomic>
+#include <map>
+#include <unordered_set>
 
 #include "quill/Logger.h"
 #include "quill/LogMacros.h"
@@ -11,78 +14,28 @@
 
 #include "UEMeta/StablePath.hpp"
 
-#ifdef WIN32
-/**
- * @brief Default bundled clang-cl executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl.exe"
-
-/**
- * @brief Default bundled clang executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang.exe"
-#else
-/**
- * @brief Default bundled clang-cl executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH std::filesystem::current_path() / "Clang" / "clang-cl"
-
-/**
- * @brief Default bundled clang executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_PATH std::filesystem::current_path() / "Clang" / "clang"
-#endif
-
-/**
- * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
- */
-#define UEM_DEFAULT_STRIP_LIST std::vector<std::string>{"/Yu", "/Fp", "/experimental:log{1}"}
-
 /**
  * @brief Application entry point declared so configuration and logging singletons can restrict initialization.
  */
 int main(int argc, char** argv);
 
+
+//todo make getters lazy initialize cfg?
 namespace UEMeta {
     /**
-     * @brief Strategy used to partition generated declaration JSON files.
-     */
-    enum class SplitStrategy {
-        /**
-         * @brief Groups emitted declarations by their source file.
-         */
-        ByFile,
-
-        /**
-         * @brief Writes each emitted top-level declaration to its own JSON file.
-         */
-        ByDecl
-    };
-
-    /**
-     * @brief Process-wide CLI configuration used by tool setup, path scrubbing, and JSON emission.
+     * @brief Process-wide CLI configuration used by tool setup.
      */
     class Config {
     public:
-        /**
-         * @brief Returns the C++ translation unit path.
-         */
-        [[nodiscard]] const StablePath& CppPath() const;
+        enum class SerializationFormat {
+            json,
+            binary
+        };
 
         /**
-         * @brief Returns the compile_commands.json path.
+         * @brief Returns the normalized compile_commands.json content.
          */
-        [[nodiscard]] const StablePath& CcPath() const;
-
-        /**
-         * @brief Returns the output directory path.
-         */
-        [[nodiscard]] const StablePath& OutPath() const;
-
-        /**
-         * @brief Returns the configured JSON file split strategy.
-         */
-        [[nodiscard]] SplitStrategy GetSplitStrategy() const;
+        [[nodiscard]] const std::string& CompileCommands() const;
 
         /**
          * @brief Returns the clang or clang-cl executable path.
@@ -92,45 +45,52 @@ namespace UEMeta {
         /**
          * @brief Returns compiler arguments appended after compile command filtering.
          */
-        [[nodiscard]] const std::vector<std::string>& AdditionalClangArgs() const;
+        [[nodiscard]] const std::unordered_set<std::string>& AdditionalClangArgs() const;
 
         /**
          * @brief Returns compile command arguments that should be stripped before invoking Clang.
          */
-        [[nodiscard]] const std::vector<std::string>& StripArgs() const;
+        [[nodiscard]] const std::unordered_set<std::string>& StripArgs() const;
 
         /**
-         * @brief Returns path delimiter tokens used to trim generated file paths.
+         * @brief Returns true when the user prefers `clang` over `clang-cl`.
          */
-        [[nodiscard]] const std::vector<std::string>& PathDelimiters() const;
+        [[nodiscard]] bool PrefersClang() const;
 
         /**
-         * @brief Returns path blacklist tokens replaced in generated file paths.
+         * @brief Returns true when the user wants to dump everything to a single JSON.
          */
-        [[nodiscard]] const std::vector<std::string>& PathBlacklist() const;
+        [[nodiscard]] bool DumpToJson() const;
 
         /**
-         * @brief Returns header blacklist tokens used to exclude declarations and include edges.
+         * @brief Returns the output format.
          */
-        [[nodiscard]] const std::vector<std::string>& HeaderBlacklist() const;
+        [[nodiscard]] SerializationFormat Format() const;
 
         /**
-         * @brief Returns header whitelist tokens used to include declarations and include edges.
+         * @brief Returns the set of potential starting points for output paths.
          */
-        [[nodiscard]] const std::vector<std::string>& HeaderWhitelist() const;
+        [[nodiscard]] const std::unordered_set<std::string>& PathBegin() const;
+
+        /**
+         * @brief Returns the path to the log file. If empty, no log file should be written to.
+         */
+        [[nodiscard]] const StablePath& Log();
+
+        /**
+         * @brief Returns the directory to output serialized ASTs to.
+         */
+        [[nodiscard]] const StablePath& OutputDirectory() const;
 
         /**
          * @brief Writes a human-readable configuration summary to a stream.
          */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
-            return os << fmtquill::format("cpp_path={}\ncc_path={}\nout_path={}"
-                                     "\nsplit_strategy={}\nclang_path={}\nno_cl={}\nadditional_clang_args={}\n"
-                                     "strip_args={}\npath_delimiters={}\npath_blacklist={}\n"
-                                     "header_blacklist={}\nheader_whitelist={}",
-                obj.cpp_path.string(), obj.cc_path.string(), obj.out_path.string(),
-                obj.split_strategy == SplitStrategy::ByFile ? "file" : "decl",
-                obj.ClangPath().string(), obj.no_cl, obj.additional_clang_args, obj.strip_args,
-                obj.path_delimiters, obj.path_blacklist, obj.header_blacklist, obj.header_whitelist);
+            return os << fmtquill::format("compile_commands={}\nprefer_clang={}\nstrip_commands={}\n"
+                                          "additional_clang_args={}\npath_begin={}\nformat={}\nclang_path={}\n"
+                                          "log={}\noutput_directory={}", obj.compile_commands, obj.prefer_clang, obj.strip_commands,
+                                          obj.additional_clang_args, obj.path_begin, format_string_map.at(obj.format), obj.clang_path.string(), obj.log.string(),
+                                          obj.output_directory.string());
         }
 
         /**
@@ -180,18 +140,28 @@ namespace UEMeta {
          */
         static int Initialize(int argc, char** argv);
 
-        StablePath cpp_path{}, cc_path{}, out_path{};
+        bool prefer_clang{};
+        bool dump_to_json{};
+        SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
+        std::unordered_set<std::string> strip_commands{};
+        std::unordered_set<std::string> additional_clang_args{};
+        std::unordered_set<std::string> path_begin{};
         StablePath clang_path{};
-        bool no_cl = false;
-        SplitStrategy split_strategy{SplitStrategy::ByFile};
-        std::vector<std::string> additional_clang_args{};
-        std::vector<std::string> strip_args{};
-        std::vector<std::string> path_delimiters{"UnrealEngine"}; //replace with set?
-        std::vector<std::string> path_blacklist{}; //replace with set?
-        std::vector<std::string> header_whitelist{};
-        std::vector<std::string> header_blacklist{};
+        StablePath log{};
+        StablePath output_directory{};
+        std::string compile_commands{};
 
         std::atomic_flag initialized{};
+
+        inline static const std::map<std::string, SerializationFormat> string_format_map = {
+            {"json", SerializationFormat::json},
+            {"binary", SerializationFormat::binary}
+        };
+
+        inline static const std::map<SerializationFormat, std::string> format_string_map = {
+            {SerializationFormat::json, "json"},
+            {SerializationFormat::binary, "binary"}
+        };
     };
 
     /**
@@ -256,64 +226,38 @@ namespace UEMeta {
 
         quill::Logger* logger{};
     };
+
+    namespace Logging {
+        template <typename Message>
+        decltype(auto) BuildLogMessage(Message&& message) noexcept {
+            return std::forward<Message>(message);
+        }
+
+        template <typename Format, typename... Args>
+            requires(sizeof...(Args) > 0)
+        std::string BuildLogMessage(Format&& format, Args&&... args) {
+            return fmtquill::format(fmtquill::runtime(fmtquill::string_view{std::forward<Format>(format)}),
+                                    std::forward<Args>(args)...);
+        }
+    }
 }
 
 /**
  * @brief Emits an informational log message through the UEMeta logger.
  */
-#define UEM_INFO(fmt, ...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_INFO(...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits a warning log message through the UEMeta logger.
  */
-#define UEM_WARN(fmt, ...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_WARN(...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits a debug log message through the UEMeta logger.
  */
-#define UEM_DEBUG(fmt, ...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
+#define UEM_DEBUG(...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits an error log message through the UEMeta logger.
  */
-#define UEM_ERROR(fmt, ...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), fmt, ##__VA_ARGS__)
-
-/**
- * @brief Internal log tag used to start a console spinner.
- */
-#define UEM_START_SPINNER_TAG "_uemspinner-start"
-
-/**
- * @brief Internal log tag used to update console spinner text.
- */
-#define UEM_UPDATE_SPINNER_TAG "_uemspinner-text"
-
-/**
- * @brief Internal log tag used to tick the console spinner.
- */
-#define UEM_TICK_SPINNER_TAG "_uemspinner-tick"
-
-/**
- * @brief Internal log tag used to stop the console spinner.
- */
-#define UEM_STOP_SPINNER_TAG "_uemspinner-stop"
-
-/**
- * @brief Starts a console spinner with the provided message.
- */
-#define UEM_SPINNER_START(start_msg)    LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_START_SPINNER_TAG), "{}", start_msg)
-
-/**
- * @brief Updates the active console spinner message.
- */
-#define UEM_SPINNER_UPDATE(update_msg)  LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_UPDATE_SPINNER_TAG), "{}", update_msg)
-
-/**
- * @brief Advances the active console spinner.
- */
-#define UEM_SPINNER_TICK                LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_TICK_SPINNER_TAG), "tick")
-
-/**
- * @brief Stops the active console spinner with the provided message.
- */
-#define UEM_SPINNER_STOP(stop_msg)      LOG_TRACE_L1_TAGS(::UEMeta::Logger::GetLogger().GetQuill(), TAGS(UEM_STOP_SPINNER_TAG), "{}", stop_msg)
+#define UEM_ERROR(...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))

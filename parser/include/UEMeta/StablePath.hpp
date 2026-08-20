@@ -151,7 +151,45 @@ namespace UEMeta {
             return path.end();
         }
 
+        StablePath& operator=(const std::string& other) {
+            Assign(std::string_view{other});
+            return *this;
+        }
+
+        StablePath& operator=(const std::string_view& other) {
+            Assign(other);
+            return *this;
+        }
+
+        StablePath& operator=(const std::filesystem::path& other) {
+            Assign(other);
+            return *this;
+        }
+
+        operator bool() const noexcept {
+            return !last_error;
+        }
+
+        [[nodiscard]] StablePath operator/(const std::string& other) const {
+            return StablePath(path / other);
+        }
+
+        [[nodiscard]] StablePath operator/(const std::string_view& other) const {
+            return StablePath(path / other);
+        }
+
+        [[nodiscard]] StablePath operator/(const char* other) const {
+            return StablePath(path / other);
+        }
+
+        [[nodiscard]] StablePath operator/(const std::filesystem::path& other) const {
+            return StablePath(path / other);
+        }
+
+        static StablePath current_program_path() noexcept;
+        static StablePath current_program_directory() noexcept;
     private:
         std::filesystem::path path{};
+        std::error_code last_error{};
     };
 }

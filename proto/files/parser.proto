@@ -1,0 +1,339 @@
+syntax = "proto3";
+
+package ParseResult;
+
+// todo figure out common fields between variables, fields, and params
+
+// Used directly for the .file payload emitted by declaration splitting.
+message TLFileData {
+    string path = 1;
+    uint64 path_hash = 2;
+    uint32 file_occurrence = 3;
+}
+
+// Top-level record declaration (class/struct/union).
+message TLRecordDeclaration {
+    DeclarationMetadata metadata = 1;
+    RecordKind kind = 2;
+    optional TemplateDetails template_details = 3;
+    // if set, then the record has all methods defined in this class are inlined in the header.
+    // this does not imply anything about parent classes though; inherited method definitions may not be defined in their header.
+    // this is useful to know since if a record is header only and doesn't change, then it can be simply copied completely, and
+    // if it has changed then you at least know that this class can be completely defined in the header.
+    optional bool is_complete_definition = 4;
+    // May be missing if the size is unknown (e.g. templates).
+    optional int64 size_bytes = 5;
+    // May be missing if the alignment is unknown (e.g. templates).
+    optional int64 align_bytes = 6;
+    repeated Field fields = 7;
+    // hashes of records, enums, forward decls, static fields, and aliases that are 
+    // nested within this record. this is not recursive; just direct nested declarations
+    repeated uint64 nested_hashes = 8;
+    repeated BaseSpecifier bases = 9;
+    repeated MemberFunction methods = 11;
+}
+
+// Top-level enum declaration.
+message TLEnumDeclaration {
+    DeclarationMetadata metadata = 1;
+    EnumDetails details = 2;
+    repeated Enumerator enumerators = 3;
+}
+
+// Top-level forward declaration.
+message TLForwardDeclaration {
+    DeclarationMetadata metadata = 1;
+    ForwardDeclarationKind kind = 2;
+    optional TemplateDetails template_details = 3;
+    // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
+    optional EnumDetails enum_details = 4;
+    string as_string = 5;
+}
+
+// Top-level alias declaration, including typedefs and using declarations.
+message TLAliasDeclaration {
+    DeclarationMetadata metadata = 1;
+    optional TemplateDetails template_details = 2;
+    string aliased_type = 3;
+    string alias = 4;
+    string as_string = 5;
+}
+
+// An independently tracked top-level free-function declaration.
+message TLFreeFunctionDeclaration {
+    DeclarationMetadata metadata = 1;
+    FunctionCommon common = 2;
+}
+
+// An independently tracked global-variable or static field declaration.
+message TLGlobalVariableDeclaration {
+    DeclarationMetadata metadata = 1;
+    optional TemplateDetails template_details = 2;
+    string type = 3;
+    
+    // type without any pointers, references, or array brackets
+    string underlying_type = 4;
+    string as_string = 5;
+    optional VariableStorageClass storage_class = 6;
+    optional string default_value = 7;
+    optional ConstantEvaluationKind constant_evaluation_kind = 8;
+    uint64 content_hash = 9;
+}
+
+enum RecordKind {
+    RECORD_KIND_UNSPECIFIED = 0;
+    RECORD_KIND_CLASS = 1;
+    RECORD_KIND_STRUCT = 2;
+    RECORD_KIND_UNION = 3;
+}
+
+enum ForwardDeclarationKind {
+    FORWARD_DECLARATION_KIND_UNSPECIFIED = 0;
+    FORWARD_DECLARATION_KIND_CLASS = 1;
+    FORWARD_DECLARATION_KIND_STRUCT = 2;
+    FORWARD_DECLARATION_KIND_UNION = 3;
+    FORWARD_DECLARATION_KIND_ENUM = 4;
+}
+
+// The unscoped value also represents the absence of a scoped enum keyword.
+enum EnumScope {
+    ENUM_SCOPE_UNSCOPED = 0;
+    ENUM_SCOPE_CLASS = 1;
+    ENUM_SCOPE_STRUCT = 2;
+}
+
+enum VariableStorageClass {
+    VAR_STORAGE_CLASS_UNSPECIFIED = 0;
+    VAR_STORAGE_CLASS_EXTERN = 1;
+    VAR_STORAGE_CLASS_EXTERN_C = 2;
+    VAR_STORAGE_CLASS_STATIC = 3;
+    VAR_STORAGE_CLASS_THREAD_LOCAL = 4;
+}
+
+enum FunctionStorageClass {
+    FUN_VAR_STORAGE_CLASS_UNSPECIFIED = 0;
+    FUN_VAR_STORAGE_CLASS_EXTERN = 1;
+    FUN_VAR_STORAGE_CLASS_STATIC = 2;
+    FUN_VAR_STORAGE_CLASS_EXTERN_C = 3;
+}
+
+enum AccessSpecifier {
+    ACCESS_SPECIFIER_UNSPECIFIED = 0;
+    ACCESS_SPECIFIER_PUBLIC = 1;
+    ACCESS_SPECIFIER_PROTECTED = 2;
+    ACCESS_SPECIFIER_PRIVATE = 3;
+}
+
+// Static member functions have a distinct kind, so no separate is_static flag
+// is needed in FunctionDetails.
+enum FunctionKind {
+    FUNCTION_KIND_UNSPECIFIED = 0;
+    FUNCTION_KIND_FREE = 1;
+    FUNCTION_KIND_CONSTRUCTOR = 2;
+    FUNCTION_KIND_MEMBER = 3;
+    FUNCTION_KIND_STATIC_MEMBER = 4;
+    FUNCTION_KIND_DESTRUCTOR = 5;
+    FUNCTION_KIND_MEMBER_CONVERSION = 6;
+    FUNCTION_KIND_CONVERSION = 7;
+}
+
+enum FunctionDefinitionKind {
+    FUNCTION_DEFINITION_NORMAL = 0;
+    FUNCTION_DEFINITION_DELETED = 1;
+    FUNCTION_DEFINITION_DEFAULTED = 2;
+}
+
+enum FunctionVirtuality {
+    FUNCTION_VIRTUALITY_NONE = 0;
+    FUNCTION_VIRTUALITY_VIRTUAL = 1;
+    FUNCTION_VIRTUALITY_PURE = 2;
+}
+
+enum ConstantEvaluationKind {
+    CONSTANT_EVALUATION_NONE = 0;
+    CONSTANT_EVALUATION_CONSTEXPR = 1;
+    CONSTANT_EVALUATION_CONSTEVAL = 2;
+}
+
+enum TemplateParameterKind {
+    TEMPLATE_PARAMETER_KIND_UNSPECIFIED = 0;
+    TEMPLATE_PARAMETER_KIND_TYPENAME = 1;
+    TEMPLATE_PARAMETER_KIND_CLASS = 2;
+    TEMPLATE_PARAMETER_KIND_NON_TYPE = 3;
+    TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE = 4;
+    TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE = 5;
+}
+
+enum TemplateSpecializationKind {
+    // primary template
+    TEMPLATE_SPECIALIZATION_NONE = 0;
+
+    // template params inferred from usage
+    TEMPLATE_SPECIALIZATION_IMPLICIT = 1;
+
+    // like a custom implementation of a template ('template <> void print<int>(int v)')
+    TEMPLATE_SPECIALIZATION_EXPLICIT = 2;
+
+    // 'extern template' declaration
+    TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION = 3;
+
+    // like forward declaring 'template class std::vector<int>'
+    TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION = 4;
+}
+
+// Identity and source context shared by declarations and their named child
+// entities.
+// Producers must generate deterministic names for constructs that are unnamed in
+// source. A parameter's qualified_name includes its owning function's qualified
+// name and a parameter-specific suffix.
+message Identifier {
+    string name = 1;
+    string qualified_name = 2;
+    uint64 qualified_name_hash = 3;
+    string file_path = 4;
+    uint64 file_path_hash = 5;
+    repeated string scope = 6;
+    optional string documentation = 7;
+}
+
+// Identity, source, and file-splitting metadata shared by independently tracked
+// Declaration variants, including declarations nested in records. content_hash
+// is kept here rather than in Identifier because it changes when the
+// declaration changes.
+message DeclarationMetadata {
+    Identifier identifier = 1;
+    uint64 content_hash = 2;
+    // The index of this declaration relative to the other declarations in the same file
+    uint32 occurrence_index = 3;
+    optional bool is_anonymous = 4;
+}
+
+// Shared by record, function, variable, alias, and forward-declaration
+// templates. specialization_kind == NONE identifies a primary (unspecialized) template.
+message TemplateDetails {
+    repeated TemplateParameter parameters = 1;
+    optional TemplateSpecializationKind specialization_kind = 2;
+    optional string primary_template_qualified_name = 3;
+    repeated string arguments = 4;
+}
+
+// Represents a single template parameter.
+// Ex: With `template<typename T, int N = 5> struct A...`, `typename T` and `int N` are each Template parameters.
+//      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, identifier.name = "T", and the detail fields are empty.
+//      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and default_value = "5".
+// Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
+message TemplateParameter {
+    TemplateParameterKind kind = 1;
+    Identifier identifier = 2;
+    optional string type = 3;
+    optional bool is_parameter_pack = 4;
+    optional string default_value = 5;
+    repeated TemplateParameter parameters = 6;
+    string as_string = 7;
+}
+
+message EnumDetails {
+    // int, unsigned, long, etc.
+    // if missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values for unscoped, or int for scoped).
+    optional string underlying_type = 1;
+
+    // enum class/struct, if missing then the enum is unscoped.
+    optional EnumScope scope = 2;
+}
+
+// A function owned by a TLRecordDeclaration, including constructors,
+// destructors, and static member functions. Unlike TLFreeFunctionDeclaration, a
+// member function is not independently tracked, so it has no occurrence_index.
+message MemberFunction {
+    FunctionCommon common = 1;
+    AccessSpecifier access = 2;
+    bool is_const = 3;
+    bool is_volatile = 4;
+    FunctionVirtuality virtuality = 5;
+    bool is_deleted = 6;
+    optional VTableIndex vtable_index = 8;
+}
+
+// Common function traits. Some things may seem like they're better off in MemberFunction,
+// like `FunctionDefinitionKind` or `is_explicit`, but it simplifies the processing this way
+message FunctionCommon {
+    FunctionKind kind = 1;
+    optional string return_type = 3; // assume 'auto' if not given and not ctor/dtor
+    optional FunctionStorageClass storage_class = 4;
+    optional ConstantEvaluationKind consteval_kind = 5;
+    optional bool is_explicit = 6; // only set for ctors and conversion ops
+    optional string inline_definition = 7; // the function body if present in the header
+    optional TemplateDetails template_details = 9;
+    repeated Parameter parameters = 10;
+    string as_string = 11; // this is just the signature
+    Identifier identifier = 12;
+    uint64 content_hash = 13;
+    optional FunctionDefinitionKind definition_kind = 14; // only set for functions that are deletable/defaultable
+}
+
+// Parameters use a deterministic synthesized identity when no name is spelled in
+// the source.
+message Parameter {
+    Identifier identifier = 1;
+    string type = 2;
+    string default_value = 3;
+    string as_string = 4;
+    uint64 content_hash = 5;
+}
+
+message VTableIndex {
+    uint64 index = 1; // the index of the virtual function within the vtable (slot)
+    int64 offset = 2; // in a multiple inhertiance scenario, this is the offset of the vtable to use, otherwise 0 (vfptroffset)
+}
+
+message Enumerator {
+    Identifier identifier = 1;
+    string value = 2;
+}
+
+// A non-static data member owned by a TLRecordDeclaration.
+message Field {
+    Identifier identifier = 1;
+    string as_string = 2; // note that this excludes any default values (that's a separate entry)
+    AccessSpecifier access = 3;
+    bool is_mutable = 4;
+    bool is_bitfield = 5;
+
+    // if is_bitfield, then this is the bit width, otherwise this is the size of the field in the layout (same thing, really)
+    // may be missing for non-bitfields if there's no layout (primary template)
+    optional uint64 bit_width = 6; 
+
+    // may also be missing if there's no layout
+    optional uint64 offset_bits = 7;
+    uint64 content_hash = 8;
+    optional string default_value = 9;
+    string type = 10;
+
+    // type without any pointers, references, or array brackets
+    string underlying_type = 11;
+}
+
+message BaseSpecifier {
+    Identifier identifier = 1;
+    AccessSpecifier access = 2;
+    optional bool is_virtual = 3;
+    optional uint64 offset = 4;
+    string as_string = 5;
+}
+
+// Any top level item
+message TLItem {
+    oneof value {
+        TLRecordDeclaration record = 1;
+        TLEnumDeclaration enum_declaration = 2;
+        TLForwardDeclaration forward_declaration = 3;
+        TLAliasDeclaration alias = 4;
+        TLFreeFunctionDeclaration function = 5;
+        TLGlobalVariableDeclaration variable = 6;
+        TLFileData file_data = 7;
+    }
+}
+
+message TLItemList {
+    repeated TLItem items = 1;
+}

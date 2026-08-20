@@ -1,12 +1,10 @@
-#include <clang/Tooling/JSONCompilationDatabase.h>
 #include <clang/Tooling/ArgumentsAdjusters.h>
+#include <clang/Tooling/CompilationDatabase.h>
+#include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
-#include <glaze/glaze.hpp>
-#include <compare>
-#include <fstream>
-#include <iterator>
-#include <optional>
-#include <string_view>
+#include <algorithm>
+#include <exception>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -14,27 +12,6 @@
 #include "UEMeta/Cli.hpp"
 
 using namespace clang::tooling;
-
-/// @brief Minimal compile_commands.json entry shape needed to rebuild a one-file database.
-struct CompileCommandEntry {
-    std::string file;
-    std::optional<std::string> command;
-    std::optional<std::string> directory;
-    std::optional<std::string> output;
-};
-
-/// @brief Glaze metadata for the compile command fields read from compile_commands.json.
-template <>
-struct glz::meta<CompileCommandEntry> {
-    using T = CompileCommandEntry;
-
-    static constexpr auto value = object(
-        "file", &T::file,
-        "command", &T::command,
-        "directory", &T::directory,
-        "output", &T::output
-    );
-};
 
 /// @brief Removes configured Unreal build arguments before Clang parses the translation unit.
 static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArguments& args) {
@@ -70,121 +47,68 @@ static CommandLineArguments StripUnneededUnrealBuildArgs(const CommandLineArgume
     return out;
 }
 
-/// @brief Loads compile_commands.json and rewrites the configured source entry to use the configured Clang path.
-static std::string FixupCommand(const std::string& cc_path) {
-    try {
-        auto& cpp_path = UEMeta::Config::GetConfig().CppPath();
-        auto cpp_path_string = UEMeta::Config::GetConfig().CppPath().string();
-
-        std::ifstream in{cc_path, std::ios::binary};
-        if (!in) {
-            UEM_ERROR("(fs) Failed to open compile commands at \"{}\"", cc_path);
-            return "";
-        }
-
-        const std::string json{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-        std::vector<CompileCommandEntry> entries;
-        constexpr auto read_options = glz::opts{.error_on_unknown_keys = false};
-        if (const auto error = glz::read<read_options>(entries, json)) {
-            UEM_ERROR("(glaze) Failed to parse compile commands at \"{}\": {}",
-                      cc_path, glz::format_error(error, json));
-            return "";
-        }
-
-        for (const auto& entry : entries) {
-            const UEMeta::StablePath candidate_path{entry.file};
-            if (!std::is_eq(candidate_path <=> cpp_path))
-                continue;
-
-            if (!entry.command) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing a 'command' field!", cpp_path_string);
-                return "";
-            }
-
-            const auto& command = *entry.command;
-            const auto cmd_start = command.find_first_not_of(" \t");
-            if (cmd_start == std::string::npos || cmd_start == command.size() - 1) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
-                return "";
-            }
-
-            std::size_t cmd_end{};
-            if (command[cmd_start] == '\"') {
-                cmd_end = command.find_first_of('\"', cmd_start + 1);
-                if (cmd_end == std::string::npos) {
-                    UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
-                    return "";
-                }
-                ++cmd_end;
-            } else {
-                cmd_end = command.find_first_of(" \t", cmd_start);
-            }
-
-            if (cmd_end == std::string::npos || cmd_end == command.size()) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's not long enough!", cpp_path_string);
-                return "";
-            }
-            auto keep = command.substr(cmd_end);
-            std::string new_command = UEMeta::Config::GetConfig().ClangPath().string() + keep;
-
-            if (!entry.directory) {
-                UEM_ERROR("(glaze) Found command for file \"{}\", but it's missing a 'directory' field!", cpp_path_string);
-                return "";
-            }
-
-            const auto transformed = std::vector{
-                CompileCommandEntry{
-                    .file = entry.file,
-                    .command = std::move(new_command),
-                    .directory = entry.directory,
-                    .output = entry.output
-                }
-            };
-
-            std::string out;
-            if (const auto error = glz::write_json(transformed, out)) {
-                UEM_ERROR("(glaze) Failed to build transformed compile_commands for file \"{}\": {}",
-                          cpp_path_string, glz::format_error(error, out));
-                return "";
-            }
-            return out;
-        }
-
-        UEM_ERROR("(glaze) Failed to find matching entry in compile_commands.json for file {}", cpp_path_string);
-    } catch (std::exception& ex) {
-        UEM_ERROR("(glaze) Failed to load compile commands at \"{}\" with error: {}", cc_path, ex.what());
-    } catch (...) {
-        UEM_ERROR("(glaze) Failed to load compile commands at \"{}\" with unknown error!", cc_path);
-    }
-    return "";
-}
-
-/// @brief Creates the ClangTool and argument adjusters for the configured translation unit.
-std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
+/// @brief Loads the already-filtered compile_commands.json content.
+static std::unique_ptr<CompilationDatabase> LoadCompileDatabase(const std::string& cc_json) {
     try {
         std::string error{};
-        const auto cc_as_string = FixupCommand(Config::GetConfig().CcPath().string());
-
-        if (cc_as_string.empty()) return nullptr;
-        UEM_INFO("Using compile_commands.json entry as {}", cc_as_string);
-
-        std::unique_ptr<JSONCompilationDatabase> json_db = JSONCompilationDatabase::loadFromBuffer(cc_as_string, error, JSONCommandLineSyntax::AutoDetect);
-        if (!json_db) {
-            UEM_ERROR("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string);
-            return nullptr;
-        }
-
-        std::unique_ptr<CompilationDatabase> db = expandResponseFiles(std::move(json_db), llvm::vfs::getRealFileSystem());
+        auto db = JSONCompilationDatabase::loadFromBuffer(cc_json, error, JSONCommandLineSyntax::AutoDetect);
         if (!db) {
-            UEM_ERROR("(llvm) Failed to load filtered compile_commands with error \"{}\" and JSON:\n{}", error, cc_as_string);
+            UEM_ERROR("(llvm) Failed to load compile commands from JSON buffer: {}", error);
             return nullptr;
         }
 
-        const auto sources = std::vector{Config::GetConfig().CppPath().string()};
+        const auto commands = db->getAllCompileCommands();
+        if (commands.empty()) {
+            UEM_ERROR("(llvm) compile_commands JSON buffer does not contain any compile commands.");
+            return nullptr;
+        }
+        for (const auto& command : commands) {
+            if (command.CommandLine.empty()) {
+                UEM_ERROR("(llvm) Found compile command for file \"{}\", but its command line is empty.", command.Filename);
+                return nullptr;
+            }
+        }
+
+        return db;
+    } catch (std::exception& ex) {
+        UEM_ERROR("(llvm) Failed to load compile commands from JSON buffer with error: {}", ex.what());
+    } catch (...) {
+        UEM_ERROR("(llvm) Failed to load compile commands from JSON buffer with unknown error.");
+    }
+    return nullptr;
+}
+
+/// @brief Creates the ClangTool and argument adjusters for the configured compile commands.
+std::unique_ptr<UEMeta::ToolData> UEMeta::MakeTool() {
+    try {
+        const auto& compile_commands_json = Config::GetConfig().CompileCommands();
+        auto db = LoadCompileDatabase(compile_commands_json);
+
+        if (!db) return nullptr;
+        UEM_INFO("Using filtered compile_commands JSON buffer ({} bytes)", compile_commands_json.size());
+
+        db = expandResponseFiles(std::move(db), llvm::vfs::getRealFileSystem());
+        if (!db) {
+            UEM_ERROR("(llvm) Failed to expand response files from the compile commands.");
+            return nullptr;
+        }
+
+        const auto sources = db->getAllFiles();
+        if (sources.empty()) {
+            UEM_ERROR("(llvm) compile_commands JSON buffer does not contain any source files.");
+            return nullptr;
+        }
+
         auto tool = std::make_unique<ToolData>(ClangTool{*db, sources}, std::move(db));
 
         tool->clang_tool.appendArgumentsAdjuster([](const CommandLineArguments& args,...) {
-            auto out = StripUnneededUnrealBuildArgs(args);
+            auto adjusted = args;
+            if (adjusted.empty()) {
+                UEM_WARN("Selected compile command has no arguments.");
+                return adjusted;
+            }
+            adjusted.front() = Config::GetConfig().ClangPath().string();
+            auto out = StripUnneededUnrealBuildArgs(adjusted);
             out.insert_range(out.end(), Config::GetConfig().AdditionalClangArgs());
             return out;
         });
