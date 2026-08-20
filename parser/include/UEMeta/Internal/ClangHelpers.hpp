@@ -90,6 +90,7 @@ inline std::string ClangToString(clang::ASTContext& context, const clang::Expr* 
 }
 
 /// @brief Strips pointer/refs/array tokens from type
+/// todo ensure this strips out `const` as well; getCanonicalType may work just as well
 inline clang::QualType GetUnderlyingType(clang::QualType in) {
     in = in.getNonReferenceType();
     while (in->isPointerType() || in->isArrayType()) {
@@ -114,6 +115,7 @@ inline llvm::StringRef GetDeclSourcePath(clang::ASTContext& context, const clang
     return decl_srcs[decl];
 }
 
+// todo may not be worth it to cache this
 inline uint64_t GetDeclSourcePathHash(llvm::StringRef in) {
     static llvm::DenseMap<llvm::StringRef, uint64_t> hashes;
     if (const auto hash = hashes.find(in); hash != hashes.end()) {
@@ -135,6 +137,33 @@ inline void PopulateEnumDetails(clang::ASTContext& context, EnumDetails* p_msg, 
     }
     p_msg->set_scope(!decl->isScoped() ? ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ENUM_SCOPE_CLASS : ENUM_SCOPE_STRUCT);
 }
+
+inline void PopulateTypeInfo(clang::ASTContext& context, TypeInfo* p_msg, const clang::QualType& type) {
+    const clang::QualType underlying_type = GetUnderlyingType(type);
+    p_msg->set_type(type.getAsString());
+    p_msg->set_underlying_type(underlying_type.getAsString());
+    const bool is_template_type = (type->isDependentType() && type->getAs<clang::DependentNameType>()) || type->getAs<clang::TemplateTypeParmType>();
+    p_msg->set_is_templated_type(is_template_type);
+    if (is_template_type || type->isBuiltinType()) return;
+
+    // if it's the type of a record type
+    if (auto* as_tag = type->getAs<clang::TagType>()) {
+        // ...and it's defined somewhere
+        if (const auto* definition = as_tag->getDecl()->getDefinition()) {
+            p_msg->set_source_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, definition)));
+        }
+    }
+
+    // if it's from an alias or typedef
+    else if (auto* as_typedef = type->getAs<clang::TypedefType>()) {
+        // ... and we know where it's from
+        if (const auto* definition = as_typedef->getDecl()) {
+            p_msg->set_source_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, definition)));
+        }
+    }
+}
+
+
 
 
 /// @brief Fills out an Identifier from a Decl
@@ -215,7 +244,7 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
     const auto PopulateParameters = [&](this auto self, const clang::TemplateParameterList* params, auto* p_params) -> void {
         if (!params) return;
         for (const auto* param : *params) {
-            auto* p_param = p_params->add_parameters();
+            TemplateParameter* p_param = p_params->add_parameters();
             PopulateIdentifier(context, p_param->mutable_identifier(), param);
             p_param->set_as_string(ClangToString(context, param));
             if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
@@ -224,7 +253,7 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
                                       : TEMPLATE_PARAMETER_KIND_CLASS);
                 if (type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (type_param->hasDefaultArgument()) {
-                    p_param->set_default_value(ClangToString(context, type_param->getDefaultArgument().getArgument()));
+                    PopulateTypeInfo(context, p_param->mutable_default_value(), type_param->getDefaultArgument().getArgument().getAsType());
                 }
             }
             else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
@@ -232,7 +261,7 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
                 p_param->set_type(non_type_param->getType().getAsString(policy));
                 if (non_type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (non_type_param->hasDefaultArgument()) {
-                    p_param->set_default_value(ClangToString(context, non_type_param->getDefaultArgument().getArgument()));
+                    PopulateTypeInfo(context, p_param->mutable_default_value(), non_type_param->getDefaultArgument().getArgument().getAsType());
                 }
             }
             else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
@@ -241,7 +270,7 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
                                       : TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                 if (template_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (template_param->hasDefaultArgument()) {
-                    p_param->set_default_value(ClangToString(context, template_param->getDefaultArgument().getArgument()));
+                    PopulateTypeInfo(context, p_param->mutable_default_value(), template_param->getDefaultArgument().getArgument().getAsType());
                 }
                 self(template_param->getTemplateParameters(), p_param);
             }
@@ -368,7 +397,7 @@ inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p
         PopulateTemplateDetails(context, p_msg->mutable_template_details(), decl);
     }
     PopulateIdentifier(context, p_msg->mutable_identifier(), decl);
-    p_msg->set_return_type(decl->getReturnType().getAsString());
+    PopulateTypeInfo(context, p_msg->mutable_return_type(), decl->getReturnType());
     if (const auto as_cxx = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(decl)) {
         if (as_cxx->isStatic()) {
             p_msg->set_kind(FUNCTION_KIND_STATIC_MEMBER);
@@ -421,7 +450,7 @@ inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p
         p_param->set_as_string(str);
         p_param->set_content_hash(std::hash<std::string>::operator()(str));
         PopulateIdentifier(context, p_param->mutable_identifier(), param);
-        p_param->set_type(param->getType().getAsString());
+        PopulateTypeInfo(context, p_param->mutable_type_info(), param->getType());
         p_param->set_default_value(ClangToString(context, param->getInit()));
     }
 }

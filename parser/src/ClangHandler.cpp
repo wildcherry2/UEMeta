@@ -141,8 +141,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
 
         p_field->set_as_string(ClangToString(field, field_printing_policy));
         p_field->set_content_hash(std::hash<std::string>::operator()(ClangToString(context, field)));
-        p_field->set_underlying_type(GetUnderlyingType(field->getType()).getAsString());
-        p_field->set_type(field->getType().getAsString());
+        PopulateTypeInfo(context, p_field->mutable_type_info(), field->getType());
     }
 
     // if it's not a c-style POD
@@ -256,7 +255,7 @@ bool UEMeta::ClangHandler::VisitTypedefNameDecl(clang::TypedefNameDecl* clang_de
         PopulateTemplateDetails(context, p_alias->mutable_template_details(), clang_decl);
     }
     p_alias->set_alias(clang_decl->getNameAsString());
-    p_alias->set_aliased_type(clang_decl->getUnderlyingType().getAsString());
+    PopulateTypeInfo(context, p_alias->mutable_aliased_type(), clang_decl->getUnderlyingType());
     const auto str = ClangToString(
         context,
         type_alias && type_alias->getDescribedAliasTemplate()
@@ -274,8 +273,7 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
     auto& context = data->GetContext();
     auto* p_var = data->Allocate<TLGlobalVariableDeclaration>();
     PopulateDeclarationMetadata(context, p_var->mutable_metadata(), clang_decl);
-    p_var->set_underlying_type(GetUnderlyingType(clang_decl->getType()).getAsString());
-    p_var->set_type(clang_decl->getType().getAsString());
+    PopulateTypeInfo(context, p_var->mutable_type_info(), clang_decl->getType());
     const auto str = ClangToString(context, clang_decl);
     p_var->set_as_string(str);
     p_var->set_content_hash(std::hash<std::string>::operator()(str));

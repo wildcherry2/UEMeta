@@ -5,13 +5,11 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <unordered_set>
 #include <unordered_map>
 #include "parser.pb.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclBase.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "clang/AST/Decl.h"
 #include "../Cli.hpp"
 
@@ -224,13 +222,13 @@ namespace UEMeta {
                 const auto list = wrapper->mutable_items();
                 for (auto* msg : to_serialize) {
                     auto item = google::protobuf::Arena::Create<ParseResult::TLItem>(&arena);
-                    dynamic_cast<ParseResult::TLRecordDeclaration*>(msg) ? item->set_allocated_record(static_cast<ParseResult::TLRecordDeclaration*>(msg))
-                        : dynamic_cast<ParseResult::TLEnumDeclaration*>(msg) ? item->set_allocated_enum_declaration(static_cast<ParseResult::TLEnumDeclaration*>(msg))
-                        : dynamic_cast<ParseResult::TLForwardDeclaration*>(msg) ? item->set_allocated_forward_declaration(static_cast<ParseResult::TLForwardDeclaration*>(msg))
-                        : dynamic_cast<ParseResult::TLAliasDeclaration*>(msg) ? item->set_allocated_alias(static_cast<ParseResult::TLAliasDeclaration*>(msg))
-                        : dynamic_cast<ParseResult::TLFreeFunctionDeclaration*>(msg) ? item->set_allocated_function(static_cast<ParseResult::TLFreeFunctionDeclaration*>(msg))
-                        : dynamic_cast<ParseResult::TLGlobalVariableDeclaration*>(msg) ? item->set_allocated_variable(static_cast<ParseResult::TLGlobalVariableDeclaration*>(msg))
-                        : dynamic_cast<ParseResult::TLFileData*>(msg) ? item->set_allocated_file_data(static_cast<ParseResult::TLFileData*>(msg))
+                    dynamic_cast<ParseResult::TLRecordDeclaration*>(msg) ? item->set_allocated_record(static_cast<ParseResult::TLRecordDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<ParseResult::TLEnumDeclaration*>(msg) ? item->set_allocated_enum_declaration(static_cast<ParseResult::TLEnumDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<ParseResult::TLForwardDeclaration*>(msg) ? item->set_allocated_forward_declaration(static_cast<ParseResult::TLForwardDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<ParseResult::TLAliasDeclaration*>(msg) ? item->set_allocated_alias(static_cast<ParseResult::TLAliasDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<ParseResult::TLFreeFunctionDeclaration*>(msg) ? item->set_allocated_function(static_cast<ParseResult::TLFreeFunctionDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<ParseResult::TLGlobalVariableDeclaration*>(msg) ? item->set_allocated_variable(static_cast<ParseResult::TLGlobalVariableDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<ParseResult::TLFileData*>(msg) ? item->set_allocated_file_data(static_cast<ParseResult::TLFileData*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
                         : [&]{ UEM_WARN("Unsupported decl, dropping: {}", msg->DebugString()); }();
                     list->AddAllocated(item);
                     logger.Decrement();
