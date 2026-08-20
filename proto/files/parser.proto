@@ -16,6 +16,10 @@ message TLRecordDeclaration {
     DeclarationMetadata metadata = 1;
     RecordKind kind = 2;
     optional TemplateDetails template_details = 3;
+    // if set, then the record has all methods defined in this class are inlined in the header.
+    // this does not imply anything about parent classes though; inherited method definitions may not be defined in their header.
+    // this is useful to know since if a record is header only and doesn't change, then it can be simply copied completely, and
+    // if it has changed then you at least know that this class can be completely defined in the header.
     optional bool is_complete_definition = 4;
     // May be missing if the size is unknown (e.g. templates).
     optional int64 size_bytes = 5;

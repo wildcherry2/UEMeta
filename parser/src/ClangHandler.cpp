@@ -76,11 +76,31 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     auto& context = data->GetContext();
     auto* p_record_decl = data->Allocate<TLRecordDeclaration>();
     PopulateDeclarationMetadata(context, p_record_decl->mutable_metadata(), clang_decl);
-    PopulateTemplateDetails(context, p_record_decl->mutable_template_details(), clang_decl);
-    p_record_decl->set_is_complete_definition(clang_decl->isCompleteDefinition());
-    auto& layout = context.getASTRecordLayout(clang_decl);
-    p_record_decl->set_align_bytes(layout.getAlignment().getQuantity());
-    p_record_decl->set_size_bytes(layout.getSize().getQuantity());
+    if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(clang_decl);
+        cxx && (cxx->getDescribedClassTemplate() || llvm::isa<clang::ClassTemplateSpecializationDecl>(cxx))) {
+        PopulateTemplateDetails(context, p_record_decl->mutable_template_details(), clang_decl);
+    }
+    bool has_complete_definition = true;
+
+    bool has_known_layout = clang_decl->isCompleteDefinition();
+    for (const auto* field : clang_decl->fields()) {
+        if (field->getType()->isDependentType()
+            || (field->isBitField() && field->getBitWidth()->isValueDependent())) {
+            has_known_layout = false;
+            break;
+        }
+    }
+    if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(clang_decl);
+        cxx && cxx->hasAnyDependentBases()) {
+        has_known_layout = false;
+    }
+
+    const clang::ASTRecordLayout* layout = nullptr;
+    if (has_known_layout) {
+        layout = &context.getASTRecordLayout(clang_decl);
+        p_record_decl->set_align_bytes(layout->getAlignment().getQuantity());
+        p_record_decl->set_size_bytes(layout->getSize().getQuantity());
+    }
     p_record_decl->set_kind(clang_decl->isClass() ? RECORD_KIND_CLASS : clang_decl->isStruct() ? RECORD_KIND_STRUCT : RECORD_KIND_UNION);
 
     const auto ClangToProtoAccess = [&](const clang::AccessSpecifier access) {
@@ -95,12 +115,16 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
         const auto type = field->getType();
         p_field->set_access(ClangToProtoAccess(field->getAccess()));
         PopulateIdentifier(context, p_field->mutable_identifier(), field);
-        p_field->set_offset_bits(layout.getFieldOffset(field->getFieldIndex()));
+        if (layout) {
+            p_field->set_offset_bits(layout->getFieldOffset(field->getFieldIndex()));
+        }
         if (field->isBitField()) {
             p_field->set_is_bitfield(true);
-            p_field->set_bit_width(field->getBitWidthValue());
+            if (!field->getBitWidth()->isValueDependent()) {
+                p_field->set_bit_width(field->getBitWidthValue());
+            }
         }
-        else {
+        else if (layout) {
             p_field->set_bit_width(context.getTypeSize(type));
         }
         p_field->set_is_mutable(field->isMutable());
@@ -128,6 +152,9 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
             if (method->isImplicit()) continue; // we don't care about compiler-generated functions
             auto* p_method = p_record_decl->add_methods();
             PopulateFunctionCommon(context, p_method->mutable_common(), method);
+            if (!p_method->common().has_inline_definition()) {
+                has_complete_definition = false;
+            }
 
             if (method->isVirtual()) {
                 p_method->set_virtuality(method->isPureVirtual() ? FUNCTION_VIRTUALITY_PURE : FUNCTION_VIRTUALITY_VIRTUAL);
@@ -149,7 +176,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
                     return {method};
                 }();
                 const auto method_loc = vtable->getMethodVFTableLocation(method_decl);
-                p_vt->set_offset(method_loc.VFPtrOffset.getQuantity() / 8);
+                p_vt->set_offset(method_loc.VFPtrOffset.getQuantity());
                 p_vt->set_index(method_loc.Index);
             }
 
@@ -170,10 +197,19 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
             PopulateIdentifier(context, p_base->mutable_identifier(), base_decl->getDefinitionOrSelf());
             p_base->set_access(ClangToProtoAccess(base.getAccessSpecifier()));
             p_base->set_is_virtual(base.isVirtual());
-            p_base->set_offset(layout.getBaseClassOffset(base_decl).getQuantity());
+            if (layout) {
+                const auto offset = base.isVirtual()
+                    ? layout->getVBaseClassOffset(base_decl)
+                    : layout->getBaseClassOffset(base_decl);
+                p_base->set_offset(offset.getQuantity());
+            }
             p_base->set_as_string(base.getType().getAsString());
         }
     }
+
+    // Inherited and compiler-generated methods are not serialized into this declaration, so their definitions come
+    // from the base record or the compiler respectively.
+    p_record_decl->set_is_complete_definition(has_complete_definition);
 
     data->AddVisitedDecl(clang_decl, p_record_decl);
     return data->OnAfterVisit(clang_decl, p_record_decl->metadata().identifier().qualified_name_hash());
