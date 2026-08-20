@@ -198,6 +198,12 @@ namespace UEMeta {
                     }
 
                     info.metadata->set_occurrence_index(occurrence_counter++);
+                    if (info.extension != "fwdecl") {
+                        current_file->add_defined_type_hashes(info.metadata->identifier().qualified_name_hash());
+                    }
+                    else {
+                        current_file->add_forward_declaration_hashes(info.metadata->identifier().qualified_name_hash());
+                    }
                     occ_logger.Decrement();
                 }
 
@@ -329,7 +335,7 @@ namespace UEMeta {
         mutable std::vector<const clang::Decl*> all_unique_visited_decls{};
 
         struct DeclInfo {
-            const char* extension;
+            std::string_view extension;
             ParseResult::DeclarationMetadata* metadata;
             google::protobuf::Message* message;
         };

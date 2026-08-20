@@ -9,6 +9,13 @@ message TLFileData {
     string path = 1;
     uint64 path_hash = 2;
     uint32 file_occurrence = 3;
+    // these are the qualified name hashes of the types defined by this file, excluding forward declarations.
+    // you could use this to reconstruct the necessary includes for a file, rather than transitively including all headers
+    repeated uint64 defined_type_hashes = 4;
+
+    // these are the qualified name hashes of the forward declarations in this file. they're excluded from the defined_types because
+    // they don't have a definition in this file, but they may be necessary if a file that includes this file depends on it
+    repeated uint64 forward_declaration_hashes = 5;
 }
 
 // Top-level record declaration (class/struct/union).
