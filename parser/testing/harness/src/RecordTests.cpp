@@ -4,6 +4,7 @@
 #include "FunctionCommonTestHelpers.hpp"
 #include "IdentifierTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
+#include "TypeInfoHelpers.hpp"
 #include "parser.pb.h"
 
 #include <algorithm>
@@ -57,11 +58,14 @@ namespace {
     using ParseResult::TemplateSpecializationKind;
     using ParseResult::TLRecordDeclaration;
     using UEMeta::Testing::ExpectedFunctionParameter;
+    using UEMeta::Testing::ExpectedTypeInfo;
 
     enum class NestingShape { None, One, Double };
     enum class BaseShape { None, Single, Diamond };
 
     fs::path RecordSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "RecordTypes.hpp"; }
+    fs::path AliasSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "AliasTypes.hpp"; }
+    fs::path EnumSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "EnumTypes.hpp"; }
 
     std::string QualifiedName(const std::string_view name) { return "UEMeta::Testing::Types::" + std::string{name}; }
 
@@ -278,8 +282,8 @@ namespace {
                      const AccessSpecifier expected_access, const bool expected_is_mutable,
                      const bool expected_is_bitfield, const std::optional<std::uint64_t> expected_bit_width,
                      const std::optional<std::uint64_t> expected_offset_bits,
-                     const std::optional<std::string_view> expected_default_value, const std::string_view expected_type,
-                     const std::string_view expected_underlying_type) {
+                     const std::optional<std::string_view> expected_default_value,
+                     const ExpectedTypeInfo& expected_type_info) {
         SCOPED_TRACE(expected_name);
 
         const auto found = std::find_if(declaration.fields().begin(), declaration.fields().end(),
@@ -303,8 +307,8 @@ namespace {
             EXPECT_EQ(found->default_value(), *expected_default_value);
         }
 
-        EXPECT_EQ(found->type(), expected_type);
-        EXPECT_EQ(found->underlying_type(), expected_underlying_type);
+        ASSERT_TRUE(found->has_type_info());
+        UEMeta::Testing::ExpectTypeInfo(found->type_info(), expected_type_info);
     }
 
     void ExpectBase(const TLRecordDeclaration& declaration, const std::string_view expected_name,
@@ -328,6 +332,10 @@ namespace {
         EXPECT_EQ(found->is_virtual(), expected_is_virtual);
         ExpectOptionalUInt64(found->has_offset(), found->offset(), expected_offset);
         EXPECT_EQ(found->as_string(), expected_name);
+        ASSERT_TRUE(found->has_type_info());
+        UEMeta::Testing::ExpectTypeInfo(
+            found->type_info(),
+            {expected_name, expected_name, false, RecordSourcePath()});
     }
 
     void ExpectMethod(const TLRecordDeclaration& declaration, const std::string_view owner_qualified_name,
@@ -352,7 +360,8 @@ namespace {
 
         UEMeta::Testing::ExpectFunctionCommon(
             found->common(), expected_name, std::string{owner_qualified_name} + "::" + std::string{expected_name},
-            RecordSourcePath(), expected_kind, expected_as_string, expected_return_type,
+            RecordSourcePath(), expected_kind, expected_as_string,
+            ExpectedTypeInfo{expected_return_type, expected_return_type},
             FUN_VAR_STORAGE_CLASS_UNSPECIFIED, expected_consteval_kind, std::nullopt, expected_inline_definition,
             std::nullopt, expected_parameters, expected_definition_kind);
 
@@ -384,10 +393,10 @@ namespace {
 
         if (specialization_kind == TEMPLATE_SPECIALIZATION_NONE) {
             ExpectField(declaration, owner_qualified_name, "DependentField", "FirstType DependentField",
-                        ACCESS_SPECIFIER_PUBLIC, false, false, std::nullopt, std::nullopt, std::nullopt, "FirstType",
-                        "FirstType");
+                        ACCESS_SPECIFIER_PUBLIC, false, false, std::nullopt, std::nullopt, std::nullopt,
+                        {"FirstType", "FirstType", true});
             ExpectField(declaration, owner_qualified_name, "FixedField", "int FixedField", ACCESS_SPECIFIER_PUBLIC,
-                        false, false, std::nullopt, std::nullopt, std::nullopt, "int", "int");
+                        false, false, std::nullopt, std::nullopt, std::nullopt, {"int", "int"});
             return;
         }
 
@@ -410,9 +419,9 @@ namespace {
 
         ExpectField(declaration, owner_qualified_name, "DependentField",
                     std::string{dependent_type} + " DependentField", ACCESS_SPECIFIER_PUBLIC, false, false,
-                    dependent_width, 0, std::nullopt, dependent_type, dependent_type);
+                    dependent_width, 0, std::nullopt, {dependent_type, dependent_type});
         ExpectField(declaration, owner_qualified_name, "FixedField", "int FixedField", ACCESS_SPECIFIER_PUBLIC, false,
-                    false, 32, 32, std::nullopt, "int", "int");
+                    false, 32, 32, std::nullopt, {"int", "int"});
     }
 
     void ExpectMatrixRecord(const std::string_view record_name, const RecordKind expected_kind,
@@ -529,19 +538,19 @@ TEST(RecordTests, BaseRecord) {
     ExpectNoNestedHashes(declaration);
 
     ExpectField(declaration, qualified_name, "field", "int field", ACCESS_SPECIFIER_PUBLIC, false, false, 32, 64, "0",
-                "int", "int");
+                {"int", "int"});
     ExpectField(declaration, qualified_name, "bfield", "Alpha bfield", ACCESS_SPECIFIER_PUBLIC, false, false, 8, 96,
-                "{}", "Alpha", "Alpha");
+                "{}", {"Alpha", "Alpha", false, AliasSourcePath()});
     ExpectField(declaration, qualified_name, "stage", "Stage stage", ACCESS_SPECIFIER_PUBLIC, false, false, 32, 128,
-                "Stage::New", "Stage", "Stage");
+                "Stage::New", {"Stage", "Stage", false, EnumSourcePath()});
 
     ExpectMethod(declaration, qualified_name, "func", FUNCTION_KIND_MEMBER, "void", "void func()",
                  CONSTANT_EVALUATION_NONE, "{\n}\n", FUNCTION_DEFINITION_NORMAL, {}, ACCESS_SPECIFIER_PUBLIC, false,
                  false, FUNCTION_VIRTUALITY_NONE, false, std::nullopt, std::nullopt);
     ExpectMethod(declaration, qualified_name, "vfunc", FUNCTION_KIND_MEMBER, "void",
                  "virtual void vfunc(int a, bool b)", CONSTANT_EVALUATION_NONE, "{\n}\n", FUNCTION_DEFINITION_NORMAL,
-                 {{"a", qualified_name + "::vfunc::a", "int", "", "int a"},
-                  {"b", qualified_name + "::vfunc::b", "_Bool", "", "bool b"}},
+                 {{"a", qualified_name + "::vfunc::a", {"int", "int"}, "", "int a"},
+                  {"b", qualified_name + "::vfunc::b", {"_Bool", "_Bool"}, "", "bool b"}},
                  ACCESS_SPECIFIER_PUBLIC, false, false, FUNCTION_VIRTUALITY_VIRTUAL, false, 0, 0);
     ExpectMethod(declaration, qualified_name, "~BaseRecord", FUNCTION_KIND_DESTRUCTOR, "void",
                  "virtual ~BaseRecord() noexcept = default", CONSTANT_EVALUATION_CONSTEXPR, "{\n}\n",
@@ -557,20 +566,21 @@ TEST(RecordTests, DerivedRecord) {
     ExpectNoNestedHashes(declaration);
 
     ExpectField(declaration, qualified_name, "nfield", "int nfield", ACCESS_SPECIFIER_PUBLIC, false, false, 32, 192,
-                "1", "int", "int");
+                "1", {"int", "int"});
     ExpectBase(declaration, "BaseRecord", ACCESS_SPECIFIER_PUBLIC, false, 0);
 
     ExpectMethod(declaration, qualified_name, "vfunc", FUNCTION_KIND_MEMBER, "void",
                  "void vfunc(int a, bool b) override", CONSTANT_EVALUATION_NONE, "{\n}\n", FUNCTION_DEFINITION_NORMAL,
-                 {{"a", qualified_name + "::vfunc::a", "int", "", "int a"},
-                  {"b", qualified_name + "::vfunc::b", "_Bool", "", "bool b"}},
+                 {{"a", qualified_name + "::vfunc::a", {"int", "int"}, "", "int a"},
+                  {"b", qualified_name + "::vfunc::b", {"_Bool", "_Bool"}, "", "bool b"}},
                  ACCESS_SPECIFIER_PUBLIC, false, false, FUNCTION_VIRTUALITY_VIRTUAL, false, 0, 0);
     ExpectMethod(declaration, qualified_name, "vfunc2", FUNCTION_KIND_MEMBER, "int", "virtual int vfunc2() const",
                  CONSTANT_EVALUATION_NONE, "{\n    return 4;\n}\n", FUNCTION_DEFINITION_NORMAL, {},
                  ACCESS_SPECIFIER_PUBLIC, true, false, FUNCTION_VIRTUALITY_VIRTUAL, false, 2, 0);
     ExpectMethod(declaration, qualified_name, "sfunc", FUNCTION_KIND_MEMBER, "void", "void sfunc(char c)",
                  CONSTANT_EVALUATION_NONE, "{\n}\n", FUNCTION_DEFINITION_NORMAL,
-                 {{"c", qualified_name + "::sfunc::c", "char", "", "char c"}}, ACCESS_SPECIFIER_PUBLIC, false, false,
+                 {{"c", qualified_name + "::sfunc::c", {"char", "char"}, "", "char c"}},
+                 ACCESS_SPECIFIER_PUBLIC, false, false,
                  FUNCTION_VIRTUALITY_NONE, false, std::nullopt, std::nullopt);
     ExpectMethod(declaration, qualified_name, "~DerivedRecord", FUNCTION_KIND_DESTRUCTOR, "void",
                  "~DerivedRecord() noexcept override = default", CONSTANT_EVALUATION_CONSTEXPR, "{\n}\n",
@@ -585,7 +595,7 @@ TEST(RecordTests, DiamondRootRecordBase) {
     EXPECT_FALSE(declaration.has_template_details());
 
     ExpectField(declaration, qualified_name, "RootField", "int RootField", ACCESS_SPECIFIER_PUBLIC, false, false, 32,
-                64, "1", "int", "int");
+                64, "1", {"int", "int"});
     ExpectMethod(declaration, qualified_name, "RootVirtual", FUNCTION_KIND_MEMBER, "int", "virtual int RootVirtual()",
                  CONSTANT_EVALUATION_NONE, "{\n    return this->RootField;\n}\n", FUNCTION_DEFINITION_NORMAL, {},
                  ACCESS_SPECIFIER_PUBLIC, false, false, FUNCTION_VIRTUALITY_VIRTUAL, false, 0, 0);
@@ -598,7 +608,7 @@ TEST(RecordTests, DiamondLeftRecordBase) {
     EXPECT_FALSE(declaration.has_template_details());
 
     ExpectField(declaration, qualified_name, "LeftField", "int LeftField", ACCESS_SPECIFIER_PUBLIC, false, false, 32,
-                128, "2", "int", "int");
+                128, "2", {"int", "int"});
     ExpectBase(declaration, "DiamondRootRecordBase", ACCESS_SPECIFIER_PUBLIC, true, 24);
     ExpectMethod(declaration, qualified_name, "LeftVirtual", FUNCTION_KIND_MEMBER, "int", "virtual int LeftVirtual()",
                  CONSTANT_EVALUATION_NONE, "{\n    return this->LeftField;\n}\n", FUNCTION_DEFINITION_NORMAL, {},
@@ -613,7 +623,7 @@ TEST(RecordTests, DiamondRightRecordBase) {
     EXPECT_FALSE(declaration.has_template_details());
 
     ExpectField(declaration, qualified_name, "RightField", "int RightField", ACCESS_SPECIFIER_PUBLIC, false, false, 32,
-                128, "3", "int", "int");
+                128, "3", {"int", "int"});
     ExpectBase(declaration, "DiamondRootRecordBase", ACCESS_SPECIFIER_PUBLIC, true, 24);
     ExpectMethod(declaration, qualified_name, "RightVirtual", FUNCTION_KIND_MEMBER, "int", "virtual int RightVirtual()",
                  CONSTANT_EVALUATION_NONE, "{\n    return this->RightField;\n}\n", FUNCTION_DEFINITION_NORMAL, {},
@@ -628,7 +638,7 @@ TEST(RecordTests, DiamondMethodCoverageRecord) {
     EXPECT_FALSE(declaration.has_template_details());
 
     ExpectField(declaration, qualified_name, "DirectField", "int DirectField", ACCESS_SPECIFIER_PUBLIC, false, false,
-                32, 384, "4", "int", "int");
+                32, 384, "4", {"int", "int"});
     ExpectBase(declaration, "DiamondLeftRecordBase", ACCESS_SPECIFIER_PUBLIC, false, 0);
     ExpectBase(declaration, "DiamondRightRecordBase", ACCESS_SPECIFIER_PROTECTED, false, 24);
 
@@ -691,19 +701,19 @@ TEST(RecordTests, FieldCoverageRecord) {
     EXPECT_FALSE(declaration.has_template_details());
 
     ExpectField(declaration, qualified_name, "PublicPlain", "int PublicPlain", ACCESS_SPECIFIER_PUBLIC, false, false,
-                32, 0, std::nullopt, "int", "int");
+                32, 0, std::nullopt, {"int", "int"});
     ExpectField(declaration, qualified_name, "PublicMutablePointer", "mutable const int *PublicMutablePointer",
-                ACCESS_SPECIFIER_PUBLIC, true, false, 64, 64, "nullptr", "const int *", "int");
+                ACCESS_SPECIFIER_PUBLIC, true, false, 64, 64, "nullptr", {"const int *", "int"});
     ExpectField(declaration, qualified_name, "PublicBitField", "unsigned int PublicBitField : 3",
-                ACCESS_SPECIFIER_PUBLIC, false, true, 3, 128, std::nullopt, "unsigned int", "unsigned int");
+                ACCESS_SPECIFIER_PUBLIC, false, true, 3, 128, std::nullopt, {"unsigned int", "unsigned int"});
     ExpectField(declaration, qualified_name, "PublicDefaultBitField", "unsigned int PublicDefaultBitField : 5",
-                ACCESS_SPECIFIER_PUBLIC, false, true, 5, 131, "7", "unsigned int", "unsigned int");
+                ACCESS_SPECIFIER_PUBLIC, false, true, 5, 131, "7", {"unsigned int", "unsigned int"});
     ExpectField(declaration, qualified_name, "PrivatePlain", "long PrivatePlain", ACCESS_SPECIFIER_PRIVATE, false,
-                false, 32, 160, "19", "long", "long");
+                false, 32, 160, "19", {"long", "long"});
     ExpectField(declaration, qualified_name, "PrivateMutable", "mutable int PrivateMutable", ACCESS_SPECIFIER_PRIVATE,
-                true, false, 32, 192, std::nullopt, "int", "int");
+                true, false, 32, 192, std::nullopt, {"int", "int"});
     ExpectField(declaration, qualified_name, "PrivateArray", "short PrivateArray[2]", ACCESS_SPECIFIER_PRIVATE, false,
-                false, 32, 224, "{}", "short[2]", "short");
+                false, 32, 224, "{}", {"short[2]", "short"});
 }
 
 TEST(RecordTests, ClassOneParameterNoNestedNoBaseRecord_Primary) {

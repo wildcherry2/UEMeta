@@ -327,7 +327,7 @@ message TypeInfo {
     // type as declared
     string type = 1;
 
-    // type without any pointers, references, or array brackets
+    // type without any pointers, references, array brackets, or cv qualifiers
     string underlying_type = 2;
 
     // whether the type is a template or dependent type (like 'T' in 'template<typename T> void f(T t)' or 'type' in 'typename T::type')

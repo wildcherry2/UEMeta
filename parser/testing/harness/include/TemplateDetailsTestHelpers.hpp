@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IdentifierTestHelpers.hpp"
+#include "TypeInfoHelpers.hpp"
 
 #include <filesystem>
 #include <initializer_list>
@@ -17,7 +18,7 @@ namespace UEMeta::Testing {
         std::string_view as_string;
         std::optional<std::string_view> type{};
         std::optional<bool> is_parameter_pack{};
-        std::optional<std::string_view> default_value{};
+        std::optional<ExpectedTypeInfo> default_value{};
         std::vector<ExpectedTemplateParameter> parameters{};
     };
 
@@ -48,7 +49,7 @@ namespace UEMeta::Testing {
 
             EXPECT_EQ(parameter.has_default_value(), expected.default_value.has_value());
             if (expected.default_value) {
-                EXPECT_EQ(parameter.default_value(), *expected.default_value);
+                ExpectTypeInfo(parameter.default_value(), *expected.default_value);
             }
 
             ASSERT_EQ(parameter.parameters_size(), expected.parameters.size());

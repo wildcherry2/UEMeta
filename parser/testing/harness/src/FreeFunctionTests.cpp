@@ -39,6 +39,7 @@ namespace {
     using ParseResult::TLFreeFunctionDeclaration;
     using UEMeta::Testing::ExpectedFunctionParameter;
     using UEMeta::Testing::ExpectedFunctionTemplateDetails;
+    using UEMeta::Testing::ExpectedTypeInfo;
 
     enum class SourceReturnType { Auto, Void, Int };
 
@@ -215,13 +216,14 @@ namespace {
             expected_has_inline_definition
                 ? std::optional<std::string_view>{InlineDefinition(expected_source_return_type)}
                 : std::nullopt;
+        const auto expected_return_type =
+            EffectiveReturnType(expected_source_return_type, expected_has_inline_definition,
+                                expected_specialization_kind);
 
         const auto expect = [&](const std::initializer_list<ExpectedFunctionParameter> parameters) {
             UEMeta::Testing::ExpectFunctionCommon(
                 declaration.common(), expected_name, qualified_name, FreeFunctionSourcePath(), FUNCTION_KIND_FREE,
-                expected_as_string,
-                EffectiveReturnType(expected_source_return_type, expected_has_inline_definition,
-                                    expected_specialization_kind),
+                expected_as_string, ExpectedTypeInfo{expected_return_type, expected_return_type},
                 expected_storage_class, expected_evaluation_kind, std::nullopt, expected_inline_definition,
                 expected_template_details, parameters, std::nullopt);
         };
@@ -233,11 +235,11 @@ namespace {
             expect({});
             break;
         case 1:
-            expect({{"First", first_qualified_name, "int", "", "int First"}});
+            expect({{"First", first_qualified_name, {"int", "int"}, "", "int First"}});
             break;
         case 2:
-            expect({{"First", first_qualified_name, "int", "", "int First"},
-                    {"Second", second_qualified_name, "long", "", "long Second"}});
+            expect({{"First", first_qualified_name, {"int", "int"}, "", "int First"},
+                    {"Second", second_qualified_name, {"long", "long"}, "", "long Second"}});
             break;
         default:
             FAIL() << "Unsupported function parameter count " << expected_function_parameter_count;
