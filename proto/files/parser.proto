@@ -283,7 +283,7 @@ message Parameter {
 
 message VTableIndex {
     uint64 index = 1; // the index of the virtual function within the vtable (slot)
-    int64 offset = 2; // in a multiple inhertiance scenario, this is the index of the vtable to use, otherwise 0 (vfptroffset)
+    int64 offset = 2; // in a multiple inhertiance scenario, this is the offset of the vtable to use, otherwise 0 (vfptroffset)
 }
 
 message Enumerator {
