@@ -79,9 +79,10 @@ namespace UEMeta {
         [[nodiscard]] SerializationFormat Format() const;
 
         /**
-         * @brief Returns the set of potential starting points for output paths.
+         * @brief Returns the set of substrings to use when determining if a declaration belongs to a builtin library,
+         * like std, STL, or Windows/Unix libs
          */
-        [[nodiscard]] const std::unordered_set<std::string>& PathBegin() const;
+        [[nodiscard]] const std::unordered_set<std::string>& BuiltinSubpaths() const;
 
         /**
          * @brief Returns the path to the log file. If empty, no log file should be written to.
@@ -97,11 +98,18 @@ namespace UEMeta {
          * @brief Writes a human-readable configuration summary to a stream.
          */
         friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
-            return os << fmtquill::format("compile_commands={}\nprefer_clang={}\nstrip_commands={}\n"
-                                          "additional_clang_args={}\npath_begin={}\nformat={}\nclang_path={}\n"
-                                          "log={}\noutput_directory={}", obj.compile_commands, obj.prefer_clang, obj.strip_commands,
-                                          obj.additional_clang_args, obj.path_begin, format_string_map.at(obj.format), obj.clang_path.string(), obj.log.string(),
-                                          obj.output_directory.string());
+            return os << obj.ToString();
+        }
+
+        std::string ToString() const {
+            return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
+                                          "process_implicit_specializations={}\ndump_to_json={}\nstrip_commands={}\n"
+                                          "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\nclang_path={}\n"
+                                          "log={}\noutput_directory={}", compile_commands, prefer_clang,
+                                          prefer_full_name_in_file_name, process_implicit_specializations,
+                                          dump_to_json, strip_commands, additional_clang_args,
+                                          builtin_subpaths, format_string_map.at(format), clang_path.string(),
+                                          log.string(), output_directory.string());
         }
 
         /**
@@ -158,7 +166,7 @@ namespace UEMeta {
         SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};
-        std::unordered_set<std::string> path_begin{};
+        std::unordered_set<std::string> builtin_subpaths{};
         StablePath clang_path{};
         StablePath log{};
         StablePath output_directory{};

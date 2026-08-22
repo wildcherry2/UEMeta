@@ -5,6 +5,7 @@
 #include "FunctionTypes.hpp"
 #include "GlobalVariableTypes.cpp"
 #include "RecordTypes.hpp"
+#include "InlinedHeaderTypes.hpp"
 
 namespace UEMeta::Testing::Types {
     int TouchAll() {

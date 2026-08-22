@@ -66,11 +66,13 @@ namespace {
     struct DeclarationIdentity {
         std::string file_path;
         std::uint64_t qualified_name_hash;
+        std::uint32_t occurrence_index;
     };
 
     struct FileDeclarationHashes {
         std::vector<std::uint64_t> defined;
         std::vector<std::uint64_t> forward_declared;
+        std::vector<std::uint32_t> occurrence_indices;
     };
 
     template <typename DeclarationType>
@@ -88,7 +90,10 @@ namespace {
         }
 
         const auto& identifier = declaration.metadata().identifier();
-        return DeclarationIdentity{identifier.file_path(), identifier.qualified_name_hash()};
+        return DeclarationIdentity{
+            identifier.file_path(),
+            identifier.qualified_name_hash(),
+            declaration.metadata().occurrence_index()};
     }
 
     std::optional<DeclarationIdentity> ReadDeclarationIdentity(const fs::path& path) {
@@ -130,6 +135,7 @@ namespace {
                 }
 
                 auto& hashes = result[identity->file_path];
+                hashes.occurrence_indices.push_back(identity->occurrence_index);
                 auto& destination = entry.path().extension() == ".fwdeclbin"
                     ? hashes.forward_declared
                     : hashes.defined;
@@ -201,4 +207,29 @@ TEST(FileInfoTests, ForwardDeclarationTypes) {
     ASSERT_EQ(declaration_hashes.forward_declared.size(), 11);
     ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
     ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
+}
+
+TEST(FileInfoTests, AbsorbsInlinedHeaderData) {
+    const auto source_path = SourcePath("InlinedHeaderTypes.hpp");
+    const auto inlined_path = SourcePath("InlinedDependencyTypes.hpp");
+    const auto builtin_path = SourcePath("InlinedBuiltinTypes.hpp");
+    const auto& file_info = FileInfoFor(source_path);
+    const auto& declaration_hashes = DeclarationHashesFor(source_path);
+
+    EXPECT_FALSE(FileInfos().contains(inlined_path.string()));
+    EXPECT_FALSE(FileInfos().contains(builtin_path.string()));
+    EXPECT_FALSE(DeclarationHashesByPath().contains(inlined_path.string()));
+    EXPECT_FALSE(DeclarationHashesByPath().contains(builtin_path.string()));
+
+    ASSERT_EQ(declaration_hashes.defined.size(), 3);
+    ASSERT_TRUE(declaration_hashes.forward_declared.empty());
+    ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
+    ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
+
+    auto occurrence_indices = declaration_hashes.occurrence_indices;
+    std::ranges::sort(occurrence_indices);
+    EXPECT_EQ(occurrence_indices, (std::vector<std::uint32_t>{0, 1, 2}));
+
+    ASSERT_EQ(file_info.builtin_includes_size(), 1);
+    EXPECT_EQ(file_info.builtin_includes(0), builtin_path.generic_string());
 }

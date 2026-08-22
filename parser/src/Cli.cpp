@@ -61,9 +61,9 @@ UEMeta::Config::SerializationFormat UEMeta::Config::Format() const {
     return format;
 }
 
-const std::unordered_set<std::string> & UEMeta::Config::PathBegin() const {
+const std::unordered_set<std::string> & UEMeta::Config::BuiltinSubpaths() const {
     AssertInitialized();
-    return path_begin;
+    return builtin_subpaths;
 }
 
 const UEMeta::StablePath & UEMeta::Config::Log() {
@@ -131,10 +131,14 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
         ->transform(LoadCompileCommandsString);
     app.add_option("--clang-path", cfg.clang_path, CLANG_PATH_HELP)
         ->check(CLI::ExistingFile);
-    app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP);
-    app.add_option("--clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP);
+    app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)
+        ->delimiter(',');
+    app.add_option("--clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)
+        ->delimiter(',');
     app.add_option("-l,--log", cfg.log, LOG_HELP);
-    app.add_option("--path-begin", cfg.path_begin, PATH_BEGIN_HELP);
+    app.add_option("--builtin-subpaths", cfg.builtin_subpaths, BUILTIN_SUBPATHS_HELP)
+        ->delimiter(',')
+        ->transform(CLI::EscapedString);
     app.add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP)
         ->default_val(StablePath::current_program_directory() / "Output");
     app.add_option("-f,--format", cfg.format, FORMAT_HELP)

@@ -31,7 +31,7 @@ namespace UEMeta {
     int RunClangTool(clang::tooling::ClangTool& tool) noexcept;
 
     /**
-     * @brief Clang frontend action and AST visitor that converts declarations into UEMeta JSON models.
+     * @brief Clang frontend action and AST visitor that converts declarations into UEMeta models.
      */
     class ClangHandler : public clang::ASTFrontendAction, public clang::RecursiveASTVisitor<ClangHandler> {
     public:
@@ -103,6 +103,8 @@ namespace UEMeta {
         ClangHandler();
 
     protected:
+        bool BeginSourceFileAction(clang::CompilerInstance &CI) override;
+
         /**
          * @brief Creates the AST consumer and preprocessor callbacks for one translation unit.
          *

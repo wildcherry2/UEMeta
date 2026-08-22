@@ -1,6 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <execution>
+#include <filesystem>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -12,11 +14,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "clang/AST/Decl.h"
 #include "../Cli.hpp"
-
-std::string ClangToString(clang::ASTContext& context, const clang::Decl* decl);
-void PopulateEnumDetails(clang::ASTContext& context, ParseResult::EnumDetails* p_msg, const clang::EnumDecl* decl);
-void PopulateDeclarationMetadata(clang::ASTContext& context, ParseResult::DeclarationMetadata* p_msg, const clang::Decl* decl);
-void PopulateTemplateDetails(clang::ASTContext& context, ParseResult::TemplateDetails* p_msg, const clang::Decl* decl);
+#include "ClangHelpers.hpp"
 
 namespace UEMeta {
     class ASTData {
@@ -75,6 +73,12 @@ namespace UEMeta {
                 if (decl->isCXXClassMember()) {
                     return true;
                 }
+            }
+
+            // if the decl is in a builtin path, make sure we know about it, but don't process it
+            if (IsDeclFromBuiltinFile(*context, decl)) {
+                builtin_paths.insert(NormalizePath(GetDeclIncludePath(*context, decl)));
+                return true;
             }
 
             // if the user doesn't want implicit specializations, don't process it if it's implicit
@@ -199,17 +203,59 @@ namespace UEMeta {
                 CountingHeartbeatLogger occ_logger{"Generating TLFileData from declarations ({} declarations remaining)..."};
                 occ_logger.SetValue(all_unique_visited_decls.size());
                 occ_logger.Start();
+
+                const auto AddBuiltinIncludes = [this](
+                    TLFileData* file_data,
+                    const std::set<std::string>& source_paths) {
+                    std::set<std::string> file_includes{};
+                    for (const auto& source_path : source_paths) {
+                        const auto [first, last] = includes.equal_range(source_path);
+                        for (auto include = first; include != last; ++include) {
+                            file_includes.insert(include->second);
+                        }
+                    }
+                    if (file_includes.empty()) {
+                        UEM_INFO("No includes for file {}!", file_data->path());
+                    }
+
+                    std::vector<std::string> builtin_includes(
+                        std::min(file_includes.size(), builtin_paths.size()));
+                    const auto intersection_end = std::set_intersection(
+                        std::execution::par_unseq,
+                        file_includes.begin(),
+                        file_includes.end(),
+                        builtin_paths.begin(),
+                        builtin_paths.end(),
+                        builtin_includes.begin());
+
+                    for (const auto& include : std::ranges::subrange(builtin_includes.begin(), intersection_end)) {
+                        file_data->add_builtin_includes(include);
+                    }
+                };
+
                 auto* current_file = Allocate<ParseResult::TLFileData>();
                 current_file->set_path(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path());
                 current_file->set_file_occurrence(0);
                 current_file->set_path_hash(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path_hash());
+                std::set<std::string> current_file_source_paths{
+                    NormalizePath(GetDeclIncludePath(*context, all_unique_visited_decls[0]))};
 
                 uint32_t occurrence_counter = 0;
+                const auto AddDeclarationToFile = [&occurrence_counter](TLFileData* file_data, const DeclInfo& info) {
+                    info.metadata->set_occurrence_index(occurrence_counter++);
+                    if (info.extension != "fwdecl") {
+                        file_data->add_defined_type_hashes(info.metadata->identifier().qualified_name_hash());
+                    }
+                    else {
+                        file_data->add_forward_declaration_hashes(info.metadata->identifier().qualified_name_hash());
+                    }
+                };
+
                 for (auto decl_it = all_unique_visited_decls.begin(); decl_it != all_unique_visited_decls.end(); ++decl_it) {
-                    auto& info = GetInfo(*decl_it);
+                    auto* info = &GetInfo(*decl_it);
 
                     // switching to a new file, now we need to make sure there are no gaps and patch if there are
-                    if (const auto file_hash = info.metadata->identifier().file_path_hash(); file_hash != current_file->path_hash()) {
+                    if (const auto file_hash = info->metadata->identifier().file_path_hash(); file_hash != current_file->path_hash()) {
                         auto subrange = std::ranges::find_last_if(std::next(decl_it), all_unique_visited_decls.end(),
                     [current_file, this](const clang::Decl* decl) {
                             return GetInfo(decl).metadata->identifier().file_path_hash() == current_file->path_hash();
@@ -219,35 +265,36 @@ namespace UEMeta {
                         if (!subrange.empty()) {
                             for (auto end = subrange.begin(); decl_it != end; ++decl_it) {
                                 const auto& to_patch_info = GetInfo(*decl_it);
+                                current_file_source_paths.insert(
+                                    NormalizePath(GetDeclIncludePath(*context, *decl_it)));
                                 to_patch_info.metadata->mutable_identifier()->set_file_path(current_file->path());
                                 to_patch_info.metadata->mutable_identifier()->set_file_path_hash(current_file->path_hash());
-                                to_patch_info.metadata->set_occurrence_index(occurrence_counter++);
+                                AddDeclarationToFile(current_file, to_patch_info);
                                 occ_logger.Decrement();
                             }
-                            info = GetInfo(*decl_it);
+                            info = &GetInfo(*decl_it);
                             // fall through to fill out occurrence index for current decl_it
                         }
 
                         // no gaps, update file stuff and reset occurrence counter
                         else {
+                            AddBuiltinIncludes(current_file, current_file_source_paths);
                             const auto occ = current_file->file_occurrence() + 1;
-                            current_file = Allocate<ParseResult::TLFileData>();
-                            current_file->set_path(info.metadata->identifier().file_path());
+                            current_file = Allocate<TLFileData>();
+                            current_file->set_path(info->metadata->identifier().file_path());
                             current_file->set_file_occurrence(occ);
-                            current_file->set_path_hash(info.metadata->identifier().file_path_hash());
+                            current_file->set_path_hash(info->metadata->identifier().file_path_hash());
+                            current_file_source_paths = {
+                                NormalizePath(GetDeclIncludePath(*context, *decl_it))};
                             occurrence_counter = 0;
                         }
                     }
 
-                    info.metadata->set_occurrence_index(occurrence_counter++);
-                    if (info.extension != "fwdecl") {
-                        current_file->add_defined_type_hashes(info.metadata->identifier().qualified_name_hash());
-                    }
-                    else {
-                        current_file->add_forward_declaration_hashes(info.metadata->identifier().qualified_name_hash());
-                    }
+                    AddDeclarationToFile(current_file, *info);
                     occ_logger.Decrement();
                 }
+
+                AddBuiltinIncludes(current_file, current_file_source_paths);
 
                 occ_logger.Stop();
                 UEM_INFO("Generated {} TLFileData!", current_file ? current_file->file_occurrence() + 1 : 0);
@@ -265,14 +312,14 @@ namespace UEMeta {
                 const auto wrapper = google::protobuf::Arena::Create<ParseResult::TLItemList>(&arena);
                 const auto list = wrapper->mutable_items();
                 for (auto* msg : to_serialize) {
-                    auto item = google::protobuf::Arena::Create<ParseResult::TLItem>(&arena);
-                    dynamic_cast<ParseResult::TLRecordDeclaration*>(msg) ? item->set_allocated_record(static_cast<ParseResult::TLRecordDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
-                        : dynamic_cast<ParseResult::TLEnumDeclaration*>(msg) ? item->set_allocated_enum_declaration(static_cast<ParseResult::TLEnumDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
-                        : dynamic_cast<ParseResult::TLForwardDeclaration*>(msg) ? item->set_allocated_forward_declaration(static_cast<ParseResult::TLForwardDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
-                        : dynamic_cast<ParseResult::TLAliasDeclaration*>(msg) ? item->set_allocated_alias(static_cast<ParseResult::TLAliasDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
-                        : dynamic_cast<ParseResult::TLFreeFunctionDeclaration*>(msg) ? item->set_allocated_function(static_cast<ParseResult::TLFreeFunctionDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
-                        : dynamic_cast<ParseResult::TLGlobalVariableDeclaration*>(msg) ? item->set_allocated_variable(static_cast<ParseResult::TLGlobalVariableDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
-                        : dynamic_cast<ParseResult::TLFileData*>(msg) ? item->set_allocated_file_data(static_cast<ParseResult::TLFileData*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                    auto item = google::protobuf::Arena::Create<TLItem>(&arena);
+                    dynamic_cast<TLRecordDeclaration*>(msg) ? item->set_allocated_record(static_cast<TLRecordDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<TLEnumDeclaration*>(msg) ? item->set_allocated_enum_declaration(static_cast<TLEnumDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<TLForwardDeclaration*>(msg) ? item->set_allocated_forward_declaration(static_cast<TLForwardDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<TLAliasDeclaration*>(msg) ? item->set_allocated_alias(static_cast<TLAliasDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<TLFreeFunctionDeclaration*>(msg) ? item->set_allocated_function(static_cast<TLFreeFunctionDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<TLGlobalVariableDeclaration*>(msg) ? item->set_allocated_variable(static_cast<TLGlobalVariableDeclaration*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
+                        : dynamic_cast<TLFileData*>(msg) ? item->set_allocated_file_data(static_cast<TLFileData*>(msg)) // NOLINT(*-pro-type-static-cast-downcast)
                         : [&]{ UEM_WARN("Unsupported decl, dropping: {}", msg->DebugString()); }();
                     list->AddAllocated(item);
                     logger.Decrement();
@@ -363,13 +410,39 @@ namespace UEMeta {
             UEM_INFO("Serialized {} declarations!", to_serialize.size());
         }
 
+        void Include(const std::string& source, const std::string& include) {
+            includes.emplace(NormalizePath(source), NormalizePath(include));
+        }
+
+        size_t GetIncludeCount() const {
+            return includes.size();
+        }
+
     private:
+        static std::string NormalizePath(const std::string_view path) {
+            return std::filesystem::path{std::string{path}}.lexically_normal().generic_string();
+        }
+
+        static std::string GetDeclIncludePath(clang::ASTContext& context, const clang::Decl* decl) {
+            const auto& source_manager = context.getSourceManager();
+            const auto source_location = source_manager.getExpansionLoc(decl->getLocation());
+            if (const auto* file = source_manager.getFileEntryForID(source_manager.getFileID(source_location))) {
+                const auto real_path = file->tryGetRealPathName();
+                if (!real_path.empty()) return real_path.str();
+            }
+            return source_manager.getFilename(source_location).str();
+        }
+
         clang::ASTContext* context{};
 
         // We use maps to make sure we aren't double visiting, and so we can lookup parent structures when
         // we see that a declaration is nested within another.
         llvm::DenseMap<const clang::Decl*, google::protobuf::Message*> visited_decls{};
         llvm::DenseMap<const clang::Decl*, google::protobuf::Message*> visited_forward_decls{};
+        std::set<std::string> builtin_paths{};
+
+        // maps file -> include paths
+        std::unordered_multimap<std::string, std::string> includes{};
 
         mutable google::protobuf::Arena arena{};
         mutable CountingHeartbeatLogger logger{"Visited {} nodes..."};
@@ -431,12 +504,5 @@ namespace UEMeta {
 
             throw std::runtime_error(fmtquill::format("Unsupported declaration message type: {}", msg ? msg->GetTypeName() : "<null>"));
         }
-
-        struct TransientFile {
-            std::string_view file_path;
-            uint64_t hash;
-            uint32_t file_occurrence_index;
-            uint32_t local_occurrence_counter;
-        };
     };
 }

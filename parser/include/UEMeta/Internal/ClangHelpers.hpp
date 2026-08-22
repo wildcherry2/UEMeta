@@ -4,6 +4,7 @@
 #include <atomic>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Comment.h>
+#include <clang/AST/NestedNameSpecifier.h>
 #include <exception>
 #include <functional>
 #include <ranges>
@@ -89,6 +90,103 @@ inline std::string ClangToString(clang::ASTContext& context, const clang::Expr* 
     return s;
 }
 
+inline const clang::NamedDecl* GetBaseTypeIdentityDecl(const clang::QualType type) {
+    if (type.isNull()) return nullptr;
+
+    if (const auto* record = type->getAsCXXRecordDecl()) {
+        return record->getDefinitionOrSelf();
+    }
+
+    const auto* type_ptr = type.getTypePtr();
+    if (const auto* pack = llvm::dyn_cast<clang::PackExpansionType>(type_ptr)) {
+        return GetBaseTypeIdentityDecl(pack->getPattern());
+    }
+    if (const auto* specialization = llvm::dyn_cast<clang::TemplateSpecializationType>(type_ptr)) {
+        return specialization->getTemplateName().getAsTemplateDecl(/*IgnoreDeduced=*/true);
+    }
+    if (const auto* parameter = llvm::dyn_cast<clang::TemplateTypeParmType>(type_ptr)) {
+        return parameter->getDecl();
+    }
+    if (const auto* substituted = llvm::dyn_cast<clang::SubstTemplateTypeParmType>(type_ptr)) {
+        if (const auto* parameter = substituted->getReplacedParameter()) return parameter;
+        return GetBaseTypeIdentityDecl(substituted->getReplacementType());
+    }
+    if (const auto* unresolved = llvm::dyn_cast<clang::UnresolvedUsingType>(type_ptr)) {
+        return unresolved->getDecl();
+    }
+    return nullptr;
+}
+
+inline const clang::NamedDecl* GetBaseTypeDependencyDecl(clang::QualType type);
+
+inline const clang::NamedDecl* GetQualifierDependencyDecl(const clang::NestedNameSpecifier qualifier) {
+    switch (qualifier.getKind()) {
+        case clang::NestedNameSpecifier::Kind::Type:
+            return GetBaseTypeDependencyDecl(clang::QualType{qualifier.getAsType(), 0});
+        case clang::NestedNameSpecifier::Kind::Namespace:
+            return qualifier.getAsNamespaceAndPrefix().Namespace;
+        case clang::NestedNameSpecifier::Kind::MicrosoftSuper:
+            return qualifier.getAsMicrosoftSuper();
+        case clang::NestedNameSpecifier::Kind::Null:
+        case clang::NestedNameSpecifier::Kind::Global:
+            return nullptr;
+    }
+    return nullptr;
+}
+
+inline const clang::NamedDecl* GetBaseTypeDependencyDecl(const clang::QualType type) {
+    if (type.isNull()) return nullptr;
+    if (const auto* identity = GetBaseTypeIdentityDecl(type)) return identity;
+
+    const auto* type_ptr = type.getTypePtr();
+    if (const auto* pack = llvm::dyn_cast<clang::PackExpansionType>(type_ptr)) {
+        return GetBaseTypeDependencyDecl(pack->getPattern());
+    }
+    if (const auto* dependent = llvm::dyn_cast<clang::DependentNameType>(type_ptr)) {
+        return GetQualifierDependencyDecl(dependent->getQualifier());
+    }
+    if (const auto* specialization = llvm::dyn_cast<clang::TemplateSpecializationType>(type_ptr)) {
+        if (const auto* dependent = specialization->getTemplateName().getAsDependentTemplateName()) {
+            return GetQualifierDependencyDecl(dependent->getQualifier());
+        }
+    }
+    return nullptr;
+}
+
+inline std::pair<std::string, std::string> GetSyntheticBaseTypeIdentity(
+    const clang::QualType type, const clang::PrintingPolicy& policy) {
+    if (const auto* pack = llvm::dyn_cast<clang::PackExpansionType>(type.getTypePtr())) {
+        return GetSyntheticBaseTypeIdentity(pack->getPattern(), policy);
+    }
+
+    if (const auto* dependent = llvm::dyn_cast<clang::DependentNameType>(type.getTypePtr())) {
+        std::string qualified_name;
+        llvm::raw_string_ostream out(qualified_name);
+        dependent->getQualifier().print(out, policy);
+        out << dependent->getIdentifier()->getName();
+        out.flush();
+        return {dependent->getIdentifier()->getName().str(), std::move(qualified_name)};
+    }
+
+    if (const auto* specialization = llvm::dyn_cast<clang::TemplateSpecializationType>(type.getTypePtr())) {
+        if (const auto* dependent = specialization->getTemplateName().getAsDependentTemplateName()) {
+            if (const auto* identifier = dependent->getName().getIdentifier()) {
+                std::string qualified_name;
+                llvm::raw_string_ostream out(qualified_name);
+                dependent->getQualifier().print(out, policy);
+                out << identifier->getName();
+                out.flush();
+                return {identifier->getName().str(), std::move(qualified_name)};
+            }
+        }
+    }
+
+    auto qualified_name = type.getAsString(policy);
+    const auto* identifier = type.getBaseTypeIdentifier();
+    auto name = identifier ? identifier->getName().str() : qualified_name;
+    return {std::move(name), std::move(qualified_name)};
+}
+
 /// @brief Strips pointer, reference, array, and cv-qualifier tokens from a type.
 inline clang::QualType GetUnderlyingType(clang::QualType in) {
     in = in.getNonReferenceType();
@@ -112,6 +210,12 @@ inline llvm::StringRef GetDeclSourcePath(clang::ASTContext& context, const clang
     const auto source_loc = source_man.getExpansionLoc(decl->getLocation());
     decl_srcs[decl] = source_man.getFilename(source_loc);
     return decl_srcs[decl];
+}
+
+inline bool IsDeclFromBuiltinFile(clang::ASTContext& context, const clang::Decl* decl) {
+    auto path = GetDeclSourcePath(context, decl);
+    return std::ranges::any_of(UEMeta::Config::GetConfig().BuiltinSubpaths(),
+        [&](const auto& builtin) { return path.contains(std::string_view{builtin}); });
 }
 
 // todo may not be worth it to cache this
@@ -161,6 +265,44 @@ inline void PopulateTypeInfo(clang::ASTContext& context, TypeInfo* p_msg, const 
     }
 }
 
+inline void PopulateIdentifierScopes(Identifier* p_msg) {
+    p_msg->clear_scope();
+    auto scopes = std::views::split(p_msg->qualified_name(), std::string_view{"::"})
+                    | std::views::transform([](auto range) -> std::string_view {
+                            auto sv = std::string_view{range};
+                            auto start = sv.find_first_not_of(" \t\n\r");
+                            if (start == std::string_view::npos) return ""; // All whitespace
+
+                            // Find last non-whitespace character
+                            auto end = sv.find_last_not_of(" \t\n\r");
+                            return sv.substr(start, end - start + 1);
+                        })
+                    | std::views::filter([] (auto sv) { return !sv.empty(); });
+    for (auto scope : scopes) {
+        p_msg->add_scope(std::string{scope});
+    }
+}
+
+/// @brief Fills out an Identifier for a syntactically named entity that has no concrete Decl yet.
+inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, const std::string_view name,
+                               const std::string_view qualified_name, const clang::SourceLocation location) {
+    if (!p_msg) {
+        UEM_WARN("Failed to PopulateIdentifier due to nullptr! p_msg=false");
+        return;
+    }
+
+    p_msg->set_name(std::string{name});
+    p_msg->set_qualified_name(std::string{qualified_name});
+    p_msg->set_qualified_name_hash(std::hash<std::string>::operator()(p_msg->qualified_name()));
+
+    const auto& source_man = context.getSourceManager();
+    const auto source_loc = source_man.getExpansionLoc(location);
+    const auto source_path = source_man.getFilename(source_loc);
+    p_msg->set_file_path(source_path.str());
+    p_msg->set_file_path_hash(GetDeclSourcePathHash(source_path));
+    PopulateIdentifierScopes(p_msg);
+}
+
 /// @brief Fills out an Identifier from a Decl
 inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, const clang::Decl* decl) {
     if (!(p_msg && decl)) {
@@ -191,20 +333,7 @@ inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, co
         if (const auto* comment = context.getRawCommentForDeclNoCache(decl)) {
             p_msg->set_documentation(comment->getRawText(context.getSourceManager()).str());
         }
-        auto scopes = std::views::split(p_msg->qualified_name(), std::string_view{"::"})
-                        | std::views::transform([](auto range) -> std::string_view {
-                                auto sv = std::string_view{range};
-                                auto start = sv.find_first_not_of(" \t\n\r");
-                                if (start == std::string_view::npos) return ""; // All whitespace
-
-                                // Find last non-whitespace character
-                                auto end = sv.find_last_not_of(" \t\n\r");
-                                return sv.substr(start, end - start + 1);
-                            })
-                        | std::views::filter([] (auto sv) { return !sv.empty(); });
-        for (auto scope : scopes) {
-            p_msg->add_scope(std::string{scope});
-        }
+        PopulateIdentifierScopes(p_msg);
     }
     else {
         UEM_WARN("Failed to cast decl {} to clang::NamedDecl!", ClangToString(context, decl));

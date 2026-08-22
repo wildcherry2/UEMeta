@@ -13,6 +13,8 @@ int main(int argc, char** argv) {
             return log_init_result;
         }
 
+        UEM_INFO("Using config:\n{}", UEMeta::Config::GetConfig().ToString());
+
 #if defined(DEBUG)
         UEM_INFO("Using debug build of parser! Default output is JSON, and files will have their FQNs rather than FQN hashes!");
 #endif

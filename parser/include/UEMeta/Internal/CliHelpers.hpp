@@ -54,6 +54,10 @@ constexpr auto PROCESS_IMPLICIT_SPEC_HELP = "By default, we don't process compil
                                             " This means things like `std::vector<int>` won't serialize. However, std::vector<T>"
                                             " would still serialize.";
 
+constexpr auto BUILTIN_SUBPATHS_HELP = "List of substrings that are contained within paths to builtin files. Builtin files"
+                                       " are not serialized, since they're considered available in the environment and"
+                                       " consistent across all versions.";
+
 /// @brief Loads a compile_commands.json into a string
 static std::string LoadCompileCommandsString(const std::string& in) {
     if (in.ends_with(".json")) {

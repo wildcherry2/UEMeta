@@ -10,7 +10,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <tuple>
 #include <utility>
 
 #include <clang/AST/ASTContext.h>
@@ -23,8 +22,8 @@
 #include "parser.pb.h"
 
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/Internal/ASTData.hpp"
 #include "UEMeta/Internal/ClangHelpers.hpp"
+#include "UEMeta/Internal/ASTData.hpp"
 
 using namespace ParseResult;
 
@@ -198,23 +197,37 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
 
         // populate base classes
         for (const auto& base : cxx->bases()) {
-            const auto* base_decl = base.getType()->getAsCXXRecordDecl();
-            if (!base_decl) {
-                UEM_WARN("Failed to get definition for base type: {}", base.getType().getAsString());
-                continue;
-            }
             auto* p_base = p_record_decl->add_bases();
-            PopulateIdentifier(context, p_base->mutable_identifier(), base_decl->getDefinitionOrSelf());
+            const auto base_type = base.getType();
+            const auto* base_decl = base_type->getAsCXXRecordDecl();
+            if (const auto* identity_decl = GetBaseTypeIdentityDecl(base_type)) {
+                PopulateIdentifier(context, p_base->mutable_identifier(), identity_decl);
+            }
+            else {
+                auto [name, qualified_name] = GetSyntheticBaseTypeIdentity(base_type, context.getPrintingPolicy());
+                const auto* dependency_decl = GetBaseTypeDependencyDecl(base_type);
+                const auto dependency_location = dependency_decl ? dependency_decl->getLocation() : base.getBaseTypeLoc();
+                PopulateIdentifier(context, p_base->mutable_identifier(), name, qualified_name, dependency_location);
+            }
+            auto base_as_string = base_type.getAsString();
+            if (base.isPackExpansion()) base_as_string += "...";
             p_base->set_access(ClangToProtoAccess(base.getAccessSpecifier()));
             p_base->set_is_virtual(base.isVirtual());
-            if (layout) {
+            if (layout && base_decl) {
                 const auto offset = base.isVirtual()
                     ? layout->getVBaseClassOffset(base_decl)
                     : layout->getBaseClassOffset(base_decl);
                 p_base->set_offset(offset.getQuantity());
             }
-            p_base->set_as_string(base.getType().getAsString());
-            PopulateTypeInfo(context, p_base->mutable_type_info(), base.getType());
+            p_base->set_as_string(base_as_string);
+            PopulateTypeInfo(context, p_base->mutable_type_info(), base_type);
+            if (!p_base->type_info().has_source_path_hash() && !p_base->identifier().file_path().empty()) {
+                p_base->mutable_type_info()->set_source_path_hash(p_base->identifier().file_path_hash());
+            }
+            if (base.isPackExpansion()) {
+                p_base->mutable_type_info()->set_type(base_as_string);
+                p_base->mutable_type_info()->set_underlying_type(base_as_string);
+            }
         }
     }
 
@@ -308,6 +321,44 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
 
 UEMeta::ClangHandler::ClangHandler() : data(new ASTData()), logger("Visited {} total nodes...") {}
 
+bool UEMeta::ClangHandler::BeginSourceFileAction(clang::CompilerInstance& CI) {
+    class FileIncludeExtractor : public clang::PPCallbacks {
+    public:
+        explicit FileIncludeExtractor(ClangHandler* owner, const clang::SourceManager& source_manager) : owner(owner), source_manager(source_manager) {}
+
+        void InclusionDirective(clang::SourceLocation HashLoc, const clang::Token &IncludeTok,
+            llvm::StringRef FileName, bool IsAngled, clang::CharSourceRange FilenameRange,
+            clang::OptionalFileEntryRef File, llvm::StringRef SearchPath, llvm::StringRef RelativePath,
+            const clang::Module *SuggestedModule, bool ModuleImported,
+            clang::SrcMgr::CharacteristicKind FileType) override {
+
+            if (File) {
+                if (const auto source = source_manager.getFileEntryForID(source_manager.getFileID(HashLoc))) {
+                    const auto source_real_path = source->tryGetRealPathName();
+                    const auto include_real_path = File->getFileEntry().tryGetRealPathName();
+                    owner->data->Include(
+                        (source_real_path.empty() ? source_manager.getFilename(HashLoc) : source_real_path).str(),
+                        (include_real_path.empty() ? File->getName() : include_real_path).str());
+                }
+            }
+        }
+    private:
+        ClangHandler* owner;
+        const clang::SourceManager& source_manager;
+    };
+
+    try {
+        CI.getPreprocessor().addPPCallbacks(std::make_unique<FileIncludeExtractor>(this, CI.getSourceManager()));
+    } catch (const std::exception& ex) {
+        LogClangException("BeginSourceFileAction", ex);
+        throw;
+    } catch (...) {
+        LogClangUnknownException("BeginSourceFileAction");
+        throw;
+    }
+    return true;
+}
+
 /// @brief Creates the AST consumer for one translation unit.
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,
                                                                             llvm::StringRef file) {
@@ -334,6 +385,7 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
                 GuardClangCallback("HandleTranslationUnit", [&] {
                     parse_logger.Stop();
                     UEM_INFO("TU '{}' parsed!", tu_name);
+                    UEM_INFO("Gathered {} include directives!", owner->data->GetIncludeCount());
                     owner->BeginTranslationUnit(ctx);
                     if (!owner->TraverseDecl(ctx.getTranslationUnitDecl())) {
                         UEM_ERROR("(clang) AST traversal aborted due to an earlier exception.");

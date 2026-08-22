@@ -1105,4 +1105,25 @@ namespace UEMeta::Testing::Types {
         int Value;
     };
 
+    template<typename FirstType>
+    struct DependentTemplateBaseRecord {};
+
+    template<typename FirstType>
+    struct DependentTemplateDerivedRecord : DependentTemplateBaseRecord<FirstType> {};
+
+    template<typename FirstType>
+    struct DependentTypeParameterBaseRecord : FirstType {};
+
+    template<typename FirstType>
+    struct DependentQualifiedBaseRecord : FirstType::BaseType {};
+
+    template<typename FirstType, typename SecondType>
+    struct DependentQualifiedTemplateBaseRecord : FirstType::template BaseType<SecondType> {};
+
+    template<typename FirstType>
+    struct DependentExternalQualifiedBaseRecord : AliasTemplate<FirstType>::Base {};
+
+    template<typename... BaseTypes>
+    struct DependentPackBasesRecord : BaseTypes... {};
+
 } // namespace UEMeta::Testing::Types

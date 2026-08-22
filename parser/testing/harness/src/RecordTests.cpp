@@ -2899,7 +2899,105 @@ TEST(RecordTests, DependentRecordAlignmentHasUnknownLayout) {
     ExpectDependentAlignmentLayout("DependentRecordAlignmentRecord", "int Value");
 }
 
+void ExpectDependentBase(
+    const std::string_view record_name,
+    const std::size_t template_parameter_count,
+    const std::string_view expected_identifier_name,
+    const std::string_view expected_identifier_qualified_name,
+    const std::string_view expected_type,
+    const fs::path expected_source_path = RecordSourcePath()) {
+    const auto qualified_name = QualifiedName(record_name);
+    const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectRecordCore(
+        declaration,
+        record_name,
+        qualified_name,
+        RECORD_KIND_STRUCT,
+        true,
+        std::nullopt,
+        std::nullopt,
+        0,
+        0,
+        1,
+        0);
+    ASSERT_TRUE(declaration.has_template_details());
+    EXPECT_EQ(declaration.template_details().parameters_size(), template_parameter_count);
+    EXPECT_EQ(declaration.template_details().specialization_kind(), TEMPLATE_SPECIALIZATION_NONE);
+    ExpectNoNestedHashes(declaration);
+
+    const auto& base = declaration.bases(0);
+    ASSERT_TRUE(base.has_identifier());
+    UEMeta::Testing::ExpectIdentifier(
+        base.identifier(), expected_identifier_name, expected_identifier_qualified_name, expected_source_path);
+    EXPECT_EQ(
+        base.identifier().qualified_name_hash(),
+        std::hash<std::string>{}(std::string{expected_identifier_qualified_name}));
+    EXPECT_EQ(base.identifier().file_path_hash(), std::hash<std::string>{}(expected_source_path.string()));
+    EXPECT_EQ(base.access(), ACCESS_SPECIFIER_PUBLIC);
+    ASSERT_TRUE(base.has_is_virtual());
+    EXPECT_FALSE(base.is_virtual());
+    EXPECT_FALSE(base.has_offset());
+    EXPECT_EQ(base.as_string(), expected_type);
+    ASSERT_TRUE(base.has_type_info());
+    UEMeta::Testing::ExpectTypeInfo(base.type_info(), {expected_type, expected_type, true, expected_source_path});
+}
+
+TEST(RecordTests, DependentTemplateBaseIsComplete) {
+    ExpectDependentBase(
+        "DependentTemplateDerivedRecord",
+        1,
+        "DependentTemplateBaseRecord",
+        QualifiedName("DependentTemplateBaseRecord"),
+        "DependentTemplateBaseRecord<FirstType>");
+}
+
+TEST(RecordTests, DependentTypeParameterBaseIsComplete) {
+    ExpectDependentBase(
+        "DependentTypeParameterBaseRecord",
+        1,
+        "FirstType",
+        QualifiedName("DependentTypeParameterBaseRecord") + "::FirstType",
+        "FirstType");
+}
+
+TEST(RecordTests, DependentQualifiedBaseIsComplete) {
+    ExpectDependentBase(
+        "DependentQualifiedBaseRecord",
+        1,
+        "BaseType",
+        "FirstType::BaseType",
+        "FirstType::BaseType");
+}
+
+TEST(RecordTests, DependentQualifiedTemplateBaseIsComplete) {
+    ExpectDependentBase(
+        "DependentQualifiedTemplateBaseRecord",
+        2,
+        "BaseType",
+        "FirstType::BaseType",
+        "FirstType::template BaseType<SecondType>");
+}
+
+TEST(RecordTests, DependentExternalQualifiedBaseUsesQualifierSource) {
+    ExpectDependentBase(
+        "DependentExternalQualifiedBaseRecord",
+        1,
+        "Base",
+        "AliasTemplate<FirstType>::Base",
+        "AliasTemplate<FirstType>::Base",
+        AliasSourcePath());
+}
+
+TEST(RecordTests, DependentPackBaseIsComplete) {
+    ExpectDependentBase(
+        "DependentPackBasesRecord",
+        1,
+        "BaseTypes",
+        QualifiedName("DependentPackBasesRecord") + "::BaseTypes",
+        "BaseTypes...");
+}
+
 TEST(RecordTests, CoversEveryRecordDeclarationInRecordTypes) {
-    // 210 outer matrix records + 210 explicitly checked nested records + 12 support/layout records.
-    EXPECT_EQ(RecordDeclarations().size(), 432);
+    // 210 outer matrix records + 210 explicitly checked nested records + 19 support/layout records.
+    EXPECT_EQ(RecordDeclarations().size(), 439);
 }

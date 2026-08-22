@@ -507,7 +507,7 @@ if(UEMETA_ENABLE_TESTING)
         "        --clang-path [===[${UEMETA_TEST_CLANG_EXECUTABLE_JSON}]===]\n"
         "        --output [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===]\n"
         "        --format binary\n"
-        "        --path-begin [===[${UEMETA_TEST_WORKING_DIRECTORY_JSON}]===]\n"
+        "        --builtin-subpaths InlinedBuiltinTypes.hpp\n"
         "        --process-implicit-specializations\n"
         "    RESULT_VARIABLE UEMETA_TEST_PARSER_RESULT\n"
         ")\n"

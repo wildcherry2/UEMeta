@@ -16,6 +16,10 @@ message TLFileData {
     // these are the qualified name hashes of the forward declarations in this file. they're excluded from the defined_types because
     // they don't have a definition in this file, but they may be necessary if a file that includes this file depends on it
     repeated uint64 forward_declaration_hashes = 5;
+
+    // these are the full paths to 'builtin' includes that this file uses. Includes are considered builtin by the parser
+    // depending on the CLI arguments; these includes are consistent and always available, so they aren't tracked (like std/STL)
+    repeated string builtin_includes = 6;
 }
 
 // Top-level record declaration (class/struct/union).
