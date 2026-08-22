@@ -40,16 +40,17 @@ class UnrealParserWindows(AbstractCppParser):
     @override
     def make_compile_commands(self, branch: str) -> Path:
         self.project_generator = make_generator(branch, self)
-        if self.project_generator is None:
-            log_exc(f"Failed to generate uproject for branch {branch}!")
-        self.__checkout_ran = True
-        self.project_generator.run_setup()
-        self.project_generator.write_project_files()
-        self.project_generator.patch_src()
-        self.project_generator.run_generate_project_files()
-        self.project_generator.write_build_config()
-        self.project_generator.run_ubt()
-        self.project_generator.run_generate_clang_database()
+        if not self.config.use_existing_project:
+            if self.project_generator is None:
+                log_exc(f"Failed to generate uproject for branch {branch}!")
+            self.__checkout_ran = True
+            self.project_generator.run_setup()
+            self.project_generator.write_project_files()
+            self.project_generator.patch_src()
+            self.project_generator.run_generate_project_files()
+            self.project_generator.write_build_config()
+            self.project_generator.run_ubt()
+            self.project_generator.run_generate_clang_database()
         compile_commands = self.git.root / "compile_commands.json"
         if not compile_commands.exists():
             log_exc(f"Failed to find generated compile_commands.json for branch {branch}!")
@@ -323,7 +324,7 @@ class UPG_58(DefaultUnrealProjectGenerator):
         # UE 5.6 GCD emits VS Clang's resource dir, but the parser swaps in its bundled clang-cl.
         # Keep resource headers aligned with that frontend to avoid x86 builtin mismatches.
         resource_dir = self.get_parser_clang_resource_dir()
-        arg = f"--additional-clang-args=-resource-dir={resource_dir.as_posix()}"
+        arg = f"--clang-args=-resource-dir={resource_dir.as_posix()}"
         if arg not in self.driver.parser_additional_commands:
             self.driver.parser_additional_commands.append(arg)
 
@@ -377,8 +378,8 @@ class UPG_5(UPG_52):
     # missing macro for the current version of the compiler
     _win10_ge_definition = "NTDDI_WIN10_GE=0x0A000010"
     _parser_additional_commands = [
-        "--additional-clang-args=/std:c++17",
-        "--additional-clang-args=/clang:-Wno-c++11-narrowing"
+        "--clang-args=/std:c++17",
+        "--clang-args=/clang:-Wno-c++11-narrowing"
     ]
 
     @override

@@ -22,7 +22,7 @@ class CoordinatorConfig:
     ubt_platform: str
     ubt_config: str
     vs2013_vcvarsall: Path | None
-
+    use_existing_project: bool
 
 def load_config(config_path: str | Path, git_pat: str | None = None) -> CoordinatorConfig:
     resolved_config_path = Path(config_path).resolve()
@@ -60,6 +60,7 @@ def load_config(config_path: str | Path, git_pat: str | None = None) -> Coordina
         ubt_platform=_get(parser, "Unreal Parser", "platform", "Win64"),
         ubt_config=_get(parser, "Unreal Parser", "config", "Shipping"),
         vs2013_vcvarsall=_get_optional_path(parser, base_dir, "Unreal Parser", "vs2013_vcvarsall"),
+        use_existing_project=parser.getboolean("Unreal Parser", "use_existing_project", fallback=False)
     )
 
 
