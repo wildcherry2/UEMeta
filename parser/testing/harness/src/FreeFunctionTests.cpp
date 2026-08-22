@@ -8896,8 +8896,31 @@ TEST(FreeFunctionTests, DependentTypeInfo) {
         std::nullopt);
 }
 
+TEST(FreeFunctionTests, ParenArrayReturnTypeInfo) {
+    const auto name = std::string_view{"TypeInfoParenArrayReturnFunction"};
+    const auto& declarations = FreeFunctionDeclarations();
+    const auto found = declarations.find(FreeFunctionKey(name, std::nullopt));
+    ASSERT_NE(found, declarations.end());
+
+    UEMeta::Testing::ExpectFunctionCommon(
+        found->second.common(),
+        name,
+        QualifiedName(name),
+        FreeFunctionSourcePath(),
+        FUNCTION_KIND_FREE,
+        "Beta (*TypeInfoParenArrayReturnFunction())[2]",
+        ExpectedTypeInfo{"Beta (*)[2]", "Beta", false, AliasSourcePath()},
+        FUN_VAR_STORAGE_CLASS_UNSPECIFIED,
+        CONSTANT_EVALUATION_NONE,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        {},
+        std::nullopt);
+}
+
 TEST(FreeFunctionCoverageTests, AccountsForEveryTargetDeclaration) {
-    constexpr std::size_t expected_declaration_count = 1406;
+    constexpr std::size_t expected_declaration_count = 1407;
     constexpr std::size_t implicit_instantiation_anchor_count = 54;
 
     const auto& declarations = FreeFunctionDeclarations();

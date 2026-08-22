@@ -1088,4 +1088,21 @@ namespace UEMeta::Testing::Types {
 
     struct TypeInfoTemplatedBaseRecord : ClassOneParameterNoNestedNoBaseRecord<char> {};
 
+    template<typename FirstType>
+    class DependentVirtualLayoutRecord {
+    public:
+        virtual void Invoke() {}
+        FirstType Obj;
+    };
+
+    template<typename FirstType>
+    struct DependentFieldAlignmentRecord {
+        alignas(alignof(FirstType)) int Value;
+    };
+
+    template<typename FirstType>
+    struct alignas(alignof(FirstType)) DependentRecordAlignmentRecord {
+        int Value;
+    };
+
 } // namespace UEMeta::Testing::Types

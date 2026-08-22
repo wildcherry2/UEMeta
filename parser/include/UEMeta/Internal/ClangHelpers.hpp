@@ -96,7 +96,7 @@ inline clang::QualType GetUnderlyingType(clang::QualType in) {
         if (in->isPointerType()) {
             in = in->getPointeeType();
         } else if (in->isArrayType()) {
-            in = llvm::cast<clang::ArrayType>(in.getTypePtr())->getElementType();
+            in = in->getAsArrayTypeUnsafe()->getElementType();
         }
     }
     return in.getUnqualifiedType();
@@ -327,9 +327,9 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
     }
 
     if (const auto* as_func = llvm::dyn_cast<clang::FunctionDecl>(decl)) {
+        SetSpecializationKind(as_func->getTemplateSpecializationKind());
         if (const auto* primary = as_func->getDescribedFunctionTemplate()) {
             PopulateParameters(primary->getTemplateParameters(), p_msg);
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
             p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
             return;
         }
@@ -339,7 +339,6 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
             if (const auto* args = as_func->getTemplateSpecializationArgs()) {
                 AddTemplateArguments(args->asArray());
             }
-            SetSpecializationKind(as_func->getTemplateSpecializationKind());
             p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
         }
 
@@ -357,9 +356,9 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
     }
 
     if (const auto* as_var = llvm::dyn_cast<clang::VarDecl>(decl)) {
+        SetSpecializationKind(as_var->getTemplateSpecializationKind());
         if (const auto* primary = as_var->getDescribedVarTemplate()) {
             PopulateParameters(primary->getTemplateParameters(), p_msg);
-            p_msg->set_specialization_kind(TEMPLATE_SPECIALIZATION_NONE);
             p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
             return;
         }
@@ -376,7 +375,6 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
                 p_msg->set_primary_template_qualified_name(primary->getQualifiedNameAsString());
             }
             AddTemplateArguments(spec->getTemplateArgs().asArray());
-            SetSpecializationKind(spec->getSpecializationKind());
         }
     }
 }

@@ -508,6 +508,7 @@ if(UEMETA_ENABLE_TESTING)
         "        --output [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===]\n"
         "        --format binary\n"
         "        --path-begin [===[${UEMETA_TEST_WORKING_DIRECTORY_JSON}]===]\n"
+        "        --process-implicit-specializations\n"
         "    RESULT_VARIABLE UEMETA_TEST_PARSER_RESULT\n"
         ")\n"
         "if(NOT UEMETA_TEST_PARSER_RESULT EQUAL 0)\n"

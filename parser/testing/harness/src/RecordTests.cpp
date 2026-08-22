@@ -2806,7 +2806,100 @@ TEST(RecordTests, ConcreteTemplateBaseTypeInfo) {
         });
 }
 
+TEST(RecordTests, DependentVirtualLayoutOmitsVTableIndex) {
+    const auto qualified_name = QualifiedName("DependentVirtualLayoutRecord");
+    const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectRecordCore(
+        declaration,
+        "DependentVirtualLayoutRecord",
+        qualified_name,
+        RECORD_KIND_CLASS,
+        true,
+        std::nullopt,
+        std::nullopt,
+        1,
+        0,
+        0,
+        1);
+    ExpectRecordTemplateDetails(declaration, "DependentVirtualLayoutRecord", 1, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectNoNestedHashes(declaration);
+
+    ExpectField(
+        declaration,
+        qualified_name,
+        "Obj",
+        "FirstType Obj",
+        ACCESS_SPECIFIER_PUBLIC,
+        false,
+        false,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        {"FirstType", "FirstType", true});
+    ExpectMethod(
+        declaration,
+        qualified_name,
+        "Invoke",
+        FUNCTION_KIND_MEMBER,
+        "void",
+        "virtual void Invoke()",
+        CONSTANT_EVALUATION_NONE,
+        "{\n}\n",
+        FUNCTION_DEFINITION_NORMAL,
+        {},
+        ACCESS_SPECIFIER_PUBLIC,
+        false,
+        false,
+        FUNCTION_VIRTUALITY_VIRTUAL,
+        false,
+        std::nullopt,
+        std::nullopt);
+}
+
+void ExpectDependentAlignmentLayout(
+    const std::string_view record_name,
+    const std::string_view expected_field_as_string) {
+    const auto qualified_name = QualifiedName(record_name);
+    const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectRecordCore(
+        declaration,
+        record_name,
+        qualified_name,
+        RECORD_KIND_STRUCT,
+        true,
+        std::nullopt,
+        std::nullopt,
+        1,
+        0,
+        0,
+        0);
+    ExpectRecordTemplateDetails(declaration, record_name, 1, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectNoNestedHashes(declaration);
+    ExpectField(
+        declaration,
+        qualified_name,
+        "Value",
+        expected_field_as_string,
+        ACCESS_SPECIFIER_PUBLIC,
+        false,
+        false,
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        {"int", "int"});
+}
+
+TEST(RecordTests, DependentFieldAlignmentHasUnknownLayout) {
+    ExpectDependentAlignmentLayout(
+        "DependentFieldAlignmentRecord",
+        "int Value alignas(alignof(FirstType))");
+}
+
+TEST(RecordTests, DependentRecordAlignmentHasUnknownLayout) {
+    ExpectDependentAlignmentLayout("DependentRecordAlignmentRecord", "int Value");
+}
+
 TEST(RecordTests, CoversEveryRecordDeclarationInRecordTypes) {
-    // 210 outer matrix records + 210 explicitly checked nested records + 9 support/layout records.
-    EXPECT_EQ(RecordDeclarations().size(), 429);
+    // 210 outer matrix records + 210 explicitly checked nested records + 12 support/layout records.
+    EXPECT_EQ(RecordDeclarations().size(), 432);
 }

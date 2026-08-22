@@ -2525,6 +2525,8 @@ namespace UEMeta::Testing::Types {
     template<typename ValueType>
     ValueType* TypeInfoDependentFunction(ValueType* Value);
 
-    // Explicit declarations above serialize to 1406 TLFreeFunction records.
+    Beta (*TypeInfoParenArrayReturnFunction())[2];
+
+    // Explicit declarations above serialize to 1407 TLFreeFunction records.
     // The 54 inline variables only force ordinary implicit instantiation.
 } // namespace UEMeta::Testing::Types

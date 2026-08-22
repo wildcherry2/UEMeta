@@ -14,6 +14,7 @@
 #include <utility>
 
 #include <clang/AST/ASTContext.h>
+#include <clang/AST/Attr.h>
 #include <clang/AST/VTableBuilder.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/AST/RecordLayout.h>
@@ -72,7 +73,7 @@ void UEMeta::ClangHandler::EndTranslationUnit(clang::ASTContext&) { // NOLINT(*-
 
 bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
-
+    UEM_DEBUG("Processing record {}", clang_decl->getNameAsString());
     auto& context = data->GetContext();
     auto* p_record_decl = data->Allocate<TLRecordDeclaration>();
     PopulateDeclarationMetadata(context, p_record_decl->mutable_metadata(), clang_decl);
@@ -82,10 +83,18 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     }
     bool has_complete_definition = true;
 
-    bool has_known_layout = clang_decl->isCompleteDefinition();
+    const auto HasDependentAlignment = [](const clang::Decl* decl) {
+        for (const auto* attr : decl->specific_attrs<clang::AlignedAttr>()) {
+            if (attr->isAlignmentDependent()) return true;
+        }
+        return false;
+    };
+
+    bool has_known_layout = clang_decl->isCompleteDefinition() && !HasDependentAlignment(clang_decl);
     for (const auto* field : clang_decl->fields()) {
         if (field->getType()->isDependentType()
-            || (field->isBitField() && field->getBitWidth()->isValueDependent())) {
+            || (field->isBitField() && field->getBitWidth()->isValueDependent())
+            || HasDependentAlignment(field)) {
             has_known_layout = false;
             break;
         }
@@ -157,26 +166,28 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
 
             if (method->isVirtual()) {
                 p_method->set_virtuality(method->isPureVirtual() ? FUNCTION_VIRTUALITY_PURE : FUNCTION_VIRTUALITY_VIRTUAL);
-                auto* p_vt = p_method->mutable_vtable_index();
-                // NOTE: it may be possible to support Linux vtable parsing with Itanium VTableContext when the flags
-                // indicate linux compilation, but the math is a bit more complicated
-                if (!context.getTargetInfo().getCXXABI().isMicrosoft())
-                    throw std::runtime_error("Itanium (Linux) ABI not supported yet!");
-                const auto vtable = llvm::cast<clang::MicrosoftVTableContext>(context.getVTableContext());
-                const auto method_decl = [&]() -> clang::GlobalDecl {
-                    if (const auto* dtor = llvm::dyn_cast<clang::CXXDestructorDecl>(method)) {
-                        const auto dtor_type = context.getTargetInfo().emitVectorDeletingDtors(
-                                                   context.getLangOpts())
-                            ? clang::Dtor_VectorDeleting
-                            : clang::Dtor_Deleting;
-                        return {dtor, dtor_type};
-                    }
+                if (has_known_layout) {
+                    auto* p_vt = p_method->mutable_vtable_index();
+                    // NOTE: it may be possible to support Linux vtable parsing with Itanium VTableContext when the flags
+                    // indicate linux compilation, but the math is a bit more complicated
+                    if (!context.getTargetInfo().getCXXABI().isMicrosoft())
+                        throw std::runtime_error("Itanium (Linux) ABI not supported yet!");
+                    const auto vtable = llvm::cast<clang::MicrosoftVTableContext>(context.getVTableContext());
+                    const auto method_decl = [&]() -> clang::GlobalDecl {
+                        if (const auto* dtor = llvm::dyn_cast<clang::CXXDestructorDecl>(method)) {
+                            const auto dtor_type = context.getTargetInfo().emitVectorDeletingDtors(
+                                                       context.getLangOpts())
+                                ? clang::Dtor_VectorDeleting
+                                : clang::Dtor_Deleting;
+                            return {dtor, dtor_type};
+                        }
 
-                    return {method};
-                }();
-                const auto method_loc = vtable->getMethodVFTableLocation(method_decl);
-                p_vt->set_offset(method_loc.VFPtrOffset.getQuantity());
-                p_vt->set_index(method_loc.Index);
+                        return {method};
+                    }();
+                    const auto method_loc = vtable->getMethodVFTableLocation(method_decl);
+                    p_vt->set_offset(method_loc.VFPtrOffset.getQuantity());
+                    p_vt->set_index(method_loc.Index);
+                }
             }
 
             p_method->set_access(ClangToProtoAccess(method->getAccess()));
@@ -187,12 +198,12 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
 
         // populate base classes
         for (const auto& base : cxx->bases()) {
-            auto* p_base = p_record_decl->add_bases();
             const auto* base_decl = base.getType()->getAsCXXRecordDecl();
             if (!base_decl) {
-                UEM_WARN("Failed to get definition for base type!");
+                UEM_WARN("Failed to get definition for base type: {}", base.getType().getAsString());
                 continue;
             }
+            auto* p_base = p_record_decl->add_bases();
             PopulateIdentifier(context, p_base->mutable_identifier(), base_decl->getDefinitionOrSelf());
             p_base->set_access(ClangToProtoAccess(base.getAccessSpecifier()));
             p_base->set_is_virtual(base.isVirtual());
@@ -217,7 +228,7 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
 
 bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
-
+    UEM_DEBUG("Processing enum {}", clang_decl->getNameAsString());
     auto& context = data->GetContext();
     auto* p_enum_decl = data->Allocate<TLEnumDeclaration>();
     PopulateDeclarationMetadata(context, p_enum_decl->mutable_metadata(), clang_decl);
@@ -236,8 +247,8 @@ bool UEMeta::ClangHandler::VisitEnumDecl(clang::EnumDecl* clang_decl) {
 }
 
 bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* clang_decl) {
-    if (clang_decl->isCXXClassMember() || data->OnVisit(clang_decl)) return true; // handled by VisitRecordDecl
-
+    if (data->OnVisit(clang_decl)) return true;
+    UEM_DEBUG("Processing free function {}", clang_decl->getNameAsString());
     auto& context = data->GetContext();
     auto* p_fun = data->Allocate<TLFreeFunctionDeclaration>();
     PopulateDeclarationMetadata(context, p_fun->mutable_metadata(), clang_decl);
@@ -248,6 +259,7 @@ bool UEMeta::ClangHandler::VisitFunctionDecl(clang::FunctionDecl* clang_decl) {
 
 bool UEMeta::ClangHandler::VisitTypedefNameDecl(clang::TypedefNameDecl* clang_decl) {
     if (data->OnVisit(clang_decl)) return true;
+    UEM_DEBUG("Processing alias {}", clang_decl->getNameAsString());
     auto& context = data->GetContext();
     auto* p_alias = data->Allocate<TLAliasDeclaration>();
     PopulateDeclarationMetadata(context, p_alias->mutable_metadata(), clang_decl);
@@ -268,9 +280,8 @@ bool UEMeta::ClangHandler::VisitTypedefNameDecl(clang::TypedefNameDecl* clang_de
 }
 
 bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
-    if (clang_decl->isCXXClassMember() || clang::dyn_cast_or_null<clang::ParmVarDecl>(clang_decl) // handled by VisitRecordDecl/VisitFunctionDecl
-        || data->OnVisit(clang_decl))
-        return true;
+    if (data->OnVisit(clang_decl)) return true;
+    UEM_DEBUG("Processing global variable {}", clang_decl->getNameAsString());
     auto& context = data->GetContext();
     auto* p_var = data->Allocate<TLGlobalVariableDeclaration>();
     PopulateDeclarationMetadata(context, p_var->mutable_metadata(), clang_decl);

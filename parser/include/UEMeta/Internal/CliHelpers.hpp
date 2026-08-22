@@ -46,6 +46,14 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
 constexpr auto DUMP_HELP = "Overrides all output settings and dumps all output to a JSON file, either in the same directory"
                            "as the log file (if given) or the same directory as the program.";
 
+constexpr auto PREFER_FULL_NAME_HELP = "By default, the hash of the fully qualified name of a declaration is inserted into"
+                                       " the serialized file name. Specifying this make the fully qualified name of the"
+                                       " declaration appear in the file name, instead of its hash.";
+
+constexpr auto PROCESS_IMPLICIT_SPEC_HELP = "By default, we don't process compiler-generated template specializations."
+                                            " This means things like `std::vector<int>` won't serialize. However, std::vector<T>"
+                                            " would still serialize.";
+
 /// @brief Loads a compile_commands.json into a string
 static std::string LoadCompileCommandsString(const std::string& in) {
     if (in.ends_with(".json")) {

@@ -48,8 +48,52 @@ namespace UEMeta {
             all_unique_visited_decls.push_back(clang_decl);
         }
 
-        [[nodiscard]] bool OnVisit(const auto* decl) {
+        template<typename DeclType>
+        [[nodiscard]] bool OnVisit(const DeclType* decl) {
+            // don't process a nullptr
             if (!decl) return true;
+
+            // if the decl is within the local scope of a function or method, don't process it
+            if constexpr (std::same_as<DeclType, clang::FunctionDecl>
+                            || std::same_as<DeclType, clang::RecordDecl>
+                            || std::same_as<DeclType, clang::EnumDecl>
+                            || std::same_as<DeclType, clang::TypedefNameDecl>) {
+                if (decl->getDeclContext()->isFunctionOrMethod()) {
+                    return true;
+                }
+            }
+            else if constexpr(std::same_as<DeclType, clang::VarDecl>) {
+                if (decl->isLocalVarDecl() // don't care about local variables
+                    || decl->isCXXClassMember() // fields are handled in record visitation
+                    || clang::dyn_cast<clang::ParmVarDecl>(decl)) { // params are handled in function visitation
+                    return true;
+                }
+            }
+
+            // member functions are handled in record visitation
+            if constexpr(std::same_as<DeclType, clang::FunctionDecl>) {
+                if (decl->isCXXClassMember()) {
+                    return true;
+                }
+            }
+
+            // if the user doesn't want implicit specializations, don't process it if it's implicit
+            if (!Config::GetConfig().ProcessImplicitSpecializations()) {
+                if constexpr (std::same_as<DeclType, clang::FunctionDecl>
+                                || std::same_as<DeclType, clang::VarDecl>) {
+                    if (decl->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
+                        return true;
+                    }
+                }
+                else if constexpr(std::same_as<DeclType, clang::RecordDecl>) {
+                    if (decl->getDeclContext()->isFunctionOrMethod()) return true;
+                    if (const clang::CXXRecordDecl* as_cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+                        if (as_cxx->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) {
+                            return true;
+                        }
+                    }
+                }
+            }
 
             if (const auto as_tag = llvm::dyn_cast_or_null<clang::TagDecl>(decl)) {
                 // if this is a forward declaration...
@@ -259,6 +303,10 @@ namespace UEMeta {
 
                 const auto GetOutData = [&] () -> std::pair<std::filesystem::path, google::protobuf::Message*> {
                     if (const auto* p_file = dynamic_cast<ParseResult::TLFileData*>(msg)) {
+                        if (cfg.PrefersFullNameInFileName()) {
+                            return {out_dir / fmtquill::format("{}-{}.file{}",
+                                std::filesystem::path{p_file->path()}.filename().string(), p_file->file_occurrence(), is_json ? "json" : "bin"), msg};
+                        }
                         // file path is in format {filepathhash}-{fileoccurrenceindex}.file[bin|json]
                         return {out_dir / fmtquill::format("{}-{}.file{}",
                             p_file->path_hash(), p_file->file_occurrence(), is_json ? "json" : "bin"), msg};
@@ -274,9 +322,17 @@ namespace UEMeta {
                     }
 
                     const auto& ident = info->metadata->identifier();
+
+                    if (cfg.PrefersFullNameInFileName()) {
+                        return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name(),
+                        info->metadata->content_hash(), ident.file_path_hash(), info->metadata->occurrence_index(),
+                        info->extension, is_json ? "json" : "bin"), info->message};
+                    }
+
                     return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
                         info->metadata->content_hash(), ident.file_path_hash(), info->metadata->occurrence_index(),
                         info->extension, is_json ? "json" : "bin"), info->message};
+
                 };
 
                 const auto [path, resolved_msg] = GetOutData();

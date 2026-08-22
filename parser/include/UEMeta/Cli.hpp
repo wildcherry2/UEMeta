@@ -58,6 +58,17 @@ namespace UEMeta {
         [[nodiscard]] bool PrefersClang() const;
 
         /**
+         * @brief Returns true when the user wants the serialized files to indicate a declaration's name instead of the
+         * name's hash
+         */
+        [[nodiscard]] bool PrefersFullNameInFileName() const;
+
+        /**
+         * @brief Returns true when the user wants implicit (compiler-generated) template specializations serialized.
+         */
+        [[nodiscard]] bool ProcessImplicitSpecializations() const;
+
+        /**
          * @brief Returns true when the user wants to dump everything to a single JSON.
          */
         [[nodiscard]] bool DumpToJson() const;
@@ -142,6 +153,8 @@ namespace UEMeta {
 
         bool prefer_clang{};
         bool dump_to_json{};
+        bool prefer_full_name_in_file_name{};
+        bool process_implicit_specializations{};
         SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};
@@ -255,8 +268,11 @@ namespace UEMeta {
 /**
  * @brief Emits a debug log message through the UEMeta logger.
  */
+#ifdef DEBUG
 #define UEM_DEBUG(...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
-
+#else
+#define UEM_DEBUG(...)
+#endif
 /**
  * @brief Emits an error log message through the UEMeta logger.
  */
