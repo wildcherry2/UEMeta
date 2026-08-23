@@ -94,6 +94,13 @@ namespace UEMeta {
          */
         [[nodiscard]] const StablePath& OutputDirectory() const;
 
+
+        /**
+         * @brief Returns the version of files that is being parsed; inferred from the directory name of the
+         * output directory.
+         */
+        [[nodiscard]] const std::string& Version() const;
+
         /**
          * @brief Writes a human-readable configuration summary to a stream.
          */
@@ -171,7 +178,7 @@ namespace UEMeta {
         StablePath log{};
         StablePath output_directory{};
         std::string compile_commands{};
-
+        std::string version{};
         std::atomic_flag initialized{};
 
         inline static const std::map<std::string, SerializationFormat> string_format_map = {

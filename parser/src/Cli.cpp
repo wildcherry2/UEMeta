@@ -76,6 +76,11 @@ const UEMeta::StablePath & UEMeta::Config::OutputDirectory() const {
     return output_directory;
 }
 
+const std::string& UEMeta::Config::Version() const {
+    AssertInitialized();
+    return version;
+}
+
 /// @brief Returns the process-wide configuration singleton.
 UEMeta::Config& UEMeta::Config::GetConfig() {
     static Config config{};
@@ -153,7 +158,7 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
 
     cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
     cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
-
+    cfg.version = cfg.output_directory.UnderlyingPath().filename().string();
     cfg.initialized.test_and_set();
     return 0;
 }

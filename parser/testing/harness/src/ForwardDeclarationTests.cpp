@@ -3,7 +3,7 @@
 #include "DeclarationMetadataTestHelpers.hpp"
 #include "EnumDetailsTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -55,12 +55,14 @@ namespace {
                     continue;
                 }
 
-                if (declaration.metadata().identifier().file_path()
+                if (UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
                     != ForwardDeclarationSourcePath().string()) {
                     continue;
                 }
 
-                result.insert_or_assign(declaration.metadata().occurrence_index(), std::move(declaration));
+                result.insert_or_assign(
+                    UEMeta::Testing::VersionedValue(declaration.metadata().occurrence_index()),
+                    std::move(declaration));
             }
 
             return result;
@@ -97,7 +99,7 @@ namespace {
                     continue;
                 }
 
-                if (declaration.metadata().identifier().file_path()
+                if (UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
                     != ForwardDeclarationSourcePath().string()
                     || !declaration.has_template_details()) {
                     continue;
@@ -132,7 +134,7 @@ namespace {
             expected_occurrence_index,
             false);
         EXPECT_EQ(declaration.kind(), expected_kind);
-        EXPECT_EQ(declaration.as_string(), expected_as_string);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.as_string()), expected_as_string);
     }
 
     void ExpectPrimaryTemplate(

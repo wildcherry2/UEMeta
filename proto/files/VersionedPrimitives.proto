@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package ParserTypes;
+
+message VersionedString {
+    message VersionItem {
+        repeated string source_versions = 1;
+        string value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedUint64 {
+    message VersionItem {
+        repeated string source_versions = 1;
+        uint64 value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedUint32 {
+    message VersionItem {
+        repeated string source_versions = 1;
+        uint32 value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedInt64 {
+    message VersionItem {
+        repeated string source_versions = 1;
+        int64 value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedBool {
+    repeated string true_versions = 1;
+    repeated string false_versions = 2;
+}
+
+message VersionedStringList {
+    message VersionItem {
+        repeated string source_versions = 1;
+        repeated string value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedUint64List {
+    message VersionItem {
+        repeated string source_versions = 1;
+        repeated uint64 value = 2;
+    }
+    repeated VersionItem versions = 1;
+}

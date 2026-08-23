@@ -49,7 +49,7 @@ namespace UEMeta::Testing {
             expected_file_path);
 
         EXPECT_EQ(common.kind(), expected_kind);
-        EXPECT_EQ(common.as_string(), expected_as_string);
+        EXPECT_EQ(VersionedValue(common.as_string()), expected_as_string);
 
         EXPECT_EQ(common.has_return_type(), expected_return_type.has_value());
         if (expected_return_type) {
@@ -58,12 +58,12 @@ namespace UEMeta::Testing {
 
         EXPECT_EQ(common.has_storage_class(), expected_storage_class.has_value());
         if (expected_storage_class) {
-            EXPECT_EQ(common.storage_class(), *expected_storage_class);
+            EXPECT_EQ(VersionedValue(common.storage_class()), *expected_storage_class);
         }
 
         EXPECT_EQ(common.has_consteval_kind(), expected_consteval_kind.has_value());
         if (expected_consteval_kind) {
-            EXPECT_EQ(common.consteval_kind(), *expected_consteval_kind);
+            EXPECT_EQ(VersionedValue(common.consteval_kind()), *expected_consteval_kind);
         }
 
         EXPECT_EQ(common.has_is_explicit(), expected_is_explicit.has_value());
@@ -73,7 +73,7 @@ namespace UEMeta::Testing {
 
         EXPECT_EQ(common.has_inline_definition(), expected_inline_definition.has_value());
         if (expected_inline_definition) {
-            EXPECT_EQ(common.inline_definition(), *expected_inline_definition);
+            EXPECT_EQ(VersionedValue(common.inline_definition()), *expected_inline_definition);
         }
 
         EXPECT_EQ(common.has_template_details(), expected_template_details.has_value());
@@ -101,8 +101,8 @@ namespace UEMeta::Testing {
                 expected_file_path);
             ASSERT_TRUE(parameter.has_type_info());
             ExpectTypeInfo(parameter.type_info(), expected_parameter.type_info);
-            EXPECT_EQ(parameter.default_value(), expected_parameter.default_value);
-            EXPECT_EQ(parameter.as_string(), expected_parameter.as_string);
+            EXPECT_EQ(VersionedValue(parameter.default_value()), expected_parameter.default_value);
+            EXPECT_EQ(VersionedValue(parameter.as_string()), expected_parameter.as_string);
 
             ++parameter_index;
         }

@@ -18,7 +18,8 @@ namespace UEMeta::Testing {
         std::string_view as_string;
         std::optional<std::string_view> type{};
         std::optional<bool> is_parameter_pack{};
-        std::optional<ExpectedTypeInfo> default_value{};
+        std::optional<std::string_view> default_value{};
+        std::optional<ExpectedTypeInfo> default_type{};
         std::vector<ExpectedTemplateParameter> parameters{};
     };
 
@@ -35,11 +36,11 @@ namespace UEMeta::Testing {
                 expected_file_path);
 
             EXPECT_EQ(parameter.kind(), expected.kind);
-            EXPECT_EQ(parameter.as_string(), expected.as_string);
+            EXPECT_EQ(VersionedValue(parameter.as_string()), expected.as_string);
 
             EXPECT_EQ(parameter.has_type(), expected.type.has_value());
             if (expected.type) {
-                EXPECT_EQ(parameter.type(), *expected.type);
+                ExpectTypeInfo(parameter.type(), {*expected.type, *expected.type});
             }
 
             EXPECT_EQ(parameter.has_is_parameter_pack(), expected.is_parameter_pack.has_value());
@@ -49,7 +50,12 @@ namespace UEMeta::Testing {
 
             EXPECT_EQ(parameter.has_default_value(), expected.default_value.has_value());
             if (expected.default_value) {
-                ExpectTypeInfo(parameter.default_value(), *expected.default_value);
+                EXPECT_EQ(parameter.default_value(), *expected.default_value);
+            }
+
+            EXPECT_EQ(parameter.has_default_type(), expected.default_type.has_value());
+            if (expected.default_type) {
+                ExpectTypeInfo(parameter.default_type(), *expected.default_type);
             }
 
             ASSERT_EQ(parameter.parameters_size(), expected.parameters.size());

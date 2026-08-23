@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 #include <unordered_map>
-#include "parser.pb.h"
+#include "TopLevel.pb.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclBase.h"
 #include "llvm/ADT/DenseMap.h"
@@ -106,7 +106,7 @@ namespace UEMeta {
                     if (!visited_forward_decls.contains(decl)) {
                         // generate a new forward declaration message and return
                         auto& ast_context = GetContext();
-                        auto* p_forward_decl = Allocate<ParseResult::TLForwardDeclaration>();
+                        auto* p_forward_decl = Allocate<ParserTypes::TLForwardDeclaration>();
                         PopulateDeclarationMetadata(ast_context, p_forward_decl->mutable_metadata(), decl);
 
                         // when the forward declaration is templated, we need to explicitly get the template decl
@@ -116,24 +116,25 @@ namespace UEMeta {
                                 printable_decl = template_decl;
                             }
                         }
-                        p_forward_decl->set_as_string(ClangToString(ast_context, printable_decl));
+                        Proto::SetVersioned(
+                            p_forward_decl->mutable_as_string(), ClangToString(ast_context, printable_decl));
 
                         // assign the kind and template info
                         switch (as_tag->getTagKind()) {
                             case clang::TagTypeKind::Struct:
-                                p_forward_decl->set_kind(ParseResult::FORWARD_DECLARATION_KIND_STRUCT);
+                                p_forward_decl->set_kind(ParserTypes::FORWARD_DECLARATION_KIND_STRUCT);
                                 PopulateTemplateDetails(ast_context, p_forward_decl->mutable_template_details(), decl);
                                 break;
                             case clang::TagTypeKind::Union:
-                                p_forward_decl->set_kind(ParseResult::FORWARD_DECLARATION_KIND_UNION);
+                                p_forward_decl->set_kind(ParserTypes::FORWARD_DECLARATION_KIND_UNION);
                                 PopulateTemplateDetails(ast_context, p_forward_decl->mutable_template_details(), decl);
                                 break;
                             case clang::TagTypeKind::Class:
-                                p_forward_decl->set_kind(ParseResult::FORWARD_DECLARATION_KIND_CLASS);
+                                p_forward_decl->set_kind(ParserTypes::FORWARD_DECLARATION_KIND_CLASS);
                                 PopulateTemplateDetails(ast_context, p_forward_decl->mutable_template_details(), decl);
                                 break;
                             case clang::TagTypeKind::Enum:
-                                p_forward_decl->set_kind(ParseResult::FORWARD_DECLARATION_KIND_ENUM);
+                                p_forward_decl->set_kind(ParserTypes::FORWARD_DECLARATION_KIND_ENUM);
                                 PopulateEnumDetails(ast_context, p_forward_decl->mutable_enum_details(), llvm::dyn_cast_or_null<clang::EnumDecl>(decl));
                                 break;
                             default:
@@ -158,8 +159,8 @@ namespace UEMeta {
             if (const auto decl_context = clang_decl->getDeclContext(); decl_context->isRecord()) {
                 auto* as_cls = llvm::cast<clang::RecordDecl>(decl_context);
                 if (const auto parent = visited_decls.find(as_cls); parent != visited_decls.end()) {
-                    if (auto* parent_record = dynamic_cast<ParseResult::TLRecordDeclaration*>(parent->getSecond())) {
-                        parent_record->add_nested_hashes(clang_decl_fqn_hash);
+                    if (auto* parent_record = dynamic_cast<ParserTypes::TLRecordDeclaration*>(parent->getSecond())) {
+                        Proto::AddVersioned(parent_record->mutable_nested_hashes(), clang_decl_fqn_hash);
                     }
                 }
             }
@@ -229,25 +230,38 @@ namespace UEMeta {
                         builtin_includes.begin());
 
                     for (const auto& include : std::ranges::subrange(builtin_includes.begin(), intersection_end)) {
-                        file_data->add_builtin_includes(include);
+                        Proto::AddVersioned(file_data->mutable_builtin_includes(), include);
                     }
                 };
 
-                auto* current_file = Allocate<ParseResult::TLFileData>();
-                current_file->set_path(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path());
-                current_file->set_file_occurrence(0);
-                current_file->set_path_hash(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path_hash());
+                const auto InitializeFileData = [](TLFileData* file_data) {
+                    Proto::MutableVersionItem(file_data->mutable_defined_type_hashes());
+                    Proto::MutableVersionItem(file_data->mutable_forward_declaration_hashes());
+                    Proto::MutableVersionItem(file_data->mutable_builtin_includes());
+                    return file_data;
+                };
+
+                auto* current_file = InitializeFileData(Allocate<ParserTypes::TLFileData>());
+                current_file->set_path(
+                    Proto::GetVersioned(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path()));
+                Proto::SetVersioned(current_file->mutable_file_occurrence(), 0);
+                current_file->set_path_hash(
+                    Proto::GetVersioned(GetInfo(all_unique_visited_decls[0]).metadata->identifier().file_path_hash()));
                 std::set<std::string> current_file_source_paths{
                     NormalizePath(GetDeclIncludePath(*context, all_unique_visited_decls[0]))};
 
                 uint32_t occurrence_counter = 0;
                 const auto AddDeclarationToFile = [&occurrence_counter](TLFileData* file_data, const DeclInfo& info) {
-                    info.metadata->set_occurrence_index(occurrence_counter++);
+                    Proto::SetVersioned(info.metadata->mutable_occurrence_index(), occurrence_counter++);
                     if (info.extension != "fwdecl") {
-                        file_data->add_defined_type_hashes(info.metadata->identifier().qualified_name_hash());
+                        Proto::AddVersioned(
+                            file_data->mutable_defined_type_hashes(),
+                            info.metadata->identifier().qualified_name_hash());
                     }
                     else {
-                        file_data->add_forward_declaration_hashes(info.metadata->identifier().qualified_name_hash());
+                        Proto::AddVersioned(
+                            file_data->mutable_forward_declaration_hashes(),
+                            info.metadata->identifier().qualified_name_hash());
                     }
                 };
 
@@ -255,10 +269,12 @@ namespace UEMeta {
                     auto* info = &GetInfo(*decl_it);
 
                     // switching to a new file, now we need to make sure there are no gaps and patch if there are
-                    if (const auto file_hash = info->metadata->identifier().file_path_hash(); file_hash != current_file->path_hash()) {
+                    if (const auto file_hash = Proto::GetVersioned(info->metadata->identifier().file_path_hash());
+                        file_hash != current_file->path_hash()) {
                         auto subrange = std::ranges::find_last_if(std::next(decl_it), all_unique_visited_decls.end(),
                     [current_file, this](const clang::Decl* decl) {
-                            return GetInfo(decl).metadata->identifier().file_path_hash() == current_file->path_hash();
+                            return Proto::GetVersioned(GetInfo(decl).metadata->identifier().file_path_hash())
+                                == current_file->path_hash();
                         });
 
                         // found a gap, patch it while processing it
@@ -267,8 +283,12 @@ namespace UEMeta {
                                 const auto& to_patch_info = GetInfo(*decl_it);
                                 current_file_source_paths.insert(
                                     NormalizePath(GetDeclIncludePath(*context, *decl_it)));
-                                to_patch_info.metadata->mutable_identifier()->set_file_path(current_file->path());
-                                to_patch_info.metadata->mutable_identifier()->set_file_path_hash(current_file->path_hash());
+                                Proto::SetVersioned(
+                                    to_patch_info.metadata->mutable_identifier()->mutable_file_path(),
+                                    current_file->path());
+                                Proto::SetVersioned(
+                                    to_patch_info.metadata->mutable_identifier()->mutable_file_path_hash(),
+                                    current_file->path_hash());
                                 AddDeclarationToFile(current_file, to_patch_info);
                                 occ_logger.Decrement();
                             }
@@ -279,11 +299,13 @@ namespace UEMeta {
                         // no gaps, update file stuff and reset occurrence counter
                         else {
                             AddBuiltinIncludes(current_file, current_file_source_paths);
-                            const auto occ = current_file->file_occurrence() + 1;
-                            current_file = Allocate<TLFileData>();
-                            current_file->set_path(info->metadata->identifier().file_path());
-                            current_file->set_file_occurrence(occ);
-                            current_file->set_path_hash(info->metadata->identifier().file_path_hash());
+                            const auto occ = Proto::GetVersioned(current_file->file_occurrence()) + 1;
+                            current_file = InitializeFileData(Allocate<TLFileData>());
+                            current_file->set_path(
+                                Proto::GetVersioned(info->metadata->identifier().file_path()));
+                            Proto::SetVersioned(current_file->mutable_file_occurrence(), occ);
+                            current_file->set_path_hash(
+                                Proto::GetVersioned(info->metadata->identifier().file_path_hash()));
                             current_file_source_paths = {
                                 NormalizePath(GetDeclIncludePath(*context, *decl_it))};
                             occurrence_counter = 0;
@@ -297,7 +319,9 @@ namespace UEMeta {
                 AddBuiltinIncludes(current_file, current_file_source_paths);
 
                 occ_logger.Stop();
-                UEM_INFO("Generated {} TLFileData!", current_file ? current_file->file_occurrence() + 1 : 0);
+                UEM_INFO(
+                    "Generated {} TLFileData!",
+                    current_file ? Proto::GetVersioned(current_file->file_occurrence()) + 1 : 0);
             }
         }
 
@@ -309,7 +333,7 @@ namespace UEMeta {
             const auto& cfg = Config::GetConfig();
             if (cfg.DumpToJson()) {
                 std::string buffer{};
-                const auto wrapper = google::protobuf::Arena::Create<ParseResult::TLItemList>(&arena);
+                const auto wrapper = google::protobuf::Arena::Create<ParserTypes::TLItemList>(&arena);
                 const auto list = wrapper->mutable_items();
                 for (auto* msg : to_serialize) {
                     auto item = google::protobuf::Arena::Create<TLItem>(&arena);
@@ -349,14 +373,16 @@ namespace UEMeta {
                 if (!msg) return;
 
                 const auto GetOutData = [&] () -> std::pair<std::filesystem::path, google::protobuf::Message*> {
-                    if (const auto* p_file = dynamic_cast<ParseResult::TLFileData*>(msg)) {
+                    if (const auto* p_file = dynamic_cast<ParserTypes::TLFileData*>(msg)) {
                         if (cfg.PrefersFullNameInFileName()) {
                             return {out_dir / fmtquill::format("{}-{}.file{}",
-                                std::filesystem::path{p_file->path()}.filename().string(), p_file->file_occurrence(), is_json ? "json" : "bin"), msg};
+                                std::filesystem::path{p_file->path()}.filename().string(),
+                                Proto::GetVersioned(p_file->file_occurrence()), is_json ? "json" : "bin"), msg};
                         }
                         // file path is in format {filepathhash}-{fileoccurrenceindex}.file[bin|json]
                         return {out_dir / fmtquill::format("{}-{}.file{}",
-                            p_file->path_hash(), p_file->file_occurrence(), is_json ? "json" : "bin"), msg};
+                            p_file->path_hash(), Proto::GetVersioned(p_file->file_occurrence()),
+                            is_json ? "json" : "bin"), msg};
                     }
 
                     // file path is in format {qualnamehash}-{contenthash}-{filepathhash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var][bin|json]
@@ -372,12 +398,16 @@ namespace UEMeta {
 
                     if (cfg.PrefersFullNameInFileName()) {
                         return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name(),
-                        info->metadata->content_hash(), ident.file_path_hash(), info->metadata->occurrence_index(),
+                        Proto::GetVersioned(info->metadata->content_hash()),
+                        Proto::GetVersioned(ident.file_path_hash()),
+                        Proto::GetVersioned(info->metadata->occurrence_index()),
                         info->extension, is_json ? "json" : "bin"), info->message};
                     }
 
                     return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
-                        info->metadata->content_hash(), ident.file_path_hash(), info->metadata->occurrence_index(),
+                        Proto::GetVersioned(info->metadata->content_hash()),
+                        Proto::GetVersioned(ident.file_path_hash()),
+                        Proto::GetVersioned(info->metadata->occurrence_index()),
                         info->extension, is_json ? "json" : "bin"), info->message};
 
                 };
@@ -463,7 +493,7 @@ namespace UEMeta {
 
         struct DeclInfo {
             std::string_view extension;
-            ParseResult::DeclarationMetadata* metadata;
+            ParserTypes::DeclarationMetadata* metadata;
             google::protobuf::Message* message;
         };
 
@@ -477,25 +507,25 @@ namespace UEMeta {
                 return existing->second;
             }
 
-            if (auto* p_alias = dynamic_cast<ParseResult::TLAliasDeclaration*>(msg)) {
+            if (auto* p_alias = dynamic_cast<ParserTypes::TLAliasDeclaration*>(msg)) {
                 return cache.insert(std::pair{msg, DeclInfo{"alias", p_alias->mutable_metadata(), p_alias}}).first->second;
             }
-            if (auto* p_enum = dynamic_cast<ParseResult::TLEnumDeclaration*>(msg)) {
+            if (auto* p_enum = dynamic_cast<ParserTypes::TLEnumDeclaration*>(msg)) {
                 return cache.insert(std::pair{msg, DeclInfo{"enum", p_enum->mutable_metadata(), p_enum}}).first->second;
             }
-            if (auto* p_forward_decl = dynamic_cast<ParseResult::TLForwardDeclaration*>(msg)) {
+            if (auto* p_forward_decl = dynamic_cast<ParserTypes::TLForwardDeclaration*>(msg)) {
                 return cache.insert(std::pair{msg, DeclInfo{"fwdecl", p_forward_decl->mutable_metadata(), p_forward_decl}}).first->second;
             }
-            if (auto* p_function = dynamic_cast<ParseResult::TLFreeFunctionDeclaration*>(msg)) {
+            if (auto* p_function = dynamic_cast<ParserTypes::TLFreeFunctionDeclaration*>(msg)) {
                 return cache.insert(std::pair{msg, DeclInfo{"function", p_function->mutable_metadata(), p_function}}).first->second;
             }
-            if (auto* p_variable = dynamic_cast<ParseResult::TLGlobalVariableDeclaration*>(msg)) {
+            if (auto* p_variable = dynamic_cast<ParserTypes::TLGlobalVariableDeclaration*>(msg)) {
                 return cache.insert(std::pair{msg, DeclInfo{"var", p_variable->mutable_metadata(), p_variable}}).first->second;
             }
-            if (auto* p_record = dynamic_cast<ParseResult::TLRecordDeclaration*>(msg)) {
+            if (auto* p_record = dynamic_cast<ParserTypes::TLRecordDeclaration*>(msg)) {
                 return cache.insert(std::pair{msg, DeclInfo{
-                    p_record->kind() == ParseResult::RECORD_KIND_CLASS ? "class"
-                    : p_record->kind() == ParseResult::RECORD_KIND_STRUCT ? "struct"
+                    p_record->kind() == ParserTypes::RECORD_KIND_CLASS ? "class"
+                    : p_record->kind() == ParserTypes::RECORD_KIND_STRUCT ? "struct"
                     : "union",
                     p_record->mutable_metadata(),
                     p_record

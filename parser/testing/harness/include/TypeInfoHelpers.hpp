@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -21,8 +21,8 @@ namespace UEMeta::Testing {
     inline void ExpectTypeInfo(
         const ParseResult::TypeInfo& type_info,
         const ExpectedTypeInfo& expected) {
-        EXPECT_EQ(type_info.type(), expected.type);
-        EXPECT_EQ(type_info.underlying_type(), expected.underlying_type);
+        EXPECT_EQ(VersionedValue(type_info.type()), expected.type);
+        EXPECT_EQ(VersionedValue(type_info.underlying_type()), expected.underlying_type);
 
         EXPECT_EQ(type_info.has_is_templated_type(), expected.is_templated_type.has_value());
         if (expected.is_templated_type) {
@@ -33,7 +33,7 @@ namespace UEMeta::Testing {
         if (expected.source_path) {
             const auto expected_source_path_hash =
                 std::hash<std::string>{}(expected.source_path->string());
-            EXPECT_EQ(type_info.source_path_hash(), expected_source_path_hash);
+            EXPECT_EQ(VersionedValue(type_info.source_path_hash()), expected_source_path_hash);
         }
     }
 }

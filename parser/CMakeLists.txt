@@ -267,7 +267,6 @@ execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${UEMETA_PROTO_BUILD_SCRIPT}"
         --language cpp
         --output parser/intermediate/generated
-        --modules parser
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/.."
     RESULT_VARIABLE UEMETA_PROTO_BUILD_RESULT
     OUTPUT_VARIABLE UEMETA_PROTO_BUILD_OUTPUT

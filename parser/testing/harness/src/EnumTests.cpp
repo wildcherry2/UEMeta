@@ -3,7 +3,7 @@
 #include "DeclarationMetadataTestHelpers.hpp"
 #include "EnumDetailsTestHelpers.hpp"
 #include "IdentifierTestHelpers.hpp"
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -116,7 +116,7 @@ namespace {
                 expected.identifier,
                 QualifiedEnumeratorName(scope, qualified_enum_name, expected.identifier),
                 EnumSourcePath());
-            EXPECT_EQ(enumerator.value(), expected.value);
+            EXPECT_EQ(UEMeta::Testing::VersionedValue(enumerator.value()), expected.value);
         }
     }
 }
@@ -205,7 +205,7 @@ TEST(EnumTests, AnonymousUnscoped) {
         "AnonymousUnscopedItem",
         "UEMeta::Testing::Types::AnonymousUnscopedItem",
         EnumSourcePath());
-    EXPECT_EQ(enumerator.value(), "0");
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(enumerator.value()), "0");
 }
 
 TEST(EnumTests, AssignedUnscopedEmpty) {

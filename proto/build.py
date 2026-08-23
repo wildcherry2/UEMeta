@@ -13,11 +13,6 @@ import hashlib
 import sys
 import json
 
-# module -> file map
-MODULES = {
-    "parser": ["proto/files/parser.proto"],
-}
-
 # Keep build tools beside this script so they can be shared by every consumer
 # without requiring a system-wide installation.
 tools_dir = Path(__file__).resolve().parent
@@ -78,8 +73,6 @@ parser.add_argument("--language", type=str, required=True,
                     help="The language to generate code for. E.g. 'cpp', 'python', 'java', etc.")
 parser.add_argument("--output", type=Path, required=True,
                     help="The directory to output the generated code to.")
-parser.add_argument("--modules", type=str, nargs="+", required=True, choices=["parser", "union"],
-                    help="The protos you need to compile.")
 args = parser.parse_args()
 
 # ensure output directory exists
@@ -118,12 +111,13 @@ argv = [
     "proto",
     "--template",
     generate_template,
+    "--path",
+    "proto/files/TopLevel.proto",
+    "--path",
+    "proto/files/Enums.proto",
+    "--path",
+    "proto/files/VersionedPrimitives.proto"
 ]
-
-for module in args.modules:
-    for proto in MODULES[module]:
-        argv.append("--path")
-        argv.append(str(proto))
 
 # run the command
 run(argv, text=True, check=True)

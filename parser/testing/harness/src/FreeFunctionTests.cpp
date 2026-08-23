@@ -2,7 +2,7 @@
 
 #include "DeclarationMetadataTestHelpers.hpp"
 #include "FunctionCommonTestHelpers.hpp"
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -85,7 +85,8 @@ namespace {
                 }
 
                 if (!declaration.has_metadata() ||
-                    declaration.metadata().identifier().file_path() != FreeFunctionSourcePath().string()) {
+                    UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
+                        != FreeFunctionSourcePath().string()) {
                     continue;
                 }
                 if (!declaration.has_common()) {
@@ -270,7 +271,9 @@ namespace {
         ASSERT_TRUE(declaration.has_common());
 
         UEMeta::Testing::ExpectDeclarationMetadata(declaration.metadata(), expected_name, QualifiedName(expected_name),
-                                                   FreeFunctionSourcePath(), declaration.metadata().occurrence_index(),
+                                                   FreeFunctionSourcePath(),
+                                                   UEMeta::Testing::VersionedValue(
+                                                       declaration.metadata().occurrence_index()),
                                                    false);
 
         if (!expected_specialization_kind) {
@@ -8929,7 +8932,8 @@ TEST(FreeFunctionCoverageTests, AccountsForEveryTargetDeclaration) {
     std::vector<bool> occurrence_indices(expected_declaration_count + implicit_instantiation_anchor_count, false);
     for (const auto& [key, declaration] : declarations) {
         SCOPED_TRACE(key);
-        const auto occurrence_index = declaration.metadata().occurrence_index();
+        const auto occurrence_index =
+            UEMeta::Testing::VersionedValue(declaration.metadata().occurrence_index());
         ASSERT_LT(occurrence_index, occurrence_indices.size());
         EXPECT_FALSE(occurrence_indices[occurrence_index]) << "Duplicate occurrence index " << occurrence_index;
         occurrence_indices[occurrence_index] = true;

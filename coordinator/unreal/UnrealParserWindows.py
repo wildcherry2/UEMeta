@@ -120,7 +120,7 @@ class DefaultUnrealProjectGenerator:
     def run_setup(self):
         if not self.setup_path.exists():
             log_exc(f"Failed to find Setup.bat file in Unreal branch {self.branch}!")
-        execute(self.setup_path,
+        execute([self.setup_path, "--force"],
                 success_msg=f"Setup.bat completed for branch {self.branch}!",
                 fail_msg=f"Failed to run Setup.bat in Unreal branch {self.branch}!",
                 output=ExecuteOutputOptions.FILE | ExecuteOutputOptions.STDOUT,

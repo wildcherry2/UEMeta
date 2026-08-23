@@ -4,7 +4,6 @@
 #include <stdexcept>
 #include <string>
 #include <ranges>
-#include "parser.pb.h"
 
 constexpr auto COMPILE_COMMANDS_HELP = "Path to compile_commands.json, or a JSON string representing the "
                                        "compile_commands.json.";

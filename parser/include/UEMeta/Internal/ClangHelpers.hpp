@@ -1,6 +1,6 @@
 #pragma once
 #include "UEMeta/Cli.hpp"
-#include "parser.pb.h"
+#include "UEMeta/Internal/ProtoHelpers.hpp"
 #include <atomic>
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Comment.h>
@@ -13,7 +13,7 @@
 #include <string_view>
 #include <utility>
 
-using namespace ParseResult;
+using namespace ParserTypes;
 
 /// @brief Tracks whether any guarded Clang callback caught an exception.
 inline std::atomic_bool GClangExceptionCaught{false};
@@ -236,21 +236,23 @@ inline void PopulateEnumDetails(clang::ASTContext& context, EnumDetails* p_msg, 
     }
     auto underlying = decl->getIntegerType();
     if (!underlying.isNull()) {
-        p_msg->set_underlying_type(underlying.getAsString(context.getPrintingPolicy()));
+        UEMeta::Proto::SetVersioned(
+            p_msg->mutable_underlying_type(), underlying.getAsString(context.getPrintingPolicy()));
     }
     p_msg->set_scope(!decl->isScoped() ? ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ENUM_SCOPE_CLASS : ENUM_SCOPE_STRUCT);
 }
 
 inline void PopulateTypeInfo(clang::ASTContext& context, TypeInfo* p_msg, const clang::QualType& type) {
     const clang::QualType underlying_type = GetUnderlyingType(type);
-    p_msg->set_type(type.getAsString());
-    p_msg->set_underlying_type(underlying_type.getAsString());
+    UEMeta::Proto::SetVersioned(p_msg->mutable_type(), type.getAsString());
+    UEMeta::Proto::SetVersioned(p_msg->mutable_underlying_type(), underlying_type.getAsString());
     const bool is_dependent_type = type->isDependentType();
     p_msg->set_is_templated_type(is_dependent_type);
 
     const auto SetSourcePathHash = [&](const clang::Decl* decl) {
         if (decl) {
-            p_msg->set_source_path_hash(GetDeclSourcePathHash(GetDeclSourcePath(context, decl)));
+            UEMeta::Proto::SetVersioned(
+                p_msg->mutable_source_path_hash(), GetDeclSourcePathHash(GetDeclSourcePath(context, decl)));
         }
     };
 
@@ -298,8 +300,8 @@ inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, co
     const auto& source_man = context.getSourceManager();
     const auto source_loc = source_man.getExpansionLoc(location);
     const auto source_path = source_man.getFilename(source_loc);
-    p_msg->set_file_path(source_path.str());
-    p_msg->set_file_path_hash(GetDeclSourcePathHash(source_path));
+    UEMeta::Proto::SetVersioned(p_msg->mutable_file_path(), source_path.str());
+    UEMeta::Proto::SetVersioned(p_msg->mutable_file_path_hash(), GetDeclSourcePathHash(source_path));
     PopulateIdentifierScopes(p_msg);
 }
 
@@ -328,10 +330,11 @@ inline void PopulateIdentifier(clang::ASTContext& context, Identifier* p_msg, co
         }
 
         const auto src = GetDeclSourcePath(context, decl);
-        p_msg->set_file_path(src.str());
-        p_msg->set_file_path_hash(GetDeclSourcePathHash(src));
+        UEMeta::Proto::SetVersioned(p_msg->mutable_file_path(), src.str());
+        UEMeta::Proto::SetVersioned(p_msg->mutable_file_path_hash(), GetDeclSourcePathHash(src));
         if (const auto* comment = context.getRawCommentForDeclNoCache(decl)) {
-            p_msg->set_documentation(comment->getRawText(context.getSourceManager()).str());
+            UEMeta::Proto::SetVersioned(
+                p_msg->mutable_documentation(), comment->getRawText(context.getSourceManager()).str());
         }
         PopulateIdentifierScopes(p_msg);
     }
@@ -356,7 +359,8 @@ inline void PopulateDeclarationMetadata(clang::ASTContext& context, DeclarationM
     else {
         p_msg->set_is_anonymous(false);
     }
-    p_msg->set_content_hash(std::hash<std::string_view>::operator()(ClangToString(context, decl)));
+    UEMeta::Proto::SetVersioned(
+        p_msg->mutable_content_hash(), std::hash<std::string_view>::operator()(ClangToString(context, decl)));
 }
 
 inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails* p_msg, const clang::Decl* decl) {
@@ -364,32 +368,59 @@ inline void PopulateTemplateDetails(clang::ASTContext& context, TemplateDetails*
         UEM_WARN("Failed to PopulateTemplateDetails due to nullptr! p_msg={}, decl={}", !!p_msg, !!decl);
         return;
     }
-    const auto& policy = context.getPrintingPolicy();
+    const auto PopulateDefaultType = [&](TemplateParameter* parameter, const clang::TemplateArgument& argument) {
+        if (argument.getKind() == clang::TemplateArgument::Type) {
+            PopulateTypeInfo(context, parameter->mutable_default_type(), argument.getAsType());
+            return;
+        }
+
+        auto* default_type = parameter->mutable_default_type();
+        const auto as_string = ClangToString(context, argument);
+        UEMeta::Proto::SetVersioned(default_type->mutable_type(), as_string);
+        UEMeta::Proto::SetVersioned(default_type->mutable_underlying_type(), as_string);
+        default_type->set_is_templated_type(argument.isDependent());
+
+        if ((argument.getKind() == clang::TemplateArgument::Template
+             || argument.getKind() == clang::TemplateArgument::TemplateExpansion)
+            && argument.getAsTemplateOrTemplatePattern().getAsTemplateDecl()) {
+            UEMeta::Proto::SetVersioned(
+                default_type->mutable_source_path_hash(),
+                GetDeclSourcePathHash(GetDeclSourcePath(
+                    context, argument.getAsTemplateOrTemplatePattern().getAsTemplateDecl())));
+        }
+    };
     const auto PopulateParameters = [&](this auto self, const clang::TemplateParameterList* params, auto* p_params) -> void {
         if (!params) return;
         for (const auto* param : *params) {
             TemplateParameter* p_param = p_params->add_parameters();
             PopulateIdentifier(context, p_param->mutable_identifier(), param);
-            p_param->set_as_string(ClangToString(context, param));
+            UEMeta::Proto::SetVersioned(p_param->mutable_as_string(), ClangToString(context, param));
             if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
                 p_param->set_kind(type_param->wasDeclaredWithTypename()
                                       ? TEMPLATE_PARAMETER_KIND_TYPENAME
                                       : TEMPLATE_PARAMETER_KIND_CLASS);
                 if (type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
                 if (type_param->hasDefaultArgument()) {
-                    PopulateTypeInfo(context, p_param->mutable_default_value(), type_param->getDefaultArgument().getArgument().getAsType());
+                    PopulateDefaultType(p_param, type_param->getDefaultArgument().getArgument());
                 }
             }
             else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
                 p_param->set_kind(TEMPLATE_PARAMETER_KIND_NON_TYPE);
-                p_param->set_type(non_type_param->getType().getAsString(policy));
+                PopulateTypeInfo(context, p_param->mutable_type(), non_type_param->getType());
                 if (non_type_param->isParameterPack()) p_param->set_is_parameter_pack(true);
+                if (non_type_param->hasDefaultArgument()) {
+                    p_param->set_default_value(
+                        ClangToString(context, non_type_param->getDefaultArgument().getArgument()));
+                }
             }
             else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
                 p_param->set_kind(template_param->wasDeclaredWithTypename()
                                       ? TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
                                       : TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                 if (template_param->isParameterPack()) p_param->set_is_parameter_pack(true);
+                if (template_param->hasDefaultArgument()) {
+                    PopulateDefaultType(p_param, template_param->getDefaultArgument().getArgument());
+                }
                 self(template_param->getTemplateParameters(), p_param);
             }
         }
@@ -541,33 +572,41 @@ inline void PopulateFunctionCommon(clang::ASTContext& context, FunctionCommon* p
         p_msg->set_kind(FUNCTION_KIND_FREE);
     }
 
-    p_msg->set_consteval_kind(decl->isConsteval() ? CONSTANT_EVALUATION_CONSTEVAL
+    UEMeta::Proto::SetVersioned(
+        p_msg->mutable_consteval_kind(),
+        decl->isConsteval() ? CONSTANT_EVALUATION_CONSTEVAL
         : decl->isConstexpr() ? CONSTANT_EVALUATION_CONSTEXPR : CONSTANT_EVALUATION_NONE);
 
     if (decl->doesThisDeclarationHaveABody()) {
-        p_msg->set_inline_definition(ClangToString(context, decl->getBody()));
+        UEMeta::Proto::SetVersioned(
+            p_msg->mutable_inline_definition(), ClangToString(context, decl->getBody()));
     }
 
-    p_msg->set_storage_class(decl->getStorageClass() == clang::SC_Extern && decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
-            : decl->getStorageClass() == clang::SC_Extern ? FUN_VAR_STORAGE_CLASS_EXTERN
-            : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
+    UEMeta::Proto::SetVersioned(
+        p_msg->mutable_storage_class(),
+        decl->getStorageClass() == clang::SC_Extern && decl->isExternC() ? FUN_VAR_STORAGE_CLASS_EXTERN_C
+        : decl->getStorageClass() == clang::SC_Extern ? FUN_VAR_STORAGE_CLASS_EXTERN
+        : decl->isStatic() ? FUN_VAR_STORAGE_CLASS_STATIC : FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
 
     static clang::PrintingPolicy fn_sig_pp = [&] {
         clang::PrintingPolicy pp(context.getPrintingPolicy());
         pp.TerseOutput = true;
         return pp;
     }();
-    p_msg->set_as_string(ClangToString(decl, fn_sig_pp));
-    p_msg->set_content_hash(std::hash<std::string>::operator()(ClangToString(context, decl)));
+    UEMeta::Proto::SetVersioned(p_msg->mutable_as_string(), ClangToString(decl, fn_sig_pp));
+    UEMeta::Proto::SetVersioned(
+        p_msg->mutable_content_hash(), std::hash<std::string>::operator()(ClangToString(context, decl)));
 
     for (const auto param : decl->parameters()) {
         const auto p_param = p_msg->add_parameters();
         const auto str = ClangToString(context, param);
-        p_param->set_as_string(str);
-        p_param->set_content_hash(std::hash<std::string>::operator()(str));
+        UEMeta::Proto::SetVersioned(p_param->mutable_as_string(), str);
+        UEMeta::Proto::SetVersioned(
+            p_param->mutable_content_hash(), std::hash<std::string>::operator()(str));
         PopulateIdentifier(context, p_param->mutable_identifier(), param);
         PopulateTypeInfo(context, p_param->mutable_type_info(), param->getType());
-        p_param->set_default_value(ClangToString(context, param->getInit()));
+        UEMeta::Proto::SetVersioned(
+            p_param->mutable_default_value(), ClangToString(context, param->getInit()));
     }
 }
 
@@ -581,16 +620,16 @@ inline bool Validate(const google::protobuf::Message* msg) {
     const auto ValidateIdentifier = [](const Identifier* proto) {
         EMP(name);
         EMP(qualified_name);
-        EMP(file_path);
+        if (UEMeta::Proto::GetVersioned(proto->file_path()).empty()) return false;
         EMP(scope);
-        NEZ(file_path_hash);
+        if (UEMeta::Proto::GetVersioned(proto->file_path_hash()) <= 0) return false;
         NEZ(qualified_name_hash);
         return true;
     };
 
     const auto ValidateMetadata = [&](const DeclarationMetadata* proto) {
         if (!ValidateIdentifier(&proto->identifier())) return false;
-        NEZ(content_hash);
+        if (UEMeta::Proto::GetVersioned(proto->content_hash()) <= 0) return false;
         // no need to validate occurrence index since it can be zero
         return true;
     };
@@ -599,7 +638,7 @@ inline bool Validate(const google::protobuf::Message* msg) {
         const auto ValidateTemplateParam = [&] (this auto self, const TemplateParameter* proto) {
             if (!ValidateIdentifier(&proto->identifier())) return false;
             NEQ(kind, TEMPLATE_PARAMETER_KIND_UNSPECIFIED);
-            EMP(as_string);
+            if (UEMeta::Proto::GetVersioned(proto->as_string()).empty()) return false;
             for (auto& parameter : proto->parameters()) {
                 if (!self(&parameter)) return false;
             }

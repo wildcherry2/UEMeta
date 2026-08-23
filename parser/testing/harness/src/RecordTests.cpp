@@ -5,7 +5,7 @@
 #include "IdentifierTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
 #include "TypeInfoHelpers.hpp"
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -155,7 +155,8 @@ namespace {
                 }
 
                 if (!declaration.has_metadata() || !declaration.metadata().has_identifier() ||
-                    declaration.metadata().identifier().file_path() != RecordSourcePath().string()) {
+                    UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
+                        != RecordSourcePath().string()) {
                     continue;
                 }
 
@@ -187,19 +188,19 @@ namespace {
         return found->second;
     }
 
-    void ExpectOptionalInt64(const bool has_value, const std::int64_t actual,
+    void ExpectOptionalInt64(const bool has_value, const ParseResult::VersionedInt64& actual,
                              const std::optional<std::int64_t> expected) {
         EXPECT_EQ(has_value, expected.has_value());
         if (expected) {
-            EXPECT_EQ(actual, *expected);
+            EXPECT_EQ(UEMeta::Testing::VersionedValue(actual), *expected);
         }
     }
 
-    void ExpectOptionalUInt64(const bool has_value, const std::uint64_t actual,
+    void ExpectOptionalUInt64(const bool has_value, const ParseResult::VersionedUint64& actual,
                               const std::optional<std::uint64_t> expected) {
         EXPECT_EQ(has_value, expected.has_value());
         if (expected) {
-            EXPECT_EQ(actual, *expected);
+            EXPECT_EQ(UEMeta::Testing::VersionedValue(actual), *expected);
         }
     }
 
@@ -214,18 +215,24 @@ namespace {
 
         ASSERT_TRUE(declaration.has_metadata());
         UEMeta::Testing::ExpectDeclarationMetadata(declaration.metadata(), expected_name, expected_qualified_name,
-                                                   RecordSourcePath(), declaration.metadata().occurrence_index(),
+                                                   RecordSourcePath(),
+                                                   UEMeta::Testing::VersionedValue(
+                                                       declaration.metadata().occurrence_index()),
                                                    false);
 
         EXPECT_EQ(declaration.kind(), expected_kind);
         ASSERT_TRUE(declaration.has_is_complete_definition());
-        EXPECT_EQ(declaration.is_complete_definition(), expected_is_complete_definition);
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(declaration.is_complete_definition()),
+            expected_is_complete_definition);
 
         ExpectOptionalInt64(declaration.has_size_bytes(), declaration.size_bytes(), expected_size_bytes);
         ExpectOptionalInt64(declaration.has_align_bytes(), declaration.align_bytes(), expected_align_bytes);
 
         EXPECT_EQ(declaration.fields_size(), expected_field_count);
-        EXPECT_EQ(declaration.nested_hashes_size(), expected_nested_count);
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(declaration.nested_hashes()).size(),
+            expected_nested_count);
         EXPECT_EQ(declaration.bases_size(), expected_base_count);
         EXPECT_EQ(declaration.methods_size(), expected_method_count);
     }
@@ -267,14 +274,14 @@ namespace {
 
     void ExpectNestedHash(const TLRecordDeclaration& declaration,
                           const std::string_view expected_nested_qualified_name) {
-        ASSERT_EQ(declaration.nested_hashes_size(), 1);
+        const auto& nested_hashes = UEMeta::Testing::VersionedValue(declaration.nested_hashes());
+        ASSERT_EQ(nested_hashes.size(), 1);
         const auto expected_hash = std::hash<std::string>{}(std::string{expected_nested_qualified_name});
-        EXPECT_NE(std::find(declaration.nested_hashes().begin(), declaration.nested_hashes().end(), expected_hash),
-                  declaration.nested_hashes().end());
+        EXPECT_NE(std::find(nested_hashes.begin(), nested_hashes.end(), expected_hash), nested_hashes.end());
     }
 
     void ExpectNoNestedHashes(const TLRecordDeclaration& declaration) {
-        EXPECT_TRUE(declaration.nested_hashes().empty());
+        EXPECT_TRUE(UEMeta::Testing::VersionedValue(declaration.nested_hashes()).empty());
     }
 
     void ExpectField(const TLRecordDeclaration& declaration, const std::string_view owner_qualified_name,
@@ -295,16 +302,16 @@ namespace {
                                           std::string{owner_qualified_name} + "::" + std::string{expected_name},
                                           RecordSourcePath());
 
-        EXPECT_EQ(found->as_string(), expected_as_string);
-        EXPECT_EQ(found->access(), expected_access);
-        EXPECT_EQ(found->is_mutable(), expected_is_mutable);
-        EXPECT_EQ(found->is_bitfield(), expected_is_bitfield);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->as_string()), expected_as_string);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->access()), expected_access);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_mutable()), expected_is_mutable);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_bitfield()), expected_is_bitfield);
         ExpectOptionalUInt64(found->has_bit_width(), found->bit_width(), expected_bit_width);
         ExpectOptionalUInt64(found->has_offset_bits(), found->offset_bits(), expected_offset_bits);
 
         EXPECT_EQ(found->has_default_value(), expected_default_value.has_value());
         if (expected_default_value) {
-            EXPECT_EQ(found->default_value(), *expected_default_value);
+            EXPECT_EQ(UEMeta::Testing::VersionedValue(found->default_value()), *expected_default_value);
         }
 
         ASSERT_TRUE(found->has_type_info());
@@ -329,9 +336,9 @@ namespace {
 
         EXPECT_EQ(found->access(), expected_access);
         ASSERT_TRUE(found->has_is_virtual());
-        EXPECT_EQ(found->is_virtual(), expected_is_virtual);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_virtual()), expected_is_virtual);
         ExpectOptionalUInt64(found->has_offset(), found->offset(), expected_offset);
-        EXPECT_EQ(found->as_string(), expected_name);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->as_string()), expected_name);
         ASSERT_TRUE(found->has_type_info());
         UEMeta::Testing::ExpectTypeInfo(
             found->type_info(),
@@ -365,17 +372,21 @@ namespace {
             FUN_VAR_STORAGE_CLASS_UNSPECIFIED, expected_consteval_kind, std::nullopt, expected_inline_definition,
             std::nullopt, expected_parameters, expected_definition_kind);
 
-        EXPECT_EQ(found->access(), expected_access);
-        EXPECT_EQ(found->is_const(), expected_is_const);
-        EXPECT_EQ(found->is_volatile(), expected_is_volatile);
-        EXPECT_EQ(found->virtuality(), expected_virtuality);
-        EXPECT_EQ(found->is_deleted(), expected_is_deleted);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->access()), expected_access);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_const()), expected_is_const);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_volatile()), expected_is_volatile);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->virtuality()), expected_virtuality);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_deleted()), expected_is_deleted);
 
         ASSERT_EQ(expected_vtable_index.has_value(), expected_vtable_offset.has_value());
         EXPECT_EQ(found->has_vtable_index(), expected_vtable_index.has_value());
         if (expected_vtable_index) {
-            EXPECT_EQ(found->vtable_index().index(), *expected_vtable_index);
-            EXPECT_EQ(found->vtable_index().offset(), *expected_vtable_offset);
+            EXPECT_EQ(
+                UEMeta::Testing::VersionedValue(found->vtable_index().index()),
+                *expected_vtable_index);
+            EXPECT_EQ(
+                UEMeta::Testing::VersionedValue(found->vtable_index().offset()),
+                *expected_vtable_offset);
         }
     }
 
@@ -2791,10 +2802,12 @@ TEST(RecordTests, ConcreteTemplateBaseTypeInfo) {
     const auto& base = declaration.bases(0);
     EXPECT_EQ(base.access(), ACCESS_SPECIFIER_PUBLIC);
     ASSERT_TRUE(base.has_is_virtual());
-    EXPECT_FALSE(base.is_virtual());
+    EXPECT_FALSE(UEMeta::Testing::VersionedValue(base.is_virtual()));
     ASSERT_TRUE(base.has_offset());
-    EXPECT_EQ(base.offset(), 0);
-    EXPECT_EQ(base.as_string(), "ClassOneParameterNoNestedNoBaseRecord<char>");
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(base.offset()), 0);
+    EXPECT_EQ(
+        UEMeta::Testing::VersionedValue(base.as_string()),
+        "ClassOneParameterNoNestedNoBaseRecord<char>");
     ASSERT_TRUE(base.has_type_info());
     UEMeta::Testing::ExpectTypeInfo(
         base.type_info(),
@@ -2932,12 +2945,14 @@ void ExpectDependentBase(
     EXPECT_EQ(
         base.identifier().qualified_name_hash(),
         std::hash<std::string>{}(std::string{expected_identifier_qualified_name}));
-    EXPECT_EQ(base.identifier().file_path_hash(), std::hash<std::string>{}(expected_source_path.string()));
+    EXPECT_EQ(
+        UEMeta::Testing::VersionedValue(base.identifier().file_path_hash()),
+        std::hash<std::string>{}(expected_source_path.string()));
     EXPECT_EQ(base.access(), ACCESS_SPECIFIER_PUBLIC);
     ASSERT_TRUE(base.has_is_virtual());
-    EXPECT_FALSE(base.is_virtual());
+    EXPECT_FALSE(UEMeta::Testing::VersionedValue(base.is_virtual()));
     EXPECT_FALSE(base.has_offset());
-    EXPECT_EQ(base.as_string(), expected_type);
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(base.as_string()), expected_type);
     ASSERT_TRUE(base.has_type_info());
     UEMeta::Testing::ExpectTypeInfo(base.type_info(), {expected_type, expected_type, true, expected_source_path});
 }

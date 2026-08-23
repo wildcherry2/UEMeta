@@ -3,7 +3,7 @@
 #include "DeclarationMetadataTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
 #include "TypeInfoHelpers.hpp"
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -48,11 +48,13 @@ namespace {
                     continue;
                 }
 
-                if (declaration.metadata().identifier().file_path() != AliasSourcePath().string()) {
+                if (UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
+                    != AliasSourcePath().string()) {
                     continue;
                 }
 
-                result.insert_or_assign(declaration.alias(), std::move(declaration));
+                result.insert_or_assign(
+                    UEMeta::Testing::VersionedValue(declaration.alias()), std::move(declaration));
             }
 
             return result;
@@ -85,10 +87,10 @@ namespace {
             AliasSourcePath(),
             expected_occurrence_index,
             false);
-        EXPECT_EQ(declaration.alias(), expected_alias);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.alias()), expected_alias);
         EXPECT_TRUE(declaration.has_aliased_type());
         UEMeta::Testing::ExpectTypeInfo(declaration.aliased_type(), expected_aliased_type);
-        EXPECT_EQ(declaration.as_string(), expected_as_string);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.as_string()), expected_as_string);
         return declaration;
     }
 }
@@ -208,6 +210,7 @@ TEST(AliasTests, DeclaredTypeDefault) {
             "typename AliasType = const Beta *",
             std::nullopt,
             std::nullopt,
+            std::nullopt,
             ExpectedTypeInfo{"const Beta *", "Beta", false, AliasSourcePath()}
         }},
         R"()");
@@ -235,13 +238,14 @@ TEST(AliasTests, DependentTypeDefault) {
                 "typename AliasType = typename OwnerType::type",
                 std::nullopt,
                 std::nullopt,
+                std::nullopt,
                 ExpectedTypeInfo{"typename OwnerType::type", "typename OwnerType::type", true}
             }
         },
         R"()");
 }
 
-TEST(AliasTests, NonTypeDefaultDoesNotCreateTypeInfo) {
+TEST(AliasTests, NonTypeDefaultUsesValue) {
     const auto& declaration = ExpectAlias(
         "SizedAlpha",
         12,
@@ -254,11 +258,19 @@ TEST(AliasTests, NonTypeDefaultDoesNotCreateTypeInfo) {
         TEMPLATE_SPECIALIZATION_NONE,
         QualifiedName("SizedAlpha"),
         AliasSourcePath(),
-        {{"Size", QualifiedName("Size"), TEMPLATE_PARAMETER_KIND_NON_TYPE, "int Size = 2", "int"}},
+        {{
+            "Size",
+            QualifiedName("Size"),
+            TEMPLATE_PARAMETER_KIND_NON_TYPE,
+            "int Size = 2",
+            "int",
+            std::nullopt,
+            "2"
+        }},
         R"()");
 }
 
-TEST(AliasTests, TemplateDefaultDoesNotCreateTypeInfo) {
+TEST(AliasTests, TemplateDefaultUsesDefaultType) {
     const auto& declaration = ExpectAlias(
         "TemplateDefaultedAlpha",
         13,
@@ -279,6 +291,7 @@ TEST(AliasTests, TemplateDefaultDoesNotCreateTypeInfo) {
             std::nullopt,
             std::nullopt,
             std::nullopt,
+            ExpectedTypeInfo{"AliasTemplate", "AliasTemplate", false, AliasSourcePath()},
             {{
                 "TemplateValue",
                 QualifiedName("TemplateValue"),

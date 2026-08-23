@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <string_view>
 
@@ -16,7 +16,7 @@ namespace UEMeta::Testing {
 
         if (!expected_underlying_type.empty()) {
             EXPECT_TRUE(details.has_underlying_type());
-            EXPECT_EQ(details.underlying_type(), expected_underlying_type);
+            EXPECT_EQ(VersionedValue(details.underlying_type()), expected_underlying_type);
         }
     }
 }

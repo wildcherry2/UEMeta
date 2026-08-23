@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <filesystem>
 #include <string_view>
@@ -15,7 +15,7 @@ namespace UEMeta::Testing {
         const std::filesystem::path& expected_file_path) {
         EXPECT_EQ(identifier.name(), expected_name);
         EXPECT_EQ(identifier.qualified_name(), expected_qualified_name);
-        EXPECT_EQ(identifier.file_path(), expected_file_path.string());
+        EXPECT_EQ(VersionedValue(identifier.file_path()), expected_file_path.string());
 
         if (expected_qualified_name.empty()) {
             EXPECT_EQ(identifier.scope_size(), 0);

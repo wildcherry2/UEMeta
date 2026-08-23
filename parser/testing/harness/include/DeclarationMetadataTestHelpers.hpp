@@ -21,7 +21,7 @@ namespace UEMeta::Testing {
             expected_qualified_name,
             expected_file_path);
 
-        EXPECT_EQ(metadata.occurrence_index(), expected_occurrence_index);
+        EXPECT_EQ(VersionedValue(metadata.occurrence_index()), expected_occurrence_index);
         EXPECT_TRUE(metadata.has_is_anonymous());
         EXPECT_EQ(metadata.is_anonymous(), expected_is_anonymous);
     }

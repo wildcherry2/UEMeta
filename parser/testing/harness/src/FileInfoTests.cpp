@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -91,9 +91,9 @@ namespace {
 
         const auto& identifier = declaration.metadata().identifier();
         return DeclarationIdentity{
-            identifier.file_path(),
+            UEMeta::Testing::VersionedValue(identifier.file_path()),
             identifier.qualified_name_hash(),
-            declaration.metadata().occurrence_index()};
+            UEMeta::Testing::VersionedValue(declaration.metadata().occurrence_index())};
     }
 
     std::optional<DeclarationIdentity> ReadDeclarationIdentity(const fs::path& path) {
@@ -176,11 +176,13 @@ TEST(FileInfoTests, AliasTypes) {
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_EQ(file_info.path(), source_path.string());
-    EXPECT_EQ(file_info.file_occurrence(), 0);
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(file_info.file_occurrence()), 0);
     ASSERT_EQ(declaration_hashes.defined.size(), 14);
     ASSERT_EQ(declaration_hashes.forward_declared.size(), 1);
-    ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
-    ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
+    ExpectHashes(
+        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
+        declaration_hashes.forward_declared);
 }
 
 TEST(FileInfoTests, EnumTypes) {
@@ -189,11 +191,13 @@ TEST(FileInfoTests, EnumTypes) {
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_EQ(file_info.path(), source_path.string());
-    EXPECT_EQ(file_info.file_occurrence(), 1);
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(file_info.file_occurrence()), 1);
     ASSERT_EQ(declaration_hashes.defined.size(), 26);
     ASSERT_TRUE(declaration_hashes.forward_declared.empty());
-    ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
-    ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
+    ExpectHashes(
+        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
+        declaration_hashes.forward_declared);
 }
 
 TEST(FileInfoTests, ForwardDeclarationTypes) {
@@ -202,11 +206,13 @@ TEST(FileInfoTests, ForwardDeclarationTypes) {
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_EQ(file_info.path(), source_path.string());
-    EXPECT_EQ(file_info.file_occurrence(), 2);
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(file_info.file_occurrence()), 2);
     ASSERT_EQ(declaration_hashes.defined.size(), 12);
     ASSERT_EQ(declaration_hashes.forward_declared.size(), 11);
-    ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
-    ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
+    ExpectHashes(
+        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
+        declaration_hashes.forward_declared);
 }
 
 TEST(FileInfoTests, AbsorbsInlinedHeaderData) {
@@ -223,13 +229,16 @@ TEST(FileInfoTests, AbsorbsInlinedHeaderData) {
 
     ASSERT_EQ(declaration_hashes.defined.size(), 3);
     ASSERT_TRUE(declaration_hashes.forward_declared.empty());
-    ExpectHashes(file_info.defined_type_hashes(), declaration_hashes.defined);
-    ExpectHashes(file_info.forward_declaration_hashes(), declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
+    ExpectHashes(
+        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
+        declaration_hashes.forward_declared);
 
     auto occurrence_indices = declaration_hashes.occurrence_indices;
     std::ranges::sort(occurrence_indices);
     EXPECT_EQ(occurrence_indices, (std::vector<std::uint32_t>{0, 1, 2}));
 
-    ASSERT_EQ(file_info.builtin_includes_size(), 1);
-    EXPECT_EQ(file_info.builtin_includes(0), builtin_path.generic_string());
+    const auto& builtin_includes = UEMeta::Testing::VersionedValue(file_info.builtin_includes());
+    ASSERT_EQ(builtin_includes.size(), 1);
+    EXPECT_EQ(builtin_includes.Get(0), builtin_path.generic_string());
 }

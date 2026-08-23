@@ -3,7 +3,7 @@
 #include "DeclarationMetadataTestHelpers.hpp"
 #include "TemplateDetailsTestHelpers.hpp"
 #include "TypeInfoHelpers.hpp"
-#include "parser.pb.h"
+#include "VersionedProtoTestHelpers.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -55,7 +55,7 @@ namespace {
                     continue;
                 }
 
-                if (declaration.metadata().identifier().file_path()
+                if (UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
                     != GlobalVariableSourcePath().string()) {
                     continue;
                 }
@@ -103,22 +103,28 @@ namespace {
         UEMeta::Testing::ExpectTypeInfo(
             declaration.type_info(),
             expected_type_info ? *expected_type_info : default_type_info);
-        EXPECT_EQ(declaration.as_string(), expected_as_string);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.as_string()), expected_as_string);
 
         ASSERT_TRUE(declaration.has_storage_class());
-        EXPECT_EQ(declaration.storage_class(), expected_storage_class);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.storage_class()), expected_storage_class);
         ASSERT_TRUE(declaration.has_constant_evaluation_kind());
-        EXPECT_EQ(declaration.constant_evaluation_kind(), expected_evaluation_kind);
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(declaration.constant_evaluation_kind()),
+            expected_evaluation_kind);
 
         EXPECT_EQ(declaration.has_default_value(), expected_default_value.has_value());
         if (expected_default_value) {
-            EXPECT_EQ(declaration.default_value(), *expected_default_value);
+            EXPECT_EQ(
+                UEMeta::Testing::VersionedValue(declaration.default_value()),
+                *expected_default_value);
         }
 
         const auto expected_content_hash =
             std::hash<std::string_view>{}(expected_as_string);
-        EXPECT_EQ(declaration.metadata().content_hash(), expected_content_hash);
-        EXPECT_EQ(declaration.content_hash(), expected_content_hash);
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(declaration.metadata().content_hash()),
+            expected_content_hash);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.content_hash()), expected_content_hash);
     }
 }
 

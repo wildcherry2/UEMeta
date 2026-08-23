@@ -1,7 +1,7 @@
 # For details on buf.yaml configuration, visit https://buf.build/docs/configuration/v2/buf-yaml
 version: v2
 modules:
-  # Treat files/ as the module root so parser.proto generates as
+  # Treat files/ as the module root so TopLevel.proto generates as
   # parser.pb.{h,cc}, without a leading files/ output directory.
   - path: files
 lint:

@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package ParserTypes;
+
+enum RecordKind {
+    RECORD_KIND_UNSPECIFIED = 0;
+    RECORD_KIND_CLASS = 1;
+    RECORD_KIND_STRUCT = 2;
+    RECORD_KIND_UNION = 3;
+}
+
+enum ForwardDeclarationKind {
+    FORWARD_DECLARATION_KIND_UNSPECIFIED = 0;
+    FORWARD_DECLARATION_KIND_CLASS = 1;
+    FORWARD_DECLARATION_KIND_STRUCT = 2;
+    FORWARD_DECLARATION_KIND_UNION = 3;
+    FORWARD_DECLARATION_KIND_ENUM = 4;
+}
+
+// The unscoped value also represents the absence of a scoped enum keyword.
+enum EnumScope {
+    ENUM_SCOPE_UNSCOPED = 0;
+    ENUM_SCOPE_CLASS = 1;
+    ENUM_SCOPE_STRUCT = 2;
+}
+
+enum VariableStorageClass {
+    VAR_STORAGE_CLASS_UNSPECIFIED = 0;
+    VAR_STORAGE_CLASS_EXTERN = 1;
+    VAR_STORAGE_CLASS_EXTERN_C = 2;
+    VAR_STORAGE_CLASS_STATIC = 3;
+    VAR_STORAGE_CLASS_THREAD_LOCAL = 4;
+}
+
+enum FunctionStorageClass {
+    FUN_VAR_STORAGE_CLASS_UNSPECIFIED = 0;
+    FUN_VAR_STORAGE_CLASS_EXTERN = 1;
+    FUN_VAR_STORAGE_CLASS_STATIC = 2;
+    FUN_VAR_STORAGE_CLASS_EXTERN_C = 3;
+}
+
+enum AccessSpecifier {
+    ACCESS_SPECIFIER_UNSPECIFIED = 0;
+    ACCESS_SPECIFIER_PUBLIC = 1;
+    ACCESS_SPECIFIER_PROTECTED = 2;
+    ACCESS_SPECIFIER_PRIVATE = 3;
+}
+
+// Static member functions have a distinct kind, so no separate is_static flag
+// is needed in FunctionDetails.
+enum FunctionKind {
+    FUNCTION_KIND_UNSPECIFIED = 0;
+    FUNCTION_KIND_FREE = 1;
+    FUNCTION_KIND_CONSTRUCTOR = 2;
+    FUNCTION_KIND_MEMBER = 3;
+    FUNCTION_KIND_STATIC_MEMBER = 4;
+    FUNCTION_KIND_DESTRUCTOR = 5;
+    FUNCTION_KIND_MEMBER_CONVERSION = 6;
+    FUNCTION_KIND_CONVERSION = 7;
+}
+
+enum FunctionDefinitionKind {
+    FUNCTION_DEFINITION_NORMAL = 0;
+    FUNCTION_DEFINITION_DELETED = 1;
+    FUNCTION_DEFINITION_DEFAULTED = 2;
+}
+
+enum FunctionVirtuality {
+    FUNCTION_VIRTUALITY_NONE = 0;
+    FUNCTION_VIRTUALITY_VIRTUAL = 1;
+    FUNCTION_VIRTUALITY_PURE = 2;
+}
+
+enum ConstantEvaluationKind {
+    CONSTANT_EVALUATION_NONE = 0;
+    CONSTANT_EVALUATION_CONSTEXPR = 1;
+    CONSTANT_EVALUATION_CONSTEVAL = 2;
+}
+
+enum TemplateParameterKind {
+    TEMPLATE_PARAMETER_KIND_UNSPECIFIED = 0;
+    TEMPLATE_PARAMETER_KIND_TYPENAME = 1;
+    TEMPLATE_PARAMETER_KIND_CLASS = 2;
+    TEMPLATE_PARAMETER_KIND_NON_TYPE = 3;
+    TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE = 4;
+    TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE = 5;
+}
+
+enum TemplateSpecializationKind {
+    // primary template
+    TEMPLATE_SPECIALIZATION_NONE = 0;
+
+    // template params inferred from usage
+    TEMPLATE_SPECIALIZATION_IMPLICIT = 1;
+
+    // like a custom implementation of a template ('template <> void print<int>(int v)')
+    TEMPLATE_SPECIALIZATION_EXPLICIT = 2;
+
+    // 'extern template' declaration
+    TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION = 3;
+
+    // like forward declaring 'template class std::vector<int>'
+    TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION = 4;
+}
+
+message VersionedFunctionDefinitionKind {
+    message VersionItem {
+        repeated string source_versions = 1;
+        FunctionDefinitionKind value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedFunctionVirtualityKind {
+    message VersionItem {
+        repeated string source_versions = 1;
+        FunctionVirtuality value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedAccessSpecifier {
+    message VersionItem {
+        repeated string source_versions = 1;
+        AccessSpecifier value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedFunctionStorageClass {
+    message VersionItem {
+        repeated string source_versions = 1;
+        FunctionStorageClass value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedVariableStorageClass {
+    message VersionItem {
+        repeated string source_versions = 1;
+        VariableStorageClass value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedEnumScope {
+    message VersionItem {
+        repeated string source_versions = 1;
+        EnumScope value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
+
+message VersionedConstantEvaluationKind {
+    message VersionItem {
+        repeated string source_versions = 1;
+        ConstantEvaluationKind value = 2;
+    }
+    repeated VersionItem versions = 1;
+}
