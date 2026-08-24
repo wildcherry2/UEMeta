@@ -15,24 +15,25 @@ import json
 
 # Keep build tools beside this script so they can be shared by every consumer
 # without requiring a system-wide installation.
-tools_dir = Path(__file__).resolve().parent
+project_dir = Path(__file__).resolve().parent
+protos_dir = project_dir / "files"
 protoc_version = "35.1"
 
 match sys.platform:
     case "win32":
         buf_url = r"https://github.com/bufbuild/buf/releases/download/v1.71.0/buf-Windows-x86_64.exe"
-        buf_path = tools_dir / "buf.exe"
+        buf_path = project_dir / "buf.exe"
         protoc_url = f"https://github.com/protocolbuffers/protobuf/releases/download/v{protoc_version}/protoc-{protoc_version}-win64.zip"
         protoc_sha256 = "5d3ff218d7d91eea95f7569bcb5a98f3030f8996d44151279d9772edcff76082"
         protoc_archive_path = "bin/protoc.exe"
-        protoc_path = tools_dir / "protoc.exe"
+        protoc_path = project_dir / "protoc.exe"
     case "linux":
         buf_url = r"https://github.com/bufbuild/buf/releases/download/v1.71.0/buf-Linux-x86_64"
-        buf_path = tools_dir / "buf"
+        buf_path = project_dir / "buf"
         protoc_url = f"https://github.com/protocolbuffers/protobuf/releases/download/v{protoc_version}/protoc-{protoc_version}-linux-x86_64.zip"
         protoc_sha256 = "6930ebf62bd4ea607b98fff052596c6ee564b9835b4ce172c75a3f53ae9d91b7"
         protoc_archive_path = "bin/protoc"
-        protoc_path = tools_dir / "protoc"
+        protoc_path = project_dir / "protoc"
     case _:
         raise ValueError(f"Unsupported platform: {sys.platform}")
 
@@ -92,6 +93,12 @@ generate_template = json.dumps({
             "protoc_path": str(protoc_path),
             "out": str(args.output.resolve())
         }
+    ],
+    "inputs": [
+        {
+            "proto_file": str(protos_dir / "TopLevel.proto"),
+            "include_package_files": True
+        }
     ]
 })
 
@@ -108,15 +115,8 @@ run(argv, text=True, check=True)
 argv = [
     str(buf_path.resolve()),
     "generate",
-    "proto",
     "--template",
-    generate_template,
-    "--path",
-    "proto/files/TopLevel.proto",
-    "--path",
-    "proto/files/Enums.proto",
-    "--path",
-    "proto/files/VersionedPrimitives.proto"
+    generate_template
 ]
 
 # run the command

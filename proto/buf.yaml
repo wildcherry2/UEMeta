@@ -1,14 +1,4 @@
-# For details on buf.yaml configuration, visit https://buf.build/docs/configuration/v2/buf-yaml
 version: v2
+
 modules:
-  # Treat files/ as the module root so TopLevel.proto generates as
-  # parser.pb.{h,cc}, without a leading files/ output directory.
   - path: files
-lint:
-  use:
-    - BASIC
-  # Preserve the schema's existing package and camelCase field names.
-  except:
-    - FIELD_LOWER_SNAKE_CASE
-    - PACKAGE_DIRECTORY_MATCH
-    - PACKAGE_LOWER_SNAKE_CASE
