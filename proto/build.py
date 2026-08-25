@@ -81,7 +81,7 @@ args.output.mkdir(parents=True, exist_ok=True)
 
 # run generate command for requested language and output directory
 # first, make the template json for the Buf CLI
-generate_template = json.dumps({
+generate_template_dict = {
     "version": "v2",
     "clean": True,
     "managed": {
@@ -100,7 +100,16 @@ generate_template = json.dumps({
             "include_package_files": True
         }
     ]
-})
+}
+
+if args.language == "python":
+    generate_template_dict["plugins"].append({
+        "protoc_builtin": "pyi",
+        "protoc_path": str(protoc_path),
+        "out": str(args.output.resolve())
+    })
+
+generate_template = json.dumps(generate_template_dict)
 
 #todo this doesn't work
 argv = [

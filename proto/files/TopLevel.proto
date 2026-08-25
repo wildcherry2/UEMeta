@@ -32,11 +32,11 @@ message TLRecordDeclaration {
     // this does not imply anything about parent classes though; inherited method definitions may not be defined in their header.
     // this is useful to know since if a record is header only and doesn't change, then it can be simply copied completely, and
     // if it has changed then you at least know that this class can be completely defined in the header.
-    optional VersionedBool is_complete_definition = 4;
+    VersionedBool is_complete_definition = 4;
     // May be missing if the size is unknown (e.g. templates).
-    optional VersionedInt64 size_bytes = 5;
+    VersionedInt64 size_bytes = 5;
     // May be missing if the alignment is unknown (e.g. templates).
-    optional VersionedInt64 align_bytes = 6;
+    VersionedInt64 align_bytes = 6;
     repeated Field fields = 7;
     // hashes of records, enums, forward decls, static fields, and aliases that are 
     // nested within this record. this is not recursive; just direct nested declarations
@@ -83,9 +83,9 @@ message TLGlobalVariableDeclaration {
     optional TemplateDetails template_details = 2;
     TypeInfo type_info = 3;
     VersionedString as_string = 5;
-    optional VersionedVariableStorageClass storage_class = 6;
-    optional VersionedString default_value = 7;
-    optional VersionedConstantEvaluationKind constant_evaluation_kind = 8;
+    VersionedVariableStorageClass storage_class = 6;
+    VersionedString default_value = 7;
+    VersionedConstantEvaluationKind constant_evaluation_kind = 8;
     VersionedUint64 content_hash = 9;
 }
 
@@ -101,7 +101,7 @@ message Identifier {
     VersionedString file_path = 4;
     VersionedUint64 file_path_hash = 5;
     repeated string scope = 6;
-    optional VersionedString documentation = 7;
+    VersionedString documentation = 7;
 }
 
 // Identity, source, and file-splitting metadata shared by independently tracked
@@ -119,6 +119,7 @@ message DeclarationMetadata {
 // Shared by record, function, variable, alias, and forward-declaration
 // templates. specialization_kind == NONE identifies a primary (unspecialized) template.
 message TemplateDetails {
+    // params should always be added in order of appearance
     repeated TemplateParameter parameters = 1;
     optional TemplateSpecializationKind specialization_kind = 2;
     optional string primary_template_qualified_name = 3;
@@ -149,7 +150,7 @@ message TemplateParameter {
 message EnumDetails {
     // int, unsigned, long, etc.
     // if missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values for unscoped, or int for scoped).
-    optional VersionedString underlying_type = 1;
+    VersionedString underlying_type = 1;
 
     // enum class/struct, if missing then the enum is unscoped.
     optional EnumScope scope = 2;
@@ -165,7 +166,7 @@ message MemberFunction {
     VersionedBool is_volatile = 4;
     VersionedFunctionVirtualityKind virtuality = 5;
     VersionedBool is_deleted = 6;
-    optional VTableIndex vtable_index = 8;
+    VTableIndex vtable_index = 8;
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,
@@ -173,10 +174,10 @@ message MemberFunction {
 message FunctionCommon {
     FunctionKind kind = 1;
     optional TypeInfo return_type = 3; // assume 'auto' if not given and not ctor/dtor
-    optional VersionedFunctionStorageClass storage_class = 4;
-    optional VersionedConstantEvaluationKind consteval_kind = 5;
+    VersionedFunctionStorageClass storage_class = 4;
+    VersionedConstantEvaluationKind consteval_kind = 5;
     optional bool is_explicit = 6; // only set for ctors and conversion ops
-    optional VersionedString inline_definition = 7;
+    VersionedString inline_definition = 7;
     optional TemplateDetails template_details = 9;
     repeated Parameter parameters = 10;
     VersionedString as_string = 11;
@@ -215,20 +216,20 @@ message Field {
 
     // if is_bitfield, then this is the bit width, otherwise this is the size of the field in the layout (same thing, really)
     // may be missing for non-bitfields if there's no layout (primary template)
-    optional VersionedUint64 bit_width = 6;
+    VersionedUint64 bit_width = 6;
 
     // may also be missing if there's no layout
-    optional VersionedUint64 offset_bits = 7;
+    VersionedUint64 offset_bits = 7;
     VersionedUint64 content_hash = 8;
-    optional VersionedString default_value = 9;
+    VersionedString default_value = 9;
     TypeInfo type_info = 10;
 }
 
 message BaseSpecifier {
     Identifier identifier = 1;
     AccessSpecifier access = 2;
-    optional VersionedBool is_virtual = 3;
-    optional VersionedUint64 offset = 4;
+    VersionedBool is_virtual = 3;
+    VersionedUint64 offset = 4;
     VersionedString as_string = 5;
     TypeInfo type_info = 6;
 }
@@ -244,7 +245,7 @@ message TypeInfo {
     optional bool is_templated_type = 3;
 
     // the hash of the source path for this type; may be empty if it's a builtin or templated type
-    optional VersionedUint64 source_path_hash = 4;
+    VersionedUint64 source_path_hash = 4;
 }
 
 // Any top level item
