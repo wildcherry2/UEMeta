@@ -3,6 +3,7 @@
 #include "IdentifierTestHelpers.hpp"
 #include "TypeInfoHelpers.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <initializer_list>
 #include <optional>
@@ -27,7 +28,11 @@ namespace UEMeta::Testing {
         inline void ExpectTemplateParameter(
             const ParseResult::TemplateParameter& parameter,
             const ExpectedTemplateParameter& expected,
-            const std::filesystem::path& expected_file_path) {
+            const std::filesystem::path& expected_file_path,
+            const std::size_t expected_occurrence_index) {
+            EXPECT_EQ(
+                parameter.occurrence_index(),
+                static_cast<std::uint64_t>(expected_occurrence_index));
             ASSERT_TRUE(parameter.has_identifier());
             ExpectIdentifier(
                 parameter.identifier(),
@@ -36,7 +41,6 @@ namespace UEMeta::Testing {
                 expected_file_path);
 
             EXPECT_EQ(parameter.kind(), expected.kind);
-            EXPECT_EQ(VersionedValue(parameter.as_string()), expected.as_string);
 
             EXPECT_EQ(parameter.has_type(), expected.type.has_value());
             if (expected.type) {
@@ -63,7 +67,8 @@ namespace UEMeta::Testing {
                 ExpectTemplateParameter(
                     parameter.parameters(static_cast<int>(index)),
                     expected.parameters[index],
-                    expected_file_path);
+                    expected_file_path,
+                    index);
             }
         }
 
@@ -93,12 +98,14 @@ namespace UEMeta::Testing {
         EXPECT_EQ(Detail::TemplateArgumentsAsString(details), expected_arguments);
 
         ASSERT_EQ(details.parameters_size(), expected_parameters.size());
-        int index = 0;
+        std::size_t index = 0;
         for (const auto& expected_parameter : expected_parameters) {
             Detail::ExpectTemplateParameter(
-                details.parameters(index++),
+                details.parameters(static_cast<int>(index)),
                 expected_parameter,
-                expected_file_path);
+                expected_file_path,
+                index);
+            ++index;
         }
     }
 }

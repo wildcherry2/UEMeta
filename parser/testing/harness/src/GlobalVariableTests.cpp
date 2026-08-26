@@ -36,7 +36,14 @@ namespace {
     }
 
     std::string QualifiedName(const std::string_view name) {
-        return "UEMeta::Testing::Types::" + std::string{name};
+        return "::UEMeta::Testing::Types::" + std::string{name};
+    }
+
+    std::string TemplatedQualifiedName(
+        const std::string_view name,
+        const std::string_view normalized_template_shape) {
+        return QualifiedName(
+            "template<" + std::string{normalized_template_shape} + ">" + std::string{name});
     }
 
     const std::unordered_map<std::string, TLGlobalVariableDeclaration>& GlobalVariableDeclarations() {
@@ -103,7 +110,6 @@ namespace {
         UEMeta::Testing::ExpectTypeInfo(
             declaration.type_info(),
             expected_type_info ? *expected_type_info : default_type_info);
-        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.as_string()), expected_as_string);
 
         ASSERT_TRUE(declaration.has_storage_class());
         EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.storage_class()), expected_storage_class);
@@ -112,12 +118,10 @@ namespace {
             UEMeta::Testing::VersionedValue(declaration.constant_evaluation_kind()),
             expected_evaluation_kind);
 
-        EXPECT_EQ(declaration.has_default_value(), expected_default_value.has_value());
-        if (expected_default_value) {
-            EXPECT_EQ(
-                UEMeta::Testing::VersionedValue(declaration.default_value()),
-                *expected_default_value);
-        }
+        EXPECT_TRUE(declaration.has_default_value());
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(declaration.default_value()),
+            expected_default_value.value_or(std::string_view{}));
 
         const auto expected_content_hash =
             std::hash<std::string_view>{}(expected_as_string);
@@ -947,7 +951,7 @@ TEST(GlobalVariableTests, DependentPointerTypeInfo) {
     UEMeta::Testing::ExpectDeclarationMetadata(
         declaration.metadata(),
         "TypeInfoDependentPointer",
-        QualifiedName("TypeInfoDependentPointer"),
+        TemplatedQualifiedName("TypeInfoDependentPointer", "typename"),
         GlobalVariableSourcePath(),
         73,
         false);
@@ -956,7 +960,7 @@ TEST(GlobalVariableTests, DependentPointerTypeInfo) {
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("TypeInfoDependentPointer"),
+        TemplatedQualifiedName("TypeInfoDependentPointer", "typename"),
         GlobalVariableSourcePath(),
         {{
             "VariableType",

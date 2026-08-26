@@ -49,6 +49,8 @@ namespace {
     using ParseResult::RECORD_KIND_STRUCT;
     using ParseResult::RECORD_KIND_UNION;
     using ParseResult::RecordKind;
+    using ParseResult::TEMPLATE_PARAMETER_KIND_CLASS;
+    using ParseResult::TEMPLATE_PARAMETER_KIND_NON_TYPE;
     using ParseResult::TEMPLATE_PARAMETER_KIND_TYPENAME;
     using ParseResult::TEMPLATE_SPECIALIZATION_EXPLICIT;
     using ParseResult::TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DECLARATION;
@@ -67,7 +69,52 @@ namespace {
     fs::path AliasSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "AliasTypes.hpp"; }
     fs::path EnumSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "EnumTypes.hpp"; }
 
-    std::string QualifiedName(const std::string_view name) { return "UEMeta::Testing::Types::" + std::string{name}; }
+    std::string QualifiedName(const std::string_view name) { return "::UEMeta::Testing::Types::" + std::string{name}; }
+
+    std::string TemplatePrefix(const std::size_t template_parameter_count) {
+        std::string result{"template<"};
+        for (std::size_t index = 0; index < template_parameter_count; ++index) {
+            if (index != 0) {
+                result += ',';
+            }
+            result += "typename";
+        }
+        result += '>';
+        return result;
+    }
+
+    std::string CanonicalTemplateArguments(const std::string_view arguments) {
+        std::string result;
+        result.reserve(arguments.size());
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            if (arguments[index] == ' ' && index != 0 && arguments[index - 1] == ',') {
+                continue;
+            }
+            result += arguments[index];
+        }
+        return result;
+    }
+
+    std::string TemplatedQualifiedName(
+        const std::string_view record_name,
+        const std::size_t template_parameter_count,
+        const std::string_view template_arguments = {}) {
+        auto result = QualifiedName(TemplatePrefix(template_parameter_count) + std::string{record_name});
+        if (!template_arguments.empty()) {
+            result += '<';
+            result += CanonicalTemplateArguments(template_arguments);
+            result += '>';
+        }
+        return result;
+    }
+
+    std::string NestedQualifiedName(
+        const std::string_view owner_qualified_name,
+        const std::size_t effective_template_parameter_count,
+        const std::string_view nested_name) {
+        return std::string{owner_qualified_name} + "::" + TemplatePrefix(effective_template_parameter_count)
+             + std::string{nested_name};
+    }
 
     std::string TemplateArguments(const std::size_t template_parameter_count,
                                   const TemplateSpecializationKind specialization_kind) {
@@ -190,18 +237,14 @@ namespace {
 
     void ExpectOptionalInt64(const bool has_value, const ParseResult::VersionedInt64& actual,
                              const std::optional<std::int64_t> expected) {
-        EXPECT_EQ(has_value, expected.has_value());
-        if (expected) {
-            EXPECT_EQ(UEMeta::Testing::VersionedValue(actual), *expected);
-        }
+        EXPECT_TRUE(has_value);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(actual), expected.value_or(0));
     }
 
     void ExpectOptionalUInt64(const bool has_value, const ParseResult::VersionedUint64& actual,
                               const std::optional<std::uint64_t> expected) {
-        EXPECT_EQ(has_value, expected.has_value());
-        if (expected) {
-            EXPECT_EQ(UEMeta::Testing::VersionedValue(actual), *expected);
-        }
+        EXPECT_TRUE(has_value);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(actual), expected.value_or(0));
     }
 
     void ExpectRecordCore(const TLRecordDeclaration& declaration, const std::string_view expected_name,
@@ -241,7 +284,7 @@ namespace {
                                      const std::size_t template_parameter_count,
                                      const TemplateSpecializationKind specialization_kind) {
         ASSERT_TRUE(declaration.has_template_details());
-        const auto qualified_name = QualifiedName(record_name);
+        const auto qualified_name = TemplatedQualifiedName(record_name, template_parameter_count);
         const auto arguments = TemplateArguments(template_parameter_count, specialization_kind);
 
         if (template_parameter_count == 1) {
@@ -262,21 +305,15 @@ namespace {
 
     std::string SpecializedQualifiedName(const std::string_view record_name, const std::size_t template_parameter_count,
                                          const TemplateSpecializationKind specialization_kind) {
-        auto result = QualifiedName(record_name);
         const auto arguments = TemplateArguments(template_parameter_count, specialization_kind);
-        if (!arguments.empty()) {
-            result += '<';
-            result += arguments;
-            result += '>';
-        }
-        return result;
+        return TemplatedQualifiedName(record_name, template_parameter_count, arguments);
     }
 
     void ExpectNestedHash(const TLRecordDeclaration& declaration,
                           const std::string_view expected_nested_qualified_name) {
         const auto& nested_hashes = UEMeta::Testing::VersionedValue(declaration.nested_hashes());
         ASSERT_EQ(nested_hashes.size(), 1);
-        const auto expected_hash = std::hash<std::string>{}(std::string{expected_nested_qualified_name});
+        const auto expected_hash = UEMeta::Testing::QualifiedNameHash(expected_nested_qualified_name);
         EXPECT_NE(std::find(nested_hashes.begin(), nested_hashes.end(), expected_hash), nested_hashes.end());
     }
 
@@ -297,22 +334,25 @@ namespace {
                                         [&](const Field& field) { return field.identifier().name() == expected_name; });
         ASSERT_NE(found, declaration.fields().end()) << "No field named " << expected_name;
 
+        EXPECT_EQ(
+            found->occurrence_index(),
+            static_cast<std::uint64_t>(std::distance(declaration.fields().begin(), found)));
         ASSERT_TRUE(found->has_identifier());
         UEMeta::Testing::ExpectIdentifier(found->identifier(), expected_name,
                                           std::string{owner_qualified_name} + "::" + std::string{expected_name},
                                           RecordSourcePath());
 
-        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->as_string()), expected_as_string);
+        static_cast<void>(expected_as_string);
         EXPECT_EQ(UEMeta::Testing::VersionedValue(found->access()), expected_access);
         EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_mutable()), expected_is_mutable);
         EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_bitfield()), expected_is_bitfield);
         ExpectOptionalUInt64(found->has_bit_width(), found->bit_width(), expected_bit_width);
         ExpectOptionalUInt64(found->has_offset_bits(), found->offset_bits(), expected_offset_bits);
 
-        EXPECT_EQ(found->has_default_value(), expected_default_value.has_value());
-        if (expected_default_value) {
-            EXPECT_EQ(UEMeta::Testing::VersionedValue(found->default_value()), *expected_default_value);
-        }
+        EXPECT_TRUE(found->has_default_value());
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(found->default_value()),
+            expected_default_value.value_or(std::string_view{}));
 
         ASSERT_TRUE(found->has_type_info());
         UEMeta::Testing::ExpectTypeInfo(found->type_info(), expected_type_info);
@@ -330,15 +370,17 @@ namespace {
             });
         ASSERT_NE(found, declaration.bases().end()) << "No base named " << expected_name;
 
+        EXPECT_EQ(
+            found->occurrence_index(),
+            static_cast<std::uint64_t>(std::distance(declaration.bases().begin(), found)));
         ASSERT_TRUE(found->has_identifier());
         UEMeta::Testing::ExpectIdentifier(found->identifier(), expected_name, expected_qualified_name,
                                           RecordSourcePath());
 
-        EXPECT_EQ(found->access(), expected_access);
+        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->access()), expected_access);
         ASSERT_TRUE(found->has_is_virtual());
         EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_virtual()), expected_is_virtual);
         ExpectOptionalUInt64(found->has_offset(), found->offset(), expected_offset);
-        EXPECT_EQ(UEMeta::Testing::VersionedValue(found->as_string()), expected_name);
         ASSERT_TRUE(found->has_type_info());
         UEMeta::Testing::ExpectTypeInfo(
             found->type_info(),
@@ -365,8 +407,29 @@ namespace {
         ASSERT_NE(found, declaration.methods().end()) << "No method named " << expected_name;
         ASSERT_TRUE(found->has_common());
 
+        std::string expected_qualified_name{owner_qualified_name};
+        expected_qualified_name += "::";
+        expected_qualified_name += UEMeta::Testing::EffectiveTemplatePrefix(owner_qualified_name);
+        expected_qualified_name += expected_name;
+        expected_qualified_name += '(';
+        bool first_parameter = true;
+        for (const auto& parameter : expected_parameters) {
+            if (!first_parameter) {
+                expected_qualified_name += ',';
+            }
+            expected_qualified_name += UEMeta::Testing::CanonicalSpelling(parameter.type_info.type);
+            first_parameter = false;
+        }
+        expected_qualified_name += ')';
+        if (expected_is_const) {
+            expected_qualified_name += "const";
+        }
+        if (expected_is_volatile) {
+            expected_qualified_name += "volatile";
+        }
+
         UEMeta::Testing::ExpectFunctionCommon(
-            found->common(), expected_name, std::string{owner_qualified_name} + "::" + std::string{expected_name},
+            found->common(), expected_name, expected_qualified_name,
             RecordSourcePath(), expected_kind, expected_as_string,
             ExpectedTypeInfo{expected_return_type, expected_return_type},
             FUN_VAR_STORAGE_CLASS_UNSPECIFIED, expected_consteval_kind, std::nullopt, expected_inline_definition,
@@ -379,15 +442,15 @@ namespace {
         EXPECT_EQ(UEMeta::Testing::VersionedValue(found->is_deleted()), expected_is_deleted);
 
         ASSERT_EQ(expected_vtable_index.has_value(), expected_vtable_offset.has_value());
-        EXPECT_EQ(found->has_vtable_index(), expected_vtable_index.has_value());
-        if (expected_vtable_index) {
-            EXPECT_EQ(
-                UEMeta::Testing::VersionedValue(found->vtable_index().index()),
-                *expected_vtable_index);
-            EXPECT_EQ(
-                UEMeta::Testing::VersionedValue(found->vtable_index().offset()),
-                *expected_vtable_offset);
-        }
+        ASSERT_TRUE(found->has_vtable_index());
+        EXPECT_TRUE(found->vtable_index().has_index());
+        EXPECT_TRUE(found->vtable_index().has_offset());
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(found->vtable_index().index()),
+            expected_vtable_index.value_or(0));
+        EXPECT_EQ(
+            UEMeta::Testing::VersionedValue(found->vtable_index().offset()),
+            expected_vtable_offset.value_or(0));
     }
 
     void ExpectMatrixFields(const TLRecordDeclaration& declaration, const std::string_view record_name,
@@ -439,7 +502,8 @@ namespace {
                             const std::size_t template_parameter_count,
                             const TemplateSpecializationKind specialization_kind, const NestingShape nesting_shape,
                             const BaseShape base_shape) {
-        const auto qualified_name = QualifiedName(record_name);
+        const auto qualified_name =
+            SpecializedQualifiedName(record_name, template_parameter_count, specialization_kind);
         const auto arguments = TemplateArguments(template_parameter_count, specialization_kind);
         const auto& declaration = FindRecord(qualified_name, specialization_kind, arguments);
 
@@ -479,9 +543,13 @@ namespace {
         if (nesting_shape == NestingShape::None) {
             ExpectNoNestedHashes(declaration);
         } else if (nesting_shape == NestingShape::One) {
-            ExpectNestedHash(declaration, specialized_qualified_name + "::NestedDecl");
+            ExpectNestedHash(
+                declaration,
+                NestedQualifiedName(specialized_qualified_name, template_parameter_count, "NestedDecl"));
         } else {
-            ExpectNestedHash(declaration, specialized_qualified_name + "::IntermediateDecl");
+            ExpectNestedHash(
+                declaration,
+                NestedQualifiedName(specialized_qualified_name, template_parameter_count, "IntermediateDecl"));
         }
 
         const std::optional<std::uint64_t> first_base_offset =
@@ -499,7 +567,8 @@ namespace {
                                   const TemplateSpecializationKind specialization_kind) {
         const auto outer_qualified_name =
             SpecializedQualifiedName(outer_name, template_parameter_count, specialization_kind);
-        const auto nested_qualified_name = outer_qualified_name + "::NestedDecl";
+        const auto nested_qualified_name =
+            NestedQualifiedName(outer_qualified_name, template_parameter_count, "NestedDecl");
         const auto& declaration = FindRecord(nested_qualified_name);
 
         constexpr bool has_layout = true;
@@ -514,7 +583,8 @@ namespace {
                                         const TemplateSpecializationKind specialization_kind) {
         const auto outer_qualified_name =
             SpecializedQualifiedName(outer_name, template_parameter_count, specialization_kind);
-        const auto intermediate_qualified_name = outer_qualified_name + "::IntermediateDecl";
+        const auto intermediate_qualified_name =
+            NestedQualifiedName(outer_qualified_name, template_parameter_count, "IntermediateDecl");
         const auto& declaration = FindRecord(intermediate_qualified_name);
 
         constexpr bool has_layout = true;
@@ -522,14 +592,19 @@ namespace {
                          has_layout ? std::optional<std::int64_t>{1} : std::nullopt,
                          has_layout ? std::optional<std::int64_t>{1} : std::nullopt, 0, 1, 0, 0);
         EXPECT_FALSE(declaration.has_template_details());
-        ExpectNestedHash(declaration, intermediate_qualified_name + "::AnotherDecl");
+        ExpectNestedHash(
+            declaration,
+            NestedQualifiedName(intermediate_qualified_name, template_parameter_count, "AnotherDecl"));
     }
 
     void ExpectInnermostNestedRecord(const std::string_view outer_name, const std::size_t template_parameter_count,
                                      const TemplateSpecializationKind specialization_kind) {
         const auto outer_qualified_name =
             SpecializedQualifiedName(outer_name, template_parameter_count, specialization_kind);
-        const auto nested_qualified_name = outer_qualified_name + "::IntermediateDecl::AnotherDecl";
+        const auto intermediate_qualified_name =
+            NestedQualifiedName(outer_qualified_name, template_parameter_count, "IntermediateDecl");
+        const auto nested_qualified_name =
+            NestedQualifiedName(intermediate_qualified_name, template_parameter_count, "AnotherDecl");
         const auto& declaration = FindRecord(nested_qualified_name);
 
         constexpr bool has_layout = true;
@@ -2800,14 +2875,11 @@ TEST(RecordTests, ConcreteTemplateBaseTypeInfo) {
 
     ASSERT_EQ(declaration.bases_size(), 1);
     const auto& base = declaration.bases(0);
-    EXPECT_EQ(base.access(), ACCESS_SPECIFIER_PUBLIC);
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(base.access()), ACCESS_SPECIFIER_PUBLIC);
     ASSERT_TRUE(base.has_is_virtual());
     EXPECT_FALSE(UEMeta::Testing::VersionedValue(base.is_virtual()));
     ASSERT_TRUE(base.has_offset());
     EXPECT_EQ(UEMeta::Testing::VersionedValue(base.offset()), 0);
-    EXPECT_EQ(
-        UEMeta::Testing::VersionedValue(base.as_string()),
-        "ClassOneParameterNoNestedNoBaseRecord<char>");
     ASSERT_TRUE(base.has_type_info());
     UEMeta::Testing::ExpectTypeInfo(
         base.type_info(),
@@ -2820,7 +2892,7 @@ TEST(RecordTests, ConcreteTemplateBaseTypeInfo) {
 }
 
 TEST(RecordTests, DependentVirtualLayoutOmitsVTableIndex) {
-    const auto qualified_name = QualifiedName("DependentVirtualLayoutRecord");
+    const auto qualified_name = TemplatedQualifiedName("DependentVirtualLayoutRecord", 1);
     const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
     ExpectRecordCore(
         declaration,
@@ -2872,7 +2944,7 @@ TEST(RecordTests, DependentVirtualLayoutOmitsVTableIndex) {
 void ExpectDependentAlignmentLayout(
     const std::string_view record_name,
     const std::string_view expected_field_as_string) {
-    const auto qualified_name = QualifiedName(record_name);
+    const auto qualified_name = TemplatedQualifiedName(record_name, 1);
     const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
     ExpectRecordCore(
         declaration,
@@ -2912,14 +2984,19 @@ TEST(RecordTests, DependentRecordAlignmentHasUnknownLayout) {
     ExpectDependentAlignmentLayout("DependentRecordAlignmentRecord", "int Value");
 }
 
-void ExpectDependentBase(
+const TLRecordDeclaration& ExpectDependentBase(
     const std::string_view record_name,
     const std::size_t template_parameter_count,
     const std::string_view expected_identifier_name,
     const std::string_view expected_identifier_qualified_name,
     const std::string_view expected_type,
-    const fs::path expected_source_path = RecordSourcePath()) {
-    const auto qualified_name = QualifiedName(record_name);
+    const fs::path expected_source_path = RecordSourcePath(),
+    const std::string_view expected_template_parameter_shape = {},
+    const std::size_t expected_method_count = 0) {
+    const auto qualified_name = expected_template_parameter_shape.empty()
+        ? TemplatedQualifiedName(record_name, template_parameter_count)
+        : QualifiedName(
+            "template<" + std::string{expected_template_parameter_shape} + ">" + std::string{record_name});
     const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
     ExpectRecordCore(
         declaration,
@@ -2932,29 +3009,30 @@ void ExpectDependentBase(
         0,
         0,
         1,
-        0);
-    ASSERT_TRUE(declaration.has_template_details());
+        expected_method_count);
+    EXPECT_TRUE(declaration.has_template_details());
     EXPECT_EQ(declaration.template_details().parameters_size(), template_parameter_count);
     EXPECT_EQ(declaration.template_details().specialization_kind(), TEMPLATE_SPECIALIZATION_NONE);
     ExpectNoNestedHashes(declaration);
 
     const auto& base = declaration.bases(0);
-    ASSERT_TRUE(base.has_identifier());
+    EXPECT_TRUE(base.has_identifier());
     UEMeta::Testing::ExpectIdentifier(
         base.identifier(), expected_identifier_name, expected_identifier_qualified_name, expected_source_path);
     EXPECT_EQ(
         base.identifier().qualified_name_hash(),
-        std::hash<std::string>{}(std::string{expected_identifier_qualified_name}));
+        UEMeta::Testing::QualifiedNameHash(expected_identifier_qualified_name));
     EXPECT_EQ(
         UEMeta::Testing::VersionedValue(base.identifier().file_path_hash()),
         std::hash<std::string>{}(expected_source_path.string()));
-    EXPECT_EQ(base.access(), ACCESS_SPECIFIER_PUBLIC);
-    ASSERT_TRUE(base.has_is_virtual());
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(base.access()), ACCESS_SPECIFIER_PUBLIC);
+    EXPECT_TRUE(base.has_is_virtual());
     EXPECT_FALSE(UEMeta::Testing::VersionedValue(base.is_virtual()));
-    EXPECT_FALSE(base.has_offset());
-    EXPECT_EQ(UEMeta::Testing::VersionedValue(base.as_string()), expected_type);
-    ASSERT_TRUE(base.has_type_info());
+    EXPECT_TRUE(base.has_offset());
+    EXPECT_EQ(UEMeta::Testing::VersionedValue(base.offset()), 0);
+    EXPECT_TRUE(base.has_type_info());
     UEMeta::Testing::ExpectTypeInfo(base.type_info(), {expected_type, expected_type, true, expected_source_path});
+    return declaration;
 }
 
 TEST(RecordTests, DependentTemplateBaseIsComplete) {
@@ -2962,7 +3040,7 @@ TEST(RecordTests, DependentTemplateBaseIsComplete) {
         "DependentTemplateDerivedRecord",
         1,
         "DependentTemplateBaseRecord",
-        QualifiedName("DependentTemplateBaseRecord"),
+        TemplatedQualifiedName("DependentTemplateBaseRecord", 1),
         "DependentTemplateBaseRecord<FirstType>");
 }
 
@@ -2971,7 +3049,7 @@ TEST(RecordTests, DependentTypeParameterBaseIsComplete) {
         "DependentTypeParameterBaseRecord",
         1,
         "FirstType",
-        QualifiedName("DependentTypeParameterBaseRecord") + "::FirstType",
+        TemplatedQualifiedName("DependentTypeParameterBaseRecord", 1) + "::FirstType",
         "FirstType");
 }
 
@@ -2980,7 +3058,7 @@ TEST(RecordTests, DependentQualifiedBaseIsComplete) {
         "DependentQualifiedBaseRecord",
         1,
         "BaseType",
-        "FirstType::BaseType",
+        "::FirstType::BaseType",
         "FirstType::BaseType");
 }
 
@@ -2989,7 +3067,7 @@ TEST(RecordTests, DependentQualifiedTemplateBaseIsComplete) {
         "DependentQualifiedTemplateBaseRecord",
         2,
         "BaseType",
-        "FirstType::BaseType",
+        "::FirstType::BaseType",
         "FirstType::template BaseType<SecondType>");
 }
 
@@ -2998,21 +3076,142 @@ TEST(RecordTests, DependentExternalQualifiedBaseUsesQualifierSource) {
         "DependentExternalQualifiedBaseRecord",
         1,
         "Base",
-        "AliasTemplate<FirstType>::Base",
+        "::AliasTemplate<FirstType>::Base",
         "AliasTemplate<FirstType>::Base",
         AliasSourcePath());
 }
 
 TEST(RecordTests, DependentPackBaseIsComplete) {
-    ExpectDependentBase(
+    const auto& declaration = ExpectDependentBase(
         "DependentPackBasesRecord",
         1,
         "BaseTypes",
-        QualifiedName("DependentPackBasesRecord") + "::BaseTypes",
-        "BaseTypes...");
+        QualifiedName("template<typename...>DependentPackBasesRecord") + "::BaseTypes",
+        "BaseTypes...",
+        RecordSourcePath(),
+        "typename...",
+        1);
+
+    const auto& method = declaration.methods(0).common().identifier();
+    EXPECT_EQ(
+        method.qualified_name(),
+        QualifiedName("template<typename...>DependentPackBasesRecord")
+            + "::template<typename...>Accept(typename&&...)");
+    ASSERT_EQ(method.scope_size(), 5);
+    EXPECT_EQ(method.scope(0), "UEMeta");
+    EXPECT_EQ(method.scope(1), "Testing");
+    EXPECT_EQ(method.scope(2), "Types");
+    EXPECT_EQ(method.scope(3), "DependentPackBasesRecord");
+    EXPECT_EQ(method.scope(4), "Accept");
+}
+
+TEST(RecordTests, CanonicalConversionFunctionNormalizesItsDependentTargetType) {
+    const auto record_name = QualifiedName("template<typename>CanonicalConversionRecord");
+    const auto& declaration = FindRecord(record_name, TEMPLATE_SPECIALIZATION_NONE);
+    ASSERT_EQ(declaration.methods_size(), 1);
+    EXPECT_EQ(
+        declaration.methods(0).common().identifier().qualified_name(),
+        record_name + "::template<typename>operator typename()const");
+}
+
+TEST(RecordTests, CanonicalFunctionQualifiedNamesMatchRequestedShape) {
+    constexpr std::string_view record_qualified_name = "::B::template<typename>A";
+    const auto& declaration = FindRecord(record_qualified_name, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectRecordCore(
+        declaration,
+        "A",
+        record_qualified_name,
+        RECORD_KIND_CLASS,
+        false,
+        1,
+        1,
+        0,
+        0,
+        0,
+        2);
+    UEMeta::Testing::ExpectTemplateDetails(
+        declaration.template_details(),
+        TEMPLATE_SPECIALIZATION_NONE,
+        record_qualified_name,
+        RecordSourcePath(),
+        {{"T", "::B::template<typename>A::T", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename T"}},
+        {});
+
+    const auto expect_overload = [&](const std::string_view expected_qualified_name,
+                                     const std::initializer_list<ExpectedFunctionParameter> expected_parameters) {
+        const auto found = std::find_if(
+            declaration.methods().begin(),
+            declaration.methods().end(),
+            [&](const MemberFunction& method) {
+                return method.common().identifier().qualified_name() == expected_qualified_name;
+            });
+        ASSERT_NE(found, declaration.methods().end()) << "No method named " << expected_qualified_name;
+        UEMeta::Testing::ExpectFunctionCommon(
+            found->common(),
+            "func",
+            expected_qualified_name,
+            RecordSourcePath(),
+            FUNCTION_KIND_MEMBER,
+            {},
+            ExpectedTypeInfo{"T", "T", true},
+            FUN_VAR_STORAGE_CLASS_UNSPECIFIED,
+            CONSTANT_EVALUATION_NONE,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            expected_parameters,
+            FUNCTION_DEFINITION_NORMAL);
+    };
+
+    expect_overload(
+        "::B::template<typename>A::template<typename>func(int,typename&)",
+        {{"b", {}, {"int", "int"}, {}, {}},
+         {"val", {}, {"T &", "T", true}, {}, {}}});
+    expect_overload(
+        "::B::template<typename>A::template<typename>func(double,typename*)",
+        {{"b", {}, {"double", "double"}, {}, {}},
+         {"val", {}, {"T *", "T", true}, {}, {}}});
+
+    const auto& requested_identifier = declaration.methods(0).common().identifier();
+    EXPECT_EQ(
+        requested_identifier.qualified_name(),
+        "::B::template<typename>A::template<typename>func(int,typename&)");
+    ASSERT_EQ(requested_identifier.scope_size(), 3);
+    EXPECT_EQ(requested_identifier.scope(0), "B");
+    EXPECT_EQ(requested_identifier.scope(1), "A");
+    EXPECT_EQ(requested_identifier.scope(2), "func");
+    EXPECT_TRUE(UEMeta::Testing::VersionedValue(requested_identifier.documentation()).empty());
+}
+
+TEST(RecordTests, CanonicalTemplateQualifiedNameNormalizesMixedParameterKinds) {
+    constexpr std::string_view qualified_name = "::B::template<typename,typename,int>Mixed";
+    const auto& declaration = FindRecord(qualified_name, TEMPLATE_SPECIALIZATION_NONE);
+    ExpectRecordCore(
+        declaration,
+        "Mixed",
+        qualified_name,
+        RECORD_KIND_CLASS,
+        true,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0);
+    UEMeta::Testing::ExpectTemplateDetails(
+        declaration.template_details(),
+        TEMPLATE_SPECIALIZATION_NONE,
+        qualified_name,
+        RecordSourcePath(),
+        {
+            {"T", "::B::template<typename,typename,int>Mixed::T", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename T"},
+            {"X", "::B::template<typename,typename,int>Mixed::X", TEMPLATE_PARAMETER_KIND_CLASS, "class X"},
+            {"c", "::B::template<typename,typename,int>Mixed::c", TEMPLATE_PARAMETER_KIND_NON_TYPE, "int c", "int"}
+        },
+        {});
 }
 
 TEST(RecordTests, CoversEveryRecordDeclarationInRecordTypes) {
-    // 210 outer matrix records + 210 explicitly checked nested records + 19 support/layout records.
-    EXPECT_EQ(RecordDeclarations().size(), 439);
+    // 210 outer matrix records + 210 explicitly checked nested records + 22 support/layout records.
+    EXPECT_EQ(RecordDeclarations().size(), 442);
 }

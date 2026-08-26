@@ -33,9 +33,9 @@ message TLRecordDeclaration {
     // this is useful to know since if a record is header only and doesn't change, then it can be simply copied completely, and
     // if it has changed then you at least know that this class can be completely defined in the header.
     VersionedBool is_complete_definition = 4;
-    // May be missing if the size is unknown (e.g. templates).
+    // Zero when the size is unknown (e.g. templates).
     VersionedInt64 size_bytes = 5;
-    // May be missing if the alignment is unknown (e.g. templates).
+    // Zero when the alignment is unknown (e.g. templates).
     VersionedInt64 align_bytes = 6;
     repeated Field fields = 7;
     // hashes of records, enums, forward decls, static fields, and aliases that are 
@@ -54,21 +54,25 @@ message TLEnumDeclaration {
 
 // Top-level forward declaration.
 message TLForwardDeclaration {
+    reserved 5;
+    reserved "as_string";
+
     DeclarationMetadata metadata = 1;
     ForwardDeclarationKind kind = 2;
     optional TemplateDetails template_details = 3;
     // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
     optional EnumDetails enum_details = 4;
-    VersionedString as_string = 5;
 }
 
 // Top-level alias declaration, including typedefs and using declarations.
 message TLAliasDeclaration {
+    reserved 5;
+    reserved "as_string";
+
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
     TypeInfo aliased_type = 3;
     VersionedString alias = 4;
-    VersionedString as_string = 5;
 }
 
 // An independently tracked top-level free-function declaration.
@@ -79,10 +83,12 @@ message TLFreeFunctionDeclaration {
 
 // An independently tracked global-variable or static field declaration.
 message TLGlobalVariableDeclaration {
+    reserved 5;
+    reserved "as_string";
+
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
     TypeInfo type_info = 3;
-    VersionedString as_string = 5;
     VersionedVariableStorageClass storage_class = 6;
     VersionedString default_value = 7;
     VersionedConstantEvaluationKind constant_evaluation_kind = 8;
@@ -132,6 +138,9 @@ message TemplateDetails {
 //      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and default_value = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
+    reserved 8;
+    reserved "as_string";
+
     TemplateParameterKind kind = 1;
     Identifier identifier = 2;
     optional TypeInfo type = 3;
@@ -144,7 +153,8 @@ message TemplateParameter {
     optional TypeInfo default_type = 6;
 
     repeated TemplateParameter parameters = 7;
-    VersionedString as_string = 8;
+    // Zero-based position within the immediately containing template-parameter list.
+    uint64 occurrence_index = 9;
 }
 
 message EnumDetails {
@@ -166,12 +176,16 @@ message MemberFunction {
     VersionedBool is_volatile = 4;
     VersionedFunctionVirtualityKind virtuality = 5;
     VersionedBool is_deleted = 6;
+    // Index and offset are zero when the method has no known vtable location.
     VTableIndex vtable_index = 8;
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,
 // like `FunctionDefinitionKind` or `is_explicit`, but it simplifies the processing this way
 message FunctionCommon {
+    reserved 11;
+    reserved "as_string";
+
     FunctionKind kind = 1;
     optional TypeInfo return_type = 3; // assume 'auto' if not given and not ctor/dtor
     VersionedFunctionStorageClass storage_class = 4;
@@ -180,7 +194,6 @@ message FunctionCommon {
     VersionedString inline_definition = 7;
     optional TemplateDetails template_details = 9;
     repeated Parameter parameters = 10;
-    VersionedString as_string = 11;
     Identifier identifier = 12;
     VersionedUint64 content_hash = 13;
     optional FunctionDefinitionKind definition_kind = 14; // only set for functions that are deletable/defaultable
@@ -189,11 +202,15 @@ message FunctionCommon {
 // Parameters use a deterministic synthesized identity when no name is spelled in
 // the source.
 message Parameter {
+    reserved 4;
+    reserved "as_string";
+
     Identifier identifier = 1;
     TypeInfo type_info = 2;
     VersionedString default_value = 3;
-    VersionedString as_string = 4;
     VersionedUint64 content_hash = 5;
+    // Zero-based position within the owning function's parameter list.
+    uint64 occurrence_index = 6;
 }
 
 message VTableIndex {
@@ -208,30 +225,38 @@ message Enumerator {
 
 // A non-static data member owned by a TLRecordDeclaration.
 message Field {
+    reserved 2;
+    reserved "as_string";
+
     Identifier identifier = 1;
-    VersionedString as_string = 2;
     VersionedAccessSpecifier access = 3;
     VersionedBool is_mutable = 4;
     VersionedBool is_bitfield = 5;
 
     // if is_bitfield, then this is the bit width, otherwise this is the size of the field in the layout (same thing, really)
-    // may be missing for non-bitfields if there's no layout (primary template)
+    // zero for non-bitfields if there's no layout (primary template)
     VersionedUint64 bit_width = 6;
 
-    // may also be missing if there's no layout
+    // zero if there's no layout
     VersionedUint64 offset_bits = 7;
     VersionedUint64 content_hash = 8;
     VersionedString default_value = 9;
     TypeInfo type_info = 10;
+    // Zero-based position among fields declared directly by the owning record.
+    uint64 occurrence_index = 11;
 }
 
 message BaseSpecifier {
+    reserved 5;
+    reserved "as_string";
+
     Identifier identifier = 1;
-    AccessSpecifier access = 2;
+    VersionedAccessSpecifier access = 2;
     VersionedBool is_virtual = 3;
     VersionedUint64 offset = 4;
-    VersionedString as_string = 5;
     TypeInfo type_info = 6;
+    // Zero-based position among direct bases of the owning record.
+    uint64 occurrence_index = 7;
 }
 
 message TypeInfo {
@@ -244,7 +269,7 @@ message TypeInfo {
     // whether the type is a template or dependent type (like 'T' in 'template<typename T> void f(T t)' or 'type' in 'typename T::type')
     optional bool is_templated_type = 3;
 
-    // the hash of the source path for this type; may be empty if it's a builtin or templated type
+    // the hash of the source path for this type; zero if it's a builtin or templated type
     VersionedUint64 source_path_hash = 4;
 }
 

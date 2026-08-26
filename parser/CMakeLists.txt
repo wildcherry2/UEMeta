@@ -561,6 +561,7 @@ if(UEMETA_ENABLE_TESTING)
 
     target_include_directories(uemeta-parser-tests SYSTEM PRIVATE
         "${UEMETA_PROTO_GENERATED_DIR}"
+        ${LLVM_INCLUDE_DIRS}
     )
 
     target_include_directories(uemeta-parser-tests PRIVATE
@@ -580,6 +581,7 @@ if(UEMETA_ENABLE_TESTING)
 
     target_link_libraries(uemeta-parser-tests PRIVATE
         GTest::gtest_main
+        LLVMSupport
         protobuf::libprotobuf
     )
 

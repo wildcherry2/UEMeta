@@ -29,7 +29,14 @@ namespace {
     }
 
     std::string QualifiedName(const std::string_view name) {
-        return "UEMeta::Testing::Types::" + std::string{name};
+        return "::UEMeta::Testing::Types::" + std::string{name};
+    }
+
+    std::string TemplatedQualifiedName(
+        const std::string_view name,
+        const std::string_view normalized_template_shape) {
+        return QualifiedName(
+            "template<" + std::string{normalized_template_shape} + ">" + std::string{name});
     }
 
     const std::unordered_map<std::string, TLAliasDeclaration>& AliasDeclarations() {
@@ -67,7 +74,8 @@ namespace {
         const std::string_view expected_alias,
         const std::uint32_t expected_occurrence_index,
         const ExpectedTypeInfo& expected_aliased_type,
-        const std::string_view expected_as_string) {
+        const std::string_view expected_as_string,
+        const std::string_view normalized_template_shape = {}) {
         SCOPED_TRACE(expected_alias);
 
         const auto& declarations = AliasDeclarations();
@@ -83,14 +91,16 @@ namespace {
         UEMeta::Testing::ExpectDeclarationMetadata(
             declaration.metadata(),
             expected_alias,
-            QualifiedName(expected_alias),
+            normalized_template_shape.empty()
+                ? QualifiedName(expected_alias)
+                : TemplatedQualifiedName(expected_alias, normalized_template_shape),
             AliasSourcePath(),
             expected_occurrence_index,
             false);
         EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.alias()), expected_alias);
         EXPECT_TRUE(declaration.has_aliased_type());
         UEMeta::Testing::ExpectTypeInfo(declaration.aliased_type(), expected_aliased_type);
-        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.as_string()), expected_as_string);
+        static_cast<void>(expected_as_string);
         return declaration;
     }
 }
@@ -109,10 +119,11 @@ TEST(AliasTests, TemplatedUsingDeclaration) {
         "TemplatedAlpha",
         2,
         {"AliasType", "AliasType", true},
-        R"(template <typename AliasType> using TemplatedAlpha = AliasType)");
+        R"(template <typename AliasType> using TemplatedAlpha = AliasType)",
+        "typename");
 
     ASSERT_TRUE(declaration.has_template_details());
-    const auto qualified_alias_name = QualifiedName("TemplatedAlpha");
+    const auto qualified_alias_name = TemplatedQualifiedName("TemplatedAlpha", "typename");
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
@@ -161,13 +172,14 @@ TEST(AliasTests, WrappedDependentType) {
         "TemplatedPointerAlpha",
         8,
         {"const AliasType *", "AliasType", true},
-        R"(template <typename AliasType> using TemplatedPointerAlpha = const AliasType *)");
+        R"(template <typename AliasType> using TemplatedPointerAlpha = const AliasType *)",
+        "typename");
 
     ASSERT_TRUE(declaration.has_template_details());
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("TemplatedPointerAlpha"),
+        TemplatedQualifiedName("TemplatedPointerAlpha", "typename"),
         AliasSourcePath(),
         {{"AliasType", QualifiedName("AliasType"), TEMPLATE_PARAMETER_KIND_TYPENAME, "typename AliasType"}},
         R"()");
@@ -178,13 +190,14 @@ TEST(AliasTests, DependentMemberType) {
         "DependentMemberAlpha",
         9,
         {"typename OwnerType::type", "typename OwnerType::type", true},
-        R"(template <typename OwnerType> using DependentMemberAlpha = typename OwnerType::type)");
+        R"(template <typename OwnerType> using DependentMemberAlpha = typename OwnerType::type)",
+        "typename");
 
     ASSERT_TRUE(declaration.has_template_details());
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("DependentMemberAlpha"),
+        TemplatedQualifiedName("DependentMemberAlpha", "typename"),
         AliasSourcePath(),
         {{"OwnerType", QualifiedName("OwnerType"), TEMPLATE_PARAMETER_KIND_TYPENAME, "typename OwnerType"}},
         R"()");
@@ -195,13 +208,14 @@ TEST(AliasTests, DeclaredTypeDefault) {
         "DefaultedTemplatedAlpha",
         10,
         {"AliasType", "AliasType", true},
-        R"(template <typename AliasType = const Beta *> using DefaultedTemplatedAlpha = AliasType)");
+        R"(template <typename AliasType = const Beta *> using DefaultedTemplatedAlpha = AliasType)",
+        "typename");
 
     ASSERT_TRUE(declaration.has_template_details());
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("DefaultedTemplatedAlpha"),
+        TemplatedQualifiedName("DefaultedTemplatedAlpha", "typename"),
         AliasSourcePath(),
         {{
             "AliasType",
@@ -221,13 +235,14 @@ TEST(AliasTests, DependentTypeDefault) {
         "DependentDefaultAlpha",
         11,
         {"AliasType", "AliasType", true},
-        R"(template <typename OwnerType, typename AliasType = typename OwnerType::type> using DependentDefaultAlpha = AliasType)");
+        R"(template <typename OwnerType, typename AliasType = typename OwnerType::type> using DependentDefaultAlpha = AliasType)",
+        "typename,typename");
 
     ASSERT_TRUE(declaration.has_template_details());
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("DependentDefaultAlpha"),
+        TemplatedQualifiedName("DependentDefaultAlpha", "typename,typename"),
         AliasSourcePath(),
         {
             {"OwnerType", QualifiedName("OwnerType"), TEMPLATE_PARAMETER_KIND_TYPENAME, "typename OwnerType"},
@@ -250,13 +265,14 @@ TEST(AliasTests, NonTypeDefaultUsesValue) {
         "SizedAlpha",
         12,
         {"Beta[Size]", "Beta", true},
-        R"(template <int Size = 2> using SizedAlpha = Beta[Size])");
+        R"(template <int Size = 2> using SizedAlpha = Beta[Size])",
+        "int");
 
     ASSERT_TRUE(declaration.has_template_details());
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("SizedAlpha"),
+        TemplatedQualifiedName("SizedAlpha", "int"),
         AliasSourcePath(),
         {{
             "Size",
@@ -275,13 +291,14 @@ TEST(AliasTests, TemplateDefaultUsesDefaultType) {
         "TemplateDefaultedAlpha",
         13,
         {"TemplateType<Beta>", "TemplateType<Beta>", true},
-        R"(template <template <typename TemplateValue> typename TemplateType = AliasTemplate> using TemplateDefaultedAlpha = TemplateType<Beta>)");
+        R"(template <template <typename TemplateValue> typename TemplateType = AliasTemplate> using TemplateDefaultedAlpha = TemplateType<Beta>)",
+        "template<typename>typename");
 
     ASSERT_TRUE(declaration.has_template_details());
     UEMeta::Testing::ExpectTemplateDetails(
         declaration.template_details(),
         TEMPLATE_SPECIALIZATION_NONE,
-        QualifiedName("TemplateDefaultedAlpha"),
+        TemplatedQualifiedName("TemplateDefaultedAlpha", "template<typename>typename"),
         AliasSourcePath(),
         {{
             "TemplateType",

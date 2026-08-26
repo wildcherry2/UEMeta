@@ -1124,6 +1124,25 @@ namespace UEMeta::Testing::Types {
     struct DependentExternalQualifiedBaseRecord : AliasTemplate<FirstType>::Base {};
 
     template<typename... BaseTypes>
-    struct DependentPackBasesRecord : BaseTypes... {};
+    struct DependentPackBasesRecord : BaseTypes... {
+        void Accept(BaseTypes&&... values) {}
+    };
+
+    template<typename ConversionType>
+    struct CanonicalConversionRecord {
+        operator ConversionType() const;
+    };
 
 } // namespace UEMeta::Testing::Types
+
+namespace B {
+    template<typename T>
+    class A {
+    public:
+        T func(int b, T& val);
+        T func(double b, T* val);
+    };
+
+    template<typename T, class X, int c>
+    class Mixed {};
+}

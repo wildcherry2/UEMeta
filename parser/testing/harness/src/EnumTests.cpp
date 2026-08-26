@@ -34,13 +34,13 @@ namespace {
     }
 
     std::string QualifiedEnumName(const std::string_view enum_name) {
-        return "UEMeta::Testing::Types::" + std::string{enum_name};
+        return "::UEMeta::Testing::Types::" + std::string{enum_name};
     }
 
     std::string AnonymousEnumQualifiedName() {
         auto source_path = EnumSourcePath();
         source_path.make_preferred();
-        return "UEMeta::Testing::Types::(unnamed enum at " + source_path.string() + ":41:5)";
+        return "::UEMeta::Testing::Types::(unnamed enum at " + source_path.string() + ":41:5)";
     }
 
     std::string QualifiedEnumeratorName(
@@ -203,7 +203,7 @@ TEST(EnumTests, AnonymousUnscoped) {
     UEMeta::Testing::ExpectIdentifier(
         enumerator.identifier(),
         "AnonymousUnscopedItem",
-        "UEMeta::Testing::Types::AnonymousUnscopedItem",
+        "::UEMeta::Testing::Types::AnonymousUnscopedItem",
         EnumSourcePath());
     EXPECT_EQ(UEMeta::Testing::VersionedValue(enumerator.value()), "0");
 }

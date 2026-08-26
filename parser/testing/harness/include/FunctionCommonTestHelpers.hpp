@@ -5,9 +5,11 @@
 #include "TypeInfoHelpers.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <initializer_list>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace UEMeta::Testing {
@@ -49,32 +51,32 @@ namespace UEMeta::Testing {
             expected_file_path);
 
         EXPECT_EQ(common.kind(), expected_kind);
-        EXPECT_EQ(VersionedValue(common.as_string()), expected_as_string);
+        static_cast<void>(expected_as_string);
 
         EXPECT_EQ(common.has_return_type(), expected_return_type.has_value());
         if (expected_return_type) {
             ExpectTypeInfo(common.return_type(), *expected_return_type);
         }
 
-        EXPECT_EQ(common.has_storage_class(), expected_storage_class.has_value());
-        if (expected_storage_class) {
-            EXPECT_EQ(VersionedValue(common.storage_class()), *expected_storage_class);
-        }
+        EXPECT_TRUE(common.has_storage_class());
+        EXPECT_EQ(
+            VersionedValue(common.storage_class()),
+            expected_storage_class.value_or(ParseResult::FUN_VAR_STORAGE_CLASS_UNSPECIFIED));
 
-        EXPECT_EQ(common.has_consteval_kind(), expected_consteval_kind.has_value());
-        if (expected_consteval_kind) {
-            EXPECT_EQ(VersionedValue(common.consteval_kind()), *expected_consteval_kind);
-        }
+        EXPECT_TRUE(common.has_consteval_kind());
+        EXPECT_EQ(
+            VersionedValue(common.consteval_kind()),
+            expected_consteval_kind.value_or(ParseResult::CONSTANT_EVALUATION_NONE));
 
         EXPECT_EQ(common.has_is_explicit(), expected_is_explicit.has_value());
         if (expected_is_explicit) {
             EXPECT_EQ(common.is_explicit(), *expected_is_explicit);
         }
 
-        EXPECT_EQ(common.has_inline_definition(), expected_inline_definition.has_value());
-        if (expected_inline_definition) {
-            EXPECT_EQ(VersionedValue(common.inline_definition()), *expected_inline_definition);
-        }
+        EXPECT_TRUE(common.has_inline_definition());
+        EXPECT_EQ(
+            VersionedValue(common.inline_definition()),
+            expected_inline_definition.value_or(std::string_view{}));
 
         EXPECT_EQ(common.has_template_details(), expected_template_details.has_value());
         if (common.has_template_details() && expected_template_details) {
@@ -93,16 +95,19 @@ namespace UEMeta::Testing {
             SCOPED_TRACE(parameter_index);
             const auto& parameter = common.parameters(static_cast<int>(parameter_index));
 
+            EXPECT_EQ(
+                parameter.occurrence_index(),
+                static_cast<std::uint64_t>(parameter_index));
             ASSERT_TRUE(parameter.has_identifier());
             ExpectIdentifier(
                 parameter.identifier(),
                 expected_parameter.name,
-                expected_parameter.qualified_name,
+                std::string{expected_qualified_name} + "::" + std::string{expected_parameter.name},
                 expected_file_path);
+            static_cast<void>(expected_parameter.qualified_name);
             ASSERT_TRUE(parameter.has_type_info());
             ExpectTypeInfo(parameter.type_info(), expected_parameter.type_info);
             EXPECT_EQ(VersionedValue(parameter.default_value()), expected_parameter.default_value);
-            EXPECT_EQ(VersionedValue(parameter.as_string()), expected_parameter.as_string);
 
             ++parameter_index;
         }

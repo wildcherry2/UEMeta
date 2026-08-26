@@ -36,7 +36,21 @@ namespace {
     }
 
     std::string QualifiedName(const std::string_view name) {
-        return "UEMeta::Testing::Types::" + std::string{name};
+        return "::UEMeta::Testing::Types::" + std::string{name};
+    }
+
+    std::string TemplatedQualifiedName(
+        const std::string_view name,
+        const std::string_view normalized_template_shape,
+        const std::string_view normalized_template_arguments = {}) {
+        auto result = QualifiedName(
+            "template<" + std::string{normalized_template_shape} + ">" + std::string{name});
+        if (!normalized_template_arguments.empty()) {
+            result += '<';
+            result += normalized_template_arguments;
+            result += '>';
+        }
+        return result;
     }
 
     const std::unordered_map<std::uint32_t, TLForwardDeclaration>& ForwardDeclarations() {
@@ -122,19 +136,24 @@ namespace {
         const std::string_view expected_name,
         const std::uint32_t expected_occurrence_index,
         const ForwardDeclarationKind expected_kind,
-        const std::string_view expected_as_string) {
+        const std::string_view expected_as_string,
+        const std::string_view normalized_template_shape = {},
+        const std::string_view normalized_template_arguments = {}) {
         SCOPED_TRACE(expected_name);
 
         ASSERT_TRUE(declaration.has_metadata());
         UEMeta::Testing::ExpectDeclarationMetadata(
             declaration.metadata(),
             expected_name,
-            QualifiedName(expected_name),
+            normalized_template_shape.empty()
+                ? QualifiedName(expected_name)
+                : TemplatedQualifiedName(
+                    expected_name, normalized_template_shape, normalized_template_arguments),
             ForwardDeclarationSourcePath(),
             expected_occurrence_index,
             false);
         EXPECT_EQ(declaration.kind(), expected_kind);
-        EXPECT_EQ(UEMeta::Testing::VersionedValue(declaration.as_string()), expected_as_string);
+        static_cast<void>(expected_as_string);
     }
 
     void ExpectPrimaryTemplate(
@@ -143,7 +162,8 @@ namespace {
         const std::string_view first_parameter,
         const std::string_view second_parameter) {
         ASSERT_TRUE(declaration.has_template_details());
-        const auto qualified_template_name = QualifiedName(template_name);
+        const auto qualified_template_name =
+            TemplatedQualifiedName(template_name, "typename,typename");
         UEMeta::Testing::ExpectTemplateDetails(
             declaration.template_details(),
             TEMPLATE_SPECIALIZATION_NONE,
@@ -171,7 +191,8 @@ namespace {
         const std::string_view template_name,
         const std::string_view parameter_name) {
         ASSERT_TRUE(declaration.has_template_details());
-        const auto qualified_template_name = QualifiedName(template_name);
+        const auto qualified_template_name =
+            TemplatedQualifiedName(template_name, "typename,typename");
         UEMeta::Testing::ExpectTemplateDetails(
             declaration.template_details(),
             TEMPLATE_SPECIALIZATION_EXPLICIT,
@@ -180,7 +201,8 @@ namespace {
             {
                 {
                     parameter_name,
-                    qualified_template_name + "<type-parameter-0-0, int>::" + std::string{parameter_name},
+                    TemplatedQualifiedName(template_name, "typename", "typename,int")
+                        + "::" + std::string{parameter_name},
                     TEMPLATE_PARAMETER_KIND_TYPENAME,
                     "typename " + std::string{parameter_name}
                 }
@@ -197,7 +219,7 @@ namespace {
             ConcreteTemplateKey(template_name, specialization_kind));
         ASSERT_TRUE(declaration.has_template_details());
 
-        const auto qualified_template_name = QualifiedName(template_name);
+        const auto qualified_template_name = TemplatedQualifiedName(template_name, "typename");
         UEMeta::Testing::ExpectTemplateDetails(
             declaration.template_details(),
             specialization_kind,
@@ -255,7 +277,8 @@ TEST(ForwardDeclarationTests, PrimaryClassTemplate) {
         "ForwardClassTemplate",
         3,
         FORWARD_DECLARATION_KIND_CLASS,
-        R"(template <typename ClassType, typename ClassValue> class ForwardClassTemplate)");
+        R"(template <typename ClassType, typename ClassValue> class ForwardClassTemplate)",
+        "typename,typename");
     ExpectPrimaryTemplate(declaration, "ForwardClassTemplate", "ClassType", "ClassValue");
     EXPECT_FALSE(declaration.has_enum_details());
 }
@@ -267,7 +290,9 @@ TEST(ForwardDeclarationTests, ExplicitClassTemplateSpecialization) {
         "ForwardClassTemplate",
         4,
         FORWARD_DECLARATION_KIND_CLASS,
-        R"(template <typename ClassType> class ForwardClassTemplate<ClassType, int>)");
+        R"(template <typename ClassType> class ForwardClassTemplate<ClassType, int>)",
+        "typename",
+        "typename,int");
     ExpectExplicitPartialSpecialization(declaration, "ForwardClassTemplate", "ClassType");
     EXPECT_FALSE(declaration.has_enum_details());
 }
@@ -279,7 +304,8 @@ TEST(ForwardDeclarationTests, PrimaryStructTemplate) {
         "ForwardStructTemplate",
         5,
         FORWARD_DECLARATION_KIND_STRUCT,
-        R"(template <typename StructType, typename StructValue> struct ForwardStructTemplate)");
+        R"(template <typename StructType, typename StructValue> struct ForwardStructTemplate)",
+        "typename,typename");
     ExpectPrimaryTemplate(declaration, "ForwardStructTemplate", "StructType", "StructValue");
     EXPECT_FALSE(declaration.has_enum_details());
 }
@@ -291,7 +317,9 @@ TEST(ForwardDeclarationTests, ExplicitStructTemplateSpecialization) {
         "ForwardStructTemplate",
         6,
         FORWARD_DECLARATION_KIND_STRUCT,
-        R"(template <typename StructType> struct ForwardStructTemplate<StructType, int>)");
+        R"(template <typename StructType> struct ForwardStructTemplate<StructType, int>)",
+        "typename",
+        "typename,int");
     ExpectExplicitPartialSpecialization(declaration, "ForwardStructTemplate", "StructType");
     EXPECT_FALSE(declaration.has_enum_details());
 }
@@ -303,7 +331,8 @@ TEST(ForwardDeclarationTests, PrimaryUnionTemplate) {
         "ForwardUnionTemplate",
         7,
         FORWARD_DECLARATION_KIND_UNION,
-        R"(template <typename UnionType, typename UnionValue> union ForwardUnionTemplate)");
+        R"(template <typename UnionType, typename UnionValue> union ForwardUnionTemplate)",
+        "typename,typename");
     ExpectPrimaryTemplate(declaration, "ForwardUnionTemplate", "UnionType", "UnionValue");
     EXPECT_FALSE(declaration.has_enum_details());
 }
@@ -315,7 +344,9 @@ TEST(ForwardDeclarationTests, ExplicitUnionTemplateSpecialization) {
         "ForwardUnionTemplate",
         8,
         FORWARD_DECLARATION_KIND_UNION,
-        R"(template <typename UnionType> union ForwardUnionTemplate<UnionType, int>)");
+        R"(template <typename UnionType> union ForwardUnionTemplate<UnionType, int>)",
+        "typename",
+        "typename,int");
     ExpectExplicitPartialSpecialization(declaration, "ForwardUnionTemplate", "UnionType");
     EXPECT_FALSE(declaration.has_enum_details());
 }

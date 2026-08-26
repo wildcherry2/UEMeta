@@ -109,16 +109,6 @@ namespace UEMeta {
                         auto* p_forward_decl = Allocate<ParserTypes::TLForwardDeclaration>();
                         PopulateDeclarationMetadata(ast_context, p_forward_decl->mutable_metadata(), decl);
 
-                        // when the forward declaration is templated, we need to explicitly get the template decl
-                        const clang::Decl* printable_decl = decl;
-                        if (const auto* record_decl = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
-                            if (const auto* template_decl = record_decl->getDescribedClassTemplate()) {
-                                printable_decl = template_decl;
-                            }
-                        }
-                        Proto::SetVersioned(
-                            p_forward_decl->mutable_as_string(), ClangToString(ast_context, printable_decl));
-
                         // assign the kind and template info
                         switch (as_tag->getTagKind()) {
                             case clang::TagTypeKind::Struct:

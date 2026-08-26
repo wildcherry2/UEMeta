@@ -3,6 +3,7 @@
 #include "UEMeta/ClangHandler.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <exception>
 #include <execution>
 #include <filesystem>
@@ -76,6 +77,8 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     auto& context = data->GetContext();
     auto* p_record_decl = data->Allocate<TLRecordDeclaration>();
     UEMeta::Proto::MutableVersionItem(p_record_decl->mutable_nested_hashes());
+    UEMeta::Proto::MutableVersionItem(p_record_decl->mutable_size_bytes());
+    UEMeta::Proto::MutableVersionItem(p_record_decl->mutable_align_bytes());
     PopulateDeclarationMetadata(context, p_record_decl->mutable_metadata(), clang_decl);
     if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(clang_decl);
         cxx && (cxx->getDescribedClassTemplate() || llvm::isa<clang::ClassTemplateSpecializationDecl>(cxx))) {
@@ -123,6 +126,11 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     // populate instance fields
     for (const auto* field : clang_decl->fields()) {
         auto* p_field = p_record_decl->add_fields();
+        p_field->set_occurrence_index(
+            static_cast<std::uint64_t>(p_record_decl->fields_size() - 1));
+        UEMeta::Proto::MutableVersionItem(p_field->mutable_bit_width());
+        UEMeta::Proto::MutableVersionItem(p_field->mutable_offset_bits());
+        UEMeta::Proto::MutableVersionItem(p_field->mutable_default_value());
         const auto type = field->getType();
         UEMeta::Proto::SetVersioned(
             p_field->mutable_access(), ClangToProtoAccess(field->getAccess()));
@@ -149,15 +157,6 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
                 p_field->mutable_default_value(), ClangToString(context, def_val));
         }
 
-        static clang::PrintingPolicy field_printing_policy = [&] {
-            auto pol = clang::PrintingPolicy(context.getPrintingPolicy());
-            pol.SuppressInitializers = true;
-            pol.SuppressSpecifiers = false;
-            return pol;
-        }();
-
-        UEMeta::Proto::SetVersioned(
-            p_field->mutable_as_string(), ClangToString(field, field_printing_policy));
         UEMeta::Proto::SetVersioned(
             p_field->mutable_content_hash(),
             std::hash<std::string>::operator()(ClangToString(context, field)));
@@ -170,8 +169,11 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
         for (auto* method : cxx->methods()) {
             if (method->isImplicit()) continue; // we don't care about compiler-generated functions
             auto* p_method = p_record_decl->add_methods();
+            auto* p_vt = p_method->mutable_vtable_index();
+            UEMeta::Proto::MutableVersionItem(p_vt->mutable_index());
+            UEMeta::Proto::MutableVersionItem(p_vt->mutable_offset());
             PopulateFunctionCommon(context, p_method->mutable_common(), method);
-            if (!p_method->common().has_inline_definition()) {
+            if (UEMeta::Proto::GetVersioned(p_method->common().inline_definition()).empty()) {
                 has_complete_definition = false;
             }
 
@@ -180,7 +182,6 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
                     p_method->mutable_virtuality(),
                     method->isPureVirtual() ? FUNCTION_VIRTUALITY_PURE : FUNCTION_VIRTUALITY_VIRTUAL);
                 if (has_known_layout) {
-                    auto* p_vt = p_method->mutable_vtable_index();
                     // NOTE: it may be possible to support Linux vtable parsing with Itanium VTableContext when the flags
                     // indicate linux compilation, but the math is a bit more complicated
                     if (!context.getTargetInfo().getCXXABI().isMicrosoft())
@@ -218,6 +219,9 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
         // populate base classes
         for (const auto& base : cxx->bases()) {
             auto* p_base = p_record_decl->add_bases();
+            p_base->set_occurrence_index(
+                static_cast<std::uint64_t>(p_record_decl->bases_size() - 1));
+            UEMeta::Proto::MutableVersionItem(p_base->mutable_offset());
             const auto base_type = base.getType();
             const auto* base_decl = base_type->getAsCXXRecordDecl();
             if (const auto* identity_decl = GetBaseTypeIdentityDecl(base_type)) {
@@ -231,7 +235,8 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
             }
             auto base_as_string = base_type.getAsString();
             if (base.isPackExpansion()) base_as_string += "...";
-            p_base->set_access(ClangToProtoAccess(base.getAccessSpecifier()));
+            UEMeta::Proto::SetVersioned(
+                p_base->mutable_access(), ClangToProtoAccess(base.getAccessSpecifier()));
             UEMeta::Proto::SetVersioned(p_base->mutable_is_virtual(), base.isVirtual());
             if (layout && base_decl) {
                 const auto offset = base.isVirtual()
@@ -239,9 +244,8 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
                     : layout->getBaseClassOffset(base_decl);
                 UEMeta::Proto::SetVersioned(p_base->mutable_offset(), offset.getQuantity());
             }
-            UEMeta::Proto::SetVersioned(p_base->mutable_as_string(), base_as_string);
             PopulateTypeInfo(context, p_base->mutable_type_info(), base_type);
-            if (!p_base->type_info().has_source_path_hash()
+            if (UEMeta::Proto::GetVersioned(p_base->type_info().source_path_hash()) == 0
                 && !UEMeta::Proto::GetVersioned(p_base->identifier().file_path()).empty()) {
                 UEMeta::Proto::SetVersioned(
                     p_base->mutable_type_info()->mutable_source_path_hash(),
@@ -309,12 +313,6 @@ bool UEMeta::ClangHandler::VisitTypedefNameDecl(clang::TypedefNameDecl* clang_de
     }
     UEMeta::Proto::SetVersioned(p_alias->mutable_alias(), clang_decl->getNameAsString());
     PopulateTypeInfo(context, p_alias->mutable_aliased_type(), clang_decl->getUnderlyingType());
-    const auto str = ClangToString(
-        context,
-        type_alias && type_alias->getDescribedAliasTemplate()
-            ? static_cast<const clang::Decl*>(type_alias->getDescribedAliasTemplate())
-            : clang_decl);
-    UEMeta::Proto::SetVersioned(p_alias->mutable_as_string(), str);
     data->AddVisitedDecl(clang_decl, p_alias);
     return data->OnAfterVisit(clang_decl, p_alias->metadata().identifier().qualified_name_hash());
 }
@@ -330,8 +328,8 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
         PopulateTemplateDetails(context, p_var->mutable_template_details(), clang_decl);
     }
     PopulateTypeInfo(context, p_var->mutable_type_info(), clang_decl->getType());
+    UEMeta::Proto::MutableVersionItem(p_var->mutable_default_value());
     const auto str = ClangToString(context, clang_decl);
-    UEMeta::Proto::SetVersioned(p_var->mutable_as_string(), str);
     UEMeta::Proto::SetVersioned(
         p_var->mutable_content_hash(), std::hash<std::string>::operator()(str));
     UEMeta::Proto::SetVersioned(

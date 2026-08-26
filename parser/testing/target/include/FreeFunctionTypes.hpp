@@ -2527,6 +2527,14 @@ namespace UEMeta::Testing::Types {
 
     Beta (*TypeInfoParenArrayReturnFunction())[2];
 
-    // Explicit declarations above serialize to 1407 TLFreeFunction records.
+    template<typename SharedType>
+    void CanonicalTemplateOwnerFirst(SharedType Value);
+
+    template<typename SharedType>
+    void CanonicalTemplateOwnerSecond(SharedType Value);
+
+    void CanonicalUnnamedParameters(int, double);
+
+    // Explicit declarations above serialize to 1410 TLFreeFunction records.
     // The 54 inline variables only force ordinary implicit instantiation.
 } // namespace UEMeta::Testing::Types

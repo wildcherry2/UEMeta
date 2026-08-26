@@ -14,8 +14,8 @@ namespace UEMeta::Testing {
         EXPECT_TRUE(details.has_scope());
         EXPECT_EQ(details.scope(), expected_scope);
 
+        EXPECT_TRUE(details.has_underlying_type());
         if (!expected_underlying_type.empty()) {
-            EXPECT_TRUE(details.has_underlying_type());
             EXPECT_EQ(VersionedValue(details.underlying_type()), expected_underlying_type);
         }
     }

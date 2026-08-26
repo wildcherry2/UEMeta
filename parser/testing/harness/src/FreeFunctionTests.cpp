@@ -46,7 +46,7 @@ namespace {
     fs::path FreeFunctionSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "FreeFunctionTypes.hpp"; }
     fs::path AliasSourcePath() { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / "AliasTypes.hpp"; }
 
-    std::string QualifiedName(const std::string_view name) { return "UEMeta::Testing::Types::" + std::string{name}; }
+    std::string QualifiedName(const std::string_view name) { return "::UEMeta::Testing::Types::" + std::string{name}; }
 
     std::string FreeFunctionKey(const std::string_view name,
                                 const std::optional<TemplateSpecializationKind> specialization_kind) {
@@ -129,6 +129,66 @@ namespace {
         return {};
     }
 
+    std::string TemplatePrefix(const std::size_t template_parameter_count) {
+        std::string result{"template<"};
+        for (std::size_t index = 0; index < template_parameter_count; ++index) {
+            if (index != 0) {
+                result += ',';
+            }
+            result += "typename";
+        }
+        result += '>';
+        return result;
+    }
+
+    std::string CanonicalTemplateArguments(const std::string_view arguments) {
+        std::string result;
+        result.reserve(arguments.size());
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            if (arguments[index] == ' ' && index != 0 && arguments[index - 1] == ',') {
+                continue;
+            }
+            result += arguments[index];
+        }
+        return result;
+    }
+
+    std::string FunctionParameterTypes(const std::size_t parameter_count) {
+        switch (parameter_count) {
+        case 0:
+            return {};
+        case 1:
+            return "int";
+        case 2:
+            return "int,long";
+        default:
+            return "invalid";
+        }
+    }
+
+    std::string FunctionQualifiedName(
+        const std::string_view name,
+        const std::size_t function_parameter_count,
+        const std::size_t template_parameter_count = 0,
+        const std::optional<TemplateSpecializationKind> specialization_kind = std::nullopt) {
+        std::string segment;
+        if (template_parameter_count != 0) {
+            segment += TemplatePrefix(template_parameter_count);
+        }
+        segment += name;
+
+        const auto arguments = TemplateArguments(template_parameter_count, specialization_kind);
+        if (!arguments.empty()) {
+            segment += '<';
+            segment += CanonicalTemplateArguments(arguments);
+            segment += '>';
+        }
+        segment += '(';
+        segment += FunctionParameterTypes(function_parameter_count);
+        segment += ')';
+        return QualifiedName(segment);
+    }
+
     std::string_view EffectiveReturnType(const SourceReturnType source_return_type, const bool has_inline_definition,
                                          const std::optional<TemplateSpecializationKind> specialization_kind) {
         switch (source_return_type) {
@@ -209,7 +269,11 @@ namespace {
         const SourceReturnType expected_source_return_type, const std::size_t expected_template_parameter_count,
         const std::optional<TemplateSpecializationKind> expected_specialization_kind,
         const std::optional<ExpectedFunctionTemplateDetails>& expected_template_details) {
-        const auto qualified_name = QualifiedName(expected_name);
+        const auto qualified_name = FunctionQualifiedName(
+            expected_name,
+            expected_function_parameter_count,
+            expected_template_parameter_count,
+            expected_specialization_kind);
         const auto expected_as_string = ExpectedAsString(
             expected_name, expected_storage_class, expected_evaluation_kind, expected_has_inline_definition,
             expected_function_parameter_count, expected_source_return_type, expected_template_parameter_count,
@@ -270,7 +334,12 @@ namespace {
         ASSERT_TRUE(declaration.has_metadata());
         ASSERT_TRUE(declaration.has_common());
 
-        UEMeta::Testing::ExpectDeclarationMetadata(declaration.metadata(), expected_name, QualifiedName(expected_name),
+        const auto qualified_name = FunctionQualifiedName(
+            expected_name,
+            expected_function_parameter_count,
+            expected_template_parameter_count,
+            expected_specialization_kind);
+        UEMeta::Testing::ExpectDeclarationMetadata(declaration.metadata(), expected_name, qualified_name,
                                                    FreeFunctionSourcePath(),
                                                    UEMeta::Testing::VersionedValue(
                                                        declaration.metadata().occurrence_index()),
@@ -285,13 +354,17 @@ namespace {
             return;
         }
 
-        const auto qualified_name = QualifiedName(expected_name);
+        const auto primary_qualified_name = FunctionQualifiedName(
+            expected_name,
+            expected_function_parameter_count,
+            expected_template_parameter_count,
+            TEMPLATE_SPECIALIZATION_NONE);
         const auto arguments = TemplateArguments(expected_template_parameter_count, expected_specialization_kind);
         if (expected_template_parameter_count == 1) {
             const ExpectedFunctionTemplateDetails template_details{
                 *expected_specialization_kind,
-                qualified_name,
-                {{"FirstType", "FirstType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename FirstType"}},
+                primary_qualified_name,
+                {{"FirstType", "::FirstType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename FirstType"}},
                 arguments};
             ExpectFunctionCommonWithParameters(
                 declaration, expected_name, expected_storage_class, expected_evaluation_kind,
@@ -303,9 +376,9 @@ namespace {
         ASSERT_EQ(expected_template_parameter_count, 2);
         const ExpectedFunctionTemplateDetails template_details{
             *expected_specialization_kind,
-            qualified_name,
-            {{"FirstType", "FirstType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename FirstType"},
-             {"SecondType", "SecondType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename SecondType"}},
+            primary_qualified_name,
+            {{"FirstType", "::FirstType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename FirstType"},
+             {"SecondType", "::SecondType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename SecondType"}},
             arguments};
         ExpectFunctionCommonWithParameters(declaration, expected_name, expected_storage_class, expected_evaluation_kind,
                                            expected_has_inline_definition, expected_function_parameter_count,
@@ -8839,7 +8912,7 @@ TEST(FreeFunctionTests, DeclaredTypeInfo) {
     const auto found = declarations.find(FreeFunctionKey(name, std::nullopt));
     ASSERT_NE(found, declarations.end());
 
-    const auto qualified_name = QualifiedName(name);
+    const auto qualified_name = QualifiedName("TypeInfoDeclaredFunction(const Beta*const(&)[2])");
     UEMeta::Testing::ExpectFunctionCommon(
         found->second.common(),
         name,
@@ -8869,11 +8942,11 @@ TEST(FreeFunctionTests, DependentTypeInfo) {
     const auto found = declarations.find(FreeFunctionKey(name, TEMPLATE_SPECIALIZATION_NONE));
     ASSERT_NE(found, declarations.end());
 
-    const auto qualified_name = QualifiedName(name);
+    const auto qualified_name = QualifiedName("template<typename>TypeInfoDependentFunction(typename*)");
     const ExpectedFunctionTemplateDetails template_details{
         TEMPLATE_SPECIALIZATION_NONE,
         qualified_name,
-        {{"ValueType", "ValueType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename ValueType"}},
+        {{"ValueType", "::ValueType", TEMPLATE_PARAMETER_KIND_TYPENAME, "typename ValueType"}},
         R"()"
     };
     UEMeta::Testing::ExpectFunctionCommon(
@@ -8908,7 +8981,7 @@ TEST(FreeFunctionTests, ParenArrayReturnTypeInfo) {
     UEMeta::Testing::ExpectFunctionCommon(
         found->second.common(),
         name,
-        QualifiedName(name),
+        QualifiedName("TypeInfoParenArrayReturnFunction()"),
         FreeFunctionSourcePath(),
         FUNCTION_KIND_FREE,
         "Beta (*TypeInfoParenArrayReturnFunction())[2]",
@@ -8922,8 +8995,52 @@ TEST(FreeFunctionTests, ParenArrayReturnTypeInfo) {
         std::nullopt);
 }
 
+TEST(FreeFunctionTests, CanonicalTemplateParameterIdentityIncludesItsFunctionOwner) {
+    const auto& declarations = FreeFunctionDeclarations();
+    const auto first = declarations.find(
+        FreeFunctionKey("CanonicalTemplateOwnerFirst", TEMPLATE_SPECIALIZATION_NONE));
+    const auto second = declarations.find(
+        FreeFunctionKey("CanonicalTemplateOwnerSecond", TEMPLATE_SPECIALIZATION_NONE));
+    ASSERT_NE(first, declarations.end());
+    ASSERT_NE(second, declarations.end());
+
+    const auto first_function_name =
+        QualifiedName("template<typename>CanonicalTemplateOwnerFirst(typename)");
+    const auto second_function_name =
+        QualifiedName("template<typename>CanonicalTemplateOwnerSecond(typename)");
+    EXPECT_EQ(first->second.common().identifier().qualified_name(), first_function_name);
+    EXPECT_EQ(second->second.common().identifier().qualified_name(), second_function_name);
+
+    ASSERT_TRUE(first->second.common().has_template_details());
+    ASSERT_TRUE(second->second.common().has_template_details());
+    ASSERT_EQ(first->second.common().template_details().parameters_size(), 1);
+    ASSERT_EQ(second->second.common().template_details().parameters_size(), 1);
+    const auto& first_parameter = first->second.common().template_details().parameters(0).identifier();
+    const auto& second_parameter = second->second.common().template_details().parameters(0).identifier();
+    EXPECT_EQ(first_parameter.qualified_name(), first_function_name + "::SharedType");
+    EXPECT_EQ(second_parameter.qualified_name(), second_function_name + "::SharedType");
+    EXPECT_NE(first_parameter.qualified_name(), second_parameter.qualified_name());
+}
+
+TEST(FreeFunctionTests, CanonicalUnnamedParameterIdentityUsesItsOwnerAndPosition) {
+    const auto& declarations = FreeFunctionDeclarations();
+    const auto found = declarations.find(FreeFunctionKey("CanonicalUnnamedParameters", std::nullopt));
+    ASSERT_NE(found, declarations.end());
+
+    const auto function_name = QualifiedName("CanonicalUnnamedParameters(int,double)");
+    EXPECT_EQ(found->second.common().identifier().qualified_name(), function_name);
+    ASSERT_EQ(found->second.common().parameters_size(), 2);
+    const auto& first = found->second.common().parameters(0).identifier();
+    const auto& second = found->second.common().parameters(1).identifier();
+    EXPECT_EQ(first.name(), "<parameter0>");
+    EXPECT_EQ(second.name(), "<parameter1>");
+    EXPECT_EQ(first.qualified_name(), function_name + "::<parameter0>");
+    EXPECT_EQ(second.qualified_name(), function_name + "::<parameter1>");
+    EXPECT_NE(first.qualified_name(), second.qualified_name());
+}
+
 TEST(FreeFunctionCoverageTests, AccountsForEveryTargetDeclaration) {
-    constexpr std::size_t expected_declaration_count = 1407;
+    constexpr std::size_t expected_declaration_count = 1410;
     constexpr std::size_t implicit_instantiation_anchor_count = 54;
 
     const auto& declarations = FreeFunctionDeclarations();

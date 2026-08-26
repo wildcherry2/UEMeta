@@ -29,11 +29,10 @@ namespace UEMeta::Testing {
             EXPECT_EQ(type_info.is_templated_type(), *expected.is_templated_type);
         }
 
-        EXPECT_EQ(type_info.has_source_path_hash(), expected.source_path.has_value());
-        if (expected.source_path) {
-            const auto expected_source_path_hash =
-                std::hash<std::string>{}(expected.source_path->string());
-            EXPECT_EQ(VersionedValue(type_info.source_path_hash()), expected_source_path_hash);
-        }
+        EXPECT_TRUE(type_info.has_source_path_hash());
+        const auto expected_source_path_hash = expected.source_path
+            ? std::hash<std::string>{}(expected.source_path->string())
+            : 0;
+        EXPECT_EQ(VersionedValue(type_info.source_path_hash()), expected_source_path_hash);
     }
 }
