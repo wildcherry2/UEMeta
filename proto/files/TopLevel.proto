@@ -10,11 +10,11 @@ message TLFileData {
     string path = 1;
     uint64 path_hash = 2;
     VersionedUint32 file_occurrence = 3;
-    // these are the qualified name hashes of the types defined by this file, excluding forward declarations.
+    // Stable identity hashes of the types defined by this file, excluding forward declarations.
     // you could use this to reconstruct the necessary includes for a file, rather than transitively including all headers
     VersionedUint64List defined_type_hashes = 4;
 
-    // these are the qualified name hashes of the forward declarations in this file. they're excluded from the defined_types because
+    // Stable identity hashes of the forward declarations in this file. They're excluded from defined_type_hashes because
     // they don't have a definition in this file, but they may be necessary if a file that includes this file depends on it
     VersionedUint64List forward_declaration_hashes = 5;
 
@@ -54,9 +54,6 @@ message TLEnumDeclaration {
 
 // Top-level forward declaration.
 message TLForwardDeclaration {
-    reserved 5;
-    reserved "as_string";
-
     DeclarationMetadata metadata = 1;
     ForwardDeclarationKind kind = 2;
     optional TemplateDetails template_details = 3;
@@ -66,9 +63,6 @@ message TLForwardDeclaration {
 
 // Top-level alias declaration, including typedefs and using declarations.
 message TLAliasDeclaration {
-    reserved 5;
-    reserved "as_string";
-
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
     TypeInfo aliased_type = 3;
@@ -83,9 +77,6 @@ message TLFreeFunctionDeclaration {
 
 // An independently tracked global-variable or static field declaration.
 message TLGlobalVariableDeclaration {
-    reserved 5;
-    reserved "as_string";
-
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
     TypeInfo type_info = 3;
@@ -98,15 +89,17 @@ message TLGlobalVariableDeclaration {
 // Identity and source context shared by declarations and their named child
 // entities.
 // Producers must generate deterministic names for constructs that are unnamed in
-// source. A parameter's qualified_name includes its owning function's qualified
-// name and a parameter-specific suffix.
+// source. Identifiers attached to a TL* message's DeclarationMetadata require a
+// Clang USR; identifiers embedded in child and type messages are best-effort.
 message Identifier {
     string name = 1;
+    // Populated on a TL* message's DeclarationMetadata.
     string qualified_name = 2;
     uint64 qualified_name_hash = 3;
     VersionedString file_path = 4;
     VersionedUint64 file_path_hash = 5;
-    repeated string scope = 6;
+    reserved 6;
+    reserved "scope";
     VersionedString documentation = 7;
 }
 
@@ -128,7 +121,7 @@ message TemplateDetails {
     // params should always be added in order of appearance
     repeated TemplateParameter parameters = 1;
     optional TemplateSpecializationKind specialization_kind = 2;
-    optional string primary_template_qualified_name = 3;
+    optional uint64 primary_template_hash = 3;
     repeated string arguments = 4;
 }
 
@@ -138,9 +131,6 @@ message TemplateDetails {
 //      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and default_value = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
 message TemplateParameter {
-    reserved 8;
-    reserved "as_string";
-
     TemplateParameterKind kind = 1;
     Identifier identifier = 2;
     optional TypeInfo type = 3;
@@ -154,7 +144,7 @@ message TemplateParameter {
 
     repeated TemplateParameter parameters = 7;
     // Zero-based position within the immediately containing template-parameter list.
-    uint64 occurrence_index = 9;
+    VersionedUint64 occurrence_index = 9;
 }
 
 message EnumDetails {
@@ -183,9 +173,6 @@ message MemberFunction {
 // Common function traits. Some things may seem like they're better off in MemberFunction,
 // like `FunctionDefinitionKind` or `is_explicit`, but it simplifies the processing this way
 message FunctionCommon {
-    reserved 11;
-    reserved "as_string";
-
     FunctionKind kind = 1;
     optional TypeInfo return_type = 3; // assume 'auto' if not given and not ctor/dtor
     VersionedFunctionStorageClass storage_class = 4;
@@ -202,15 +189,12 @@ message FunctionCommon {
 // Parameters use a deterministic synthesized identity when no name is spelled in
 // the source.
 message Parameter {
-    reserved 4;
-    reserved "as_string";
-
     Identifier identifier = 1;
     TypeInfo type_info = 2;
     VersionedString default_value = 3;
     VersionedUint64 content_hash = 5;
     // Zero-based position within the owning function's parameter list.
-    uint64 occurrence_index = 6;
+    VersionedUint64 occurrence_index = 6;
 }
 
 message VTableIndex {
@@ -225,9 +209,6 @@ message Enumerator {
 
 // A non-static data member owned by a TLRecordDeclaration.
 message Field {
-    reserved 2;
-    reserved "as_string";
-
     Identifier identifier = 1;
     VersionedAccessSpecifier access = 3;
     VersionedBool is_mutable = 4;
@@ -243,20 +224,17 @@ message Field {
     VersionedString default_value = 9;
     TypeInfo type_info = 10;
     // Zero-based position among fields declared directly by the owning record.
-    uint64 occurrence_index = 11;
+    VersionedUint64 occurrence_index = 11;
 }
 
 message BaseSpecifier {
-    reserved 5;
-    reserved "as_string";
-
     Identifier identifier = 1;
     VersionedAccessSpecifier access = 2;
     VersionedBool is_virtual = 3;
     VersionedUint64 offset = 4;
     TypeInfo type_info = 6;
     // Zero-based position among direct bases of the owning record.
-    uint64 occurrence_index = 7;
+    VersionedUint64 occurrence_index = 7;
 }
 
 message TypeInfo {
@@ -271,6 +249,9 @@ message TypeInfo {
 
     // the hash of the source path for this type; zero if it's a builtin or templated type
     VersionedUint64 source_path_hash = 4;
+
+    // Best-effort identity for the underlying nominal or structural type.
+    Identifier identifier = 5;
 }
 
 // Any top level item

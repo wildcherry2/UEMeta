@@ -41,11 +41,6 @@ bool UEMeta::Config::PrefersClang() const {
     return prefer_clang;
 }
 
-bool UEMeta::Config::PrefersFullNameInFileName() const {
-    AssertInitialized();
-    return prefer_full_name_in_file_name;
-}
-
 bool UEMeta::Config::ProcessImplicitSpecializations() const {
     AssertInitialized();
     return process_implicit_specializations;
@@ -124,8 +119,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     };
 
     app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
-        ->default_val(false);
-    app.add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)
         ->default_val(false);
     app.add_flag("--process-implicit-specializations", cfg.process_implicit_specializations, PROCESS_IMPLICIT_SPEC_HELP)
         ->default_val(false);

@@ -12,6 +12,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace {
     namespace fs = std::filesystem;
@@ -29,6 +30,7 @@ namespace {
     using ParseResult::TEMPLATE_SPECIALIZATION_NONE;
     using ParseResult::TemplateSpecializationKind;
     using ParseResult::TLForwardDeclaration;
+    using ParseResult::TLFreeFunctionDeclaration;
     using ParseResult::TLRecordDeclaration;
 
     fs::path ForwardDeclarationSourcePath() {
@@ -87,6 +89,23 @@ namespace {
 
     const TLForwardDeclaration& ForwardDeclarationAt(const std::uint32_t occurrence_index) {
         return ForwardDeclarations().at(occurrence_index);
+    }
+
+    std::vector<TLFreeFunctionDeclaration> FunctionDeclarationsNamed(const std::string_view name) {
+        std::vector<TLFreeFunctionDeclaration> result;
+        for (const auto& entry : fs::directory_iterator{fs::path{UEMETA_TEST_OUTPUT_DIR}}) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".functionbin") continue;
+
+            std::ifstream input{entry.path(), std::ios::binary};
+            TLFreeFunctionDeclaration declaration;
+            if (!input || !declaration.ParseFromIstream(&input)) continue;
+            if (UEMeta::Testing::VersionedValue(declaration.metadata().identifier().file_path())
+                    == ForwardDeclarationSourcePath().string()
+                && declaration.common().identifier().name() == name) {
+                result.emplace_back(std::move(declaration));
+            }
+        }
+        return result;
     }
 
     std::string ConcreteTemplateKey(
@@ -193,6 +212,8 @@ namespace {
         ASSERT_TRUE(declaration.has_template_details());
         const auto qualified_template_name =
             TemplatedQualifiedName(template_name, "typename,typename");
+        const auto qualified_specialization_name =
+            TemplatedQualifiedName(template_name, "typename", "typename,int");
         UEMeta::Testing::ExpectTemplateDetails(
             declaration.template_details(),
             TEMPLATE_SPECIALIZATION_EXPLICIT,
@@ -201,13 +222,13 @@ namespace {
             {
                 {
                     parameter_name,
-                    TemplatedQualifiedName(template_name, "typename", "typename,int")
-                        + "::" + std::string{parameter_name},
+                    qualified_specialization_name + "::" + std::string{parameter_name},
                     TEMPLATE_PARAMETER_KIND_TYPENAME,
                     "typename " + std::string{parameter_name}
                 }
             },
-            R"(type-parameter-0-0, int)");
+            R"(type-parameter-0-0, int)",
+            qualified_specialization_name);
     }
 
     void ExpectConcreteTemplateSpecialization(
@@ -455,4 +476,38 @@ TEST(ForwardDeclarationTests, ExplicitInstantiationUnionTemplateDefinition) {
         "ConcreteUnionType",
         TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION,
         R"(unsigned long long)");
+}
+
+TEST(ForwardDeclarationTests, USRIdentityIsRequiredForSerializedFunction) {
+    const auto declarations = FunctionDeclarationsNamed("StableFunctionParameterIdentity");
+    ASSERT_EQ(declarations.size(), 2);
+
+    const auto& first = declarations[0].common();
+    const auto& second = declarations[1].common();
+    EXPECT_EQ(first.identifier().qualified_name_hash(), second.identifier().qualified_name_hash());
+    ASSERT_EQ(first.parameters_size(), 1);
+    ASSERT_EQ(second.parameters_size(), 1);
+    EXPECT_NE(first.parameters(0).identifier().name(), second.parameters(0).identifier().name());
+    EXPECT_TRUE(first.parameters(0).identifier().qualified_name().empty());
+    EXPECT_TRUE(second.parameters(0).identifier().qualified_name().empty());
+}
+
+TEST(ForwardDeclarationTests, USRIdentityIsRequiredForSerializedTemplate) {
+    const auto declarations = FunctionDeclarationsNamed("StableTemplateParameterIdentity");
+    ASSERT_EQ(declarations.size(), 2);
+
+    const auto& first = declarations[0].common();
+    const auto& second = declarations[1].common();
+    EXPECT_EQ(first.identifier().qualified_name_hash(), second.identifier().qualified_name_hash());
+    ASSERT_TRUE(first.has_template_details());
+    ASSERT_TRUE(second.has_template_details());
+    ASSERT_EQ(first.template_details().parameters_size(), 1);
+    ASSERT_EQ(second.template_details().parameters_size(), 1);
+    EXPECT_NE(
+        first.template_details().parameters(0).identifier().name(),
+        second.template_details().parameters(0).identifier().name());
+    EXPECT_TRUE(first.template_details().parameters(0).identifier().qualified_name().empty());
+    EXPECT_TRUE(second.template_details().parameters(0).identifier().qualified_name().empty());
+    EXPECT_EQ(first.template_details().primary_template_hash(), first.identifier().qualified_name_hash());
+    EXPECT_EQ(second.template_details().primary_template_hash(), second.identifier().qualified_name_hash());
 }

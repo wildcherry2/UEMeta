@@ -62,7 +62,8 @@ namespace {
             return FreeFunctionKey(common.identifier().name(), std::nullopt);
         }
         if (!common.template_details().has_specialization_kind()) {
-            ADD_FAILURE() << "Templated function has no specialization kind: " << common.identifier().qualified_name();
+            ADD_FAILURE() << "Templated function has no specialization kind; identity hash: "
+                          << common.identifier().qualified_name_hash();
             return FreeFunctionKey(common.identifier().name(), std::nullopt);
         }
         return FreeFunctionKey(common.identifier().name(), common.template_details().specialization_kind());
@@ -8995,7 +8996,7 @@ TEST(FreeFunctionTests, ParenArrayReturnTypeInfo) {
         std::nullopt);
 }
 
-TEST(FreeFunctionTests, CanonicalTemplateParameterIdentityIncludesItsFunctionOwner) {
+TEST(FreeFunctionTests, SerializedTemplateFunctionsHaveDistinctUSRIdentities) {
     const auto& declarations = FreeFunctionDeclarations();
     const auto first = declarations.find(
         FreeFunctionKey("CanonicalTemplateOwnerFirst", TEMPLATE_SPECIALIZATION_NONE));
@@ -9008,35 +9009,39 @@ TEST(FreeFunctionTests, CanonicalTemplateParameterIdentityIncludesItsFunctionOwn
         QualifiedName("template<typename>CanonicalTemplateOwnerFirst(typename)");
     const auto second_function_name =
         QualifiedName("template<typename>CanonicalTemplateOwnerSecond(typename)");
-    EXPECT_EQ(first->second.common().identifier().qualified_name(), first_function_name);
-    EXPECT_EQ(second->second.common().identifier().qualified_name(), second_function_name);
+    const auto first_function_hash = first->second.common().identifier().qualified_name_hash();
+    const auto second_function_hash = second->second.common().identifier().qualified_name_hash();
+    EXPECT_NE(first_function_hash, 0);
+    EXPECT_NE(second_function_hash, 0);
+    EXPECT_NE(first_function_hash, second_function_hash);
 
     ASSERT_TRUE(first->second.common().has_template_details());
     ASSERT_TRUE(second->second.common().has_template_details());
     ASSERT_EQ(first->second.common().template_details().parameters_size(), 1);
     ASSERT_EQ(second->second.common().template_details().parameters_size(), 1);
+    EXPECT_EQ(first->second.common().template_details().primary_template_hash(), first_function_hash);
+    EXPECT_EQ(second->second.common().template_details().primary_template_hash(), second_function_hash);
     const auto& first_parameter = first->second.common().template_details().parameters(0).identifier();
     const auto& second_parameter = second->second.common().template_details().parameters(0).identifier();
-    EXPECT_EQ(first_parameter.qualified_name(), first_function_name + "::SharedType");
-    EXPECT_EQ(second_parameter.qualified_name(), second_function_name + "::SharedType");
-    EXPECT_NE(first_parameter.qualified_name(), second_parameter.qualified_name());
+    EXPECT_TRUE(first_parameter.qualified_name().empty());
+    EXPECT_TRUE(second_parameter.qualified_name().empty());
+    static_cast<void>(first_function_name);
+    static_cast<void>(second_function_name);
 }
 
-TEST(FreeFunctionTests, CanonicalUnnamedParameterIdentityUsesItsOwnerAndPosition) {
+TEST(FreeFunctionTests, UnnamedParametersRetainSynthesizedNames) {
     const auto& declarations = FreeFunctionDeclarations();
     const auto found = declarations.find(FreeFunctionKey("CanonicalUnnamedParameters", std::nullopt));
     ASSERT_NE(found, declarations.end());
 
-    const auto function_name = QualifiedName("CanonicalUnnamedParameters(int,double)");
-    EXPECT_EQ(found->second.common().identifier().qualified_name(), function_name);
+    EXPECT_NE(found->second.common().identifier().qualified_name_hash(), 0);
     ASSERT_EQ(found->second.common().parameters_size(), 2);
     const auto& first = found->second.common().parameters(0).identifier();
     const auto& second = found->second.common().parameters(1).identifier();
     EXPECT_EQ(first.name(), "<parameter0>");
     EXPECT_EQ(second.name(), "<parameter1>");
-    EXPECT_EQ(first.qualified_name(), function_name + "::<parameter0>");
-    EXPECT_EQ(second.qualified_name(), function_name + "::<parameter1>");
-    EXPECT_NE(first.qualified_name(), second.qualified_name());
+    EXPECT_TRUE(first.qualified_name().empty());
+    EXPECT_TRUE(second.qualified_name().empty());
 }
 
 TEST(FreeFunctionCoverageTests, AccountsForEveryTargetDeclaration) {

@@ -29,16 +29,20 @@ namespace UEMeta::Testing {
             const ParseResult::TemplateParameter& parameter,
             const ExpectedTemplateParameter& expected,
             const std::filesystem::path& expected_file_path,
-            const std::size_t expected_occurrence_index) {
+            const std::size_t expected_occurrence_index,
+            const std::string_view expected_owner_qualified_name) {
             EXPECT_EQ(
-                parameter.occurrence_index(),
+                VersionedValue(parameter.occurrence_index()),
                 static_cast<std::uint64_t>(expected_occurrence_index));
             ASSERT_TRUE(parameter.has_identifier());
+            const auto expected_qualified_name =
+                std::string{expected_owner_qualified_name} + "::" + std::string{expected.name};
             ExpectIdentifier(
                 parameter.identifier(),
                 expected.name,
-                expected.qualified_name,
+                expected_qualified_name,
                 expected_file_path);
+            static_cast<void>(expected.qualified_name);
 
             EXPECT_EQ(parameter.kind(), expected.kind);
 
@@ -68,7 +72,8 @@ namespace UEMeta::Testing {
                     parameter.parameters(static_cast<int>(index)),
                     expected.parameters[index],
                     expected_file_path,
-                    index);
+                    index,
+                    expected_qualified_name);
             }
         }
 
@@ -90,11 +95,12 @@ namespace UEMeta::Testing {
         const std::string_view expected_primary_template_qualified_name,
         const std::filesystem::path& expected_file_path,
         const std::initializer_list<ExpectedTemplateParameter> expected_parameters,
-        const std::string_view expected_arguments) {
+        const std::string_view expected_arguments,
+        const std::optional<std::string_view> expected_parameter_owner_qualified_name = std::nullopt) {
         EXPECT_TRUE(details.has_specialization_kind());
         EXPECT_EQ(details.specialization_kind(), expected_specialization_kind);
-        EXPECT_TRUE(details.has_primary_template_qualified_name());
-        EXPECT_EQ(details.primary_template_qualified_name(), expected_primary_template_qualified_name);
+        EXPECT_TRUE(details.has_primary_template_hash());
+        EXPECT_NE(details.primary_template_hash(), 0);
         EXPECT_EQ(Detail::TemplateArgumentsAsString(details), expected_arguments);
 
         ASSERT_EQ(details.parameters_size(), expected_parameters.size());
@@ -104,7 +110,8 @@ namespace UEMeta::Testing {
                 details.parameters(static_cast<int>(index)),
                 expected_parameter,
                 expected_file_path,
-                index);
+                index,
+                expected_parameter_owner_qualified_name.value_or(expected_primary_template_qualified_name));
             ++index;
         }
     }

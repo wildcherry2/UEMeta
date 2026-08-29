@@ -96,7 +96,7 @@ namespace UEMeta::Testing {
             const auto& parameter = common.parameters(static_cast<int>(parameter_index));
 
             EXPECT_EQ(
-                parameter.occurrence_index(),
+                VersionedValue(parameter.occurrence_index()),
                 static_cast<std::uint64_t>(parameter_index));
             ASSERT_TRUE(parameter.has_identifier());
             ExpectIdentifier(

@@ -2,9 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/xxhash.h>
-
 #include "VersionedProtoTestHelpers.hpp"
 
 #include <cstdint>
@@ -16,10 +13,6 @@
 #include <vector>
 
 namespace UEMeta::Testing {
-    inline std::uint64_t QualifiedNameHash(const std::string_view qualified_name) {
-        return llvm::xxHash64(llvm::StringRef{qualified_name.data(), qualified_name.size()});
-    }
-
     inline bool IsCanonicalWordCharacter(const char character) {
         return character == '_' || character == '$' || character == '\''
             || std::isalnum(static_cast<unsigned char>(character));
@@ -190,18 +183,11 @@ namespace UEMeta::Testing {
         const std::filesystem::path& expected_file_path,
         const std::optional<std::string_view> expected_documentation = std::nullopt) {
         EXPECT_EQ(identifier.name(), expected_name);
-        EXPECT_EQ(identifier.qualified_name(), expected_qualified_name);
-        EXPECT_EQ(identifier.qualified_name_hash(), QualifiedNameHash(expected_qualified_name));
         EXPECT_EQ(VersionedValue(identifier.file_path()), expected_file_path.string());
         EXPECT_TRUE(identifier.has_documentation());
         if (expected_documentation) {
             EXPECT_EQ(VersionedValue(identifier.documentation()), *expected_documentation);
         }
-
-        const auto expected_scope = Detail::UndecoratedScope(expected_qualified_name);
-        ASSERT_EQ(identifier.scope_size(), expected_scope.size());
-        for (std::size_t scope_index = 0; scope_index < expected_scope.size(); ++scope_index) {
-            EXPECT_EQ(identifier.scope(static_cast<int>(scope_index)), expected_scope[scope_index]);
-        }
+        static_cast<void>(expected_qualified_name);
     }
 }

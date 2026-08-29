@@ -46,4 +46,13 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ConcreteUnionTemplate<signed char>) > 0);
     extern template union ConcreteUnionTemplate<unsigned int>;
     template union ConcreteUnionTemplate<unsigned long long>;
+
+    void StableFunctionParameterIdentity(int OriginalName);
+    void StableFunctionParameterIdentity(int RenamedParameter);
+
+    template<typename OriginalType>
+    void StableTemplateParameterIdentity(OriginalType OriginalValue);
+
+    template<class RenamedType>
+    void StableTemplateParameterIdentity(RenamedType RenamedValue);
 }

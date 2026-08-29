@@ -367,6 +367,7 @@ target_link_libraries(parser PRIVATE
     clangTooling
     clangFrontend
     clangASTMatchers
+    clangIndex
     CLI11::CLI11
     quill::quill
     protobuf::libprotobuf

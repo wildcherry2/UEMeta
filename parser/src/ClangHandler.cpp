@@ -126,7 +126,8 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
     // populate instance fields
     for (const auto* field : clang_decl->fields()) {
         auto* p_field = p_record_decl->add_fields();
-        p_field->set_occurrence_index(
+        UEMeta::Proto::SetVersioned(
+            p_field->mutable_occurrence_index(),
             static_cast<std::uint64_t>(p_record_decl->fields_size() - 1));
         UEMeta::Proto::MutableVersionItem(p_field->mutable_bit_width());
         UEMeta::Proto::MutableVersionItem(p_field->mutable_offset_bits());
@@ -219,20 +220,14 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
         // populate base classes
         for (const auto& base : cxx->bases()) {
             auto* p_base = p_record_decl->add_bases();
-            p_base->set_occurrence_index(
+            UEMeta::Proto::SetVersioned(
+                p_base->mutable_occurrence_index(),
                 static_cast<std::uint64_t>(p_record_decl->bases_size() - 1));
             UEMeta::Proto::MutableVersionItem(p_base->mutable_offset());
             const auto base_type = base.getType();
             const auto* base_decl = base_type->getAsCXXRecordDecl();
-            if (const auto* identity_decl = GetBaseTypeIdentityDecl(base_type)) {
-                PopulateIdentifier(context, p_base->mutable_identifier(), identity_decl);
-            }
-            else {
-                auto [name, qualified_name] = GetSyntheticBaseTypeIdentity(base_type, context.getPrintingPolicy());
-                const auto* dependency_decl = GetBaseTypeDependencyDecl(base_type);
-                const auto dependency_location = dependency_decl ? dependency_decl->getLocation() : base.getBaseTypeLoc();
-                PopulateIdentifier(context, p_base->mutable_identifier(), name, qualified_name, dependency_location);
-            }
+            PopulateTypeInfo(context, p_base->mutable_type_info(), base_type);
+            p_base->mutable_identifier()->CopyFrom(p_base->type_info().identifier());
             auto base_as_string = base_type.getAsString();
             if (base.isPackExpansion()) base_as_string += "...";
             UEMeta::Proto::SetVersioned(
@@ -244,7 +239,6 @@ bool UEMeta::ClangHandler::VisitRecordDecl(clang::RecordDecl* clang_decl) {
                     : layout->getBaseClassOffset(base_decl);
                 UEMeta::Proto::SetVersioned(p_base->mutable_offset(), offset.getQuantity());
             }
-            PopulateTypeInfo(context, p_base->mutable_type_info(), base_type);
             if (UEMeta::Proto::GetVersioned(p_base->type_info().source_path_hash()) == 0
                 && !UEMeta::Proto::GetVersioned(p_base->identifier().file_path()).empty()) {
                 UEMeta::Proto::SetVersioned(

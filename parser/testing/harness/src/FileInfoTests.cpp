@@ -207,7 +207,7 @@ TEST(FileInfoTests, ForwardDeclarationTypes) {
 
     EXPECT_EQ(file_info.path(), source_path.string());
     EXPECT_EQ(UEMeta::Testing::VersionedValue(file_info.file_occurrence()), 2);
-    ASSERT_EQ(declaration_hashes.defined.size(), 12);
+    ASSERT_EQ(declaration_hashes.defined.size(), 16);
     ASSERT_EQ(declaration_hashes.forward_declared.size(), 11);
     ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
     ExpectHashes(

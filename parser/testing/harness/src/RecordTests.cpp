@@ -17,8 +17,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace {
     namespace fs = std::filesystem;
@@ -149,40 +149,9 @@ namespace {
         return result;
     }
 
-    std::string RecordKey(const std::string_view qualified_name,
-                          const std::optional<TemplateSpecializationKind> specialization_kind,
-                          const std::string_view template_arguments = {}) {
-        std::string result{qualified_name};
-        result += ':';
-        if (!specialization_kind) {
-            result += "NoTemplate";
-            return result;
-        }
-
-        result += std::to_string(static_cast<int>(*specialization_kind));
-        result += ':';
-        result += template_arguments;
-        return result;
-    }
-
-    std::string RecordKey(const TLRecordDeclaration& declaration) {
-        const auto& identifier = declaration.metadata().identifier();
-        if (!declaration.has_template_details()) {
-            return RecordKey(identifier.qualified_name(), std::nullopt);
-        }
-
-        const auto& details = declaration.template_details();
-        if (!details.has_specialization_kind()) {
-            ADD_FAILURE() << "Templated record has no specialization kind: " << identifier.qualified_name();
-            return RecordKey(identifier.qualified_name(), std::nullopt);
-        }
-
-        return RecordKey(identifier.qualified_name(), details.specialization_kind(), TemplateArguments(details));
-    }
-
-    const std::unordered_map<std::string, TLRecordDeclaration>& RecordDeclarations() {
+    const std::vector<TLRecordDeclaration>& RecordDeclarations() {
         static const auto declarations = [] {
-            std::unordered_map<std::string, TLRecordDeclaration> result;
+            std::vector<TLRecordDeclaration> result;
 
             for (const auto& entry : fs::directory_iterator{fs::path{UEMETA_TEST_OUTPUT_DIR}}) {
                 if (!entry.is_regular_file()) {
@@ -207,11 +176,7 @@ namespace {
                     continue;
                 }
 
-                const auto key = RecordKey(declaration);
-                const auto [_, inserted] = result.emplace(key, std::move(declaration));
-                if (!inserted) {
-                    ADD_FAILURE() << "Duplicate record declaration key " << key;
-                }
+                result.emplace_back(std::move(declaration));
             }
 
             return result;
@@ -220,19 +185,102 @@ namespace {
         return declarations;
     }
 
+    std::size_t LastScopeSeparator(const std::string_view qualified_name) {
+        std::size_t result = std::string_view::npos;
+        std::size_t angle_depth = 0;
+        std::size_t parenthesis_depth = 0;
+        std::size_t bracket_depth = 0;
+        for (std::size_t index = 0; index + 1 < qualified_name.size(); ++index) {
+            const auto character = qualified_name[index];
+            if (character == '<') ++angle_depth;
+            else if (character == '>') --angle_depth;
+            else if (character == '(') ++parenthesis_depth;
+            else if (character == ')') --parenthesis_depth;
+            else if (character == '[') ++bracket_depth;
+            else if (character == ']') --bracket_depth;
+            else if (character == ':' && qualified_name[index + 1] == ':'
+                     && angle_depth == 0 && parenthesis_depth == 0 && bracket_depth == 0) {
+                result = index++;
+            }
+        }
+        return result;
+    }
+
+    std::string ExpectedTemplateArguments(const std::string_view qualified_name) {
+        auto segment = qualified_name.substr(
+            LastScopeSeparator(qualified_name) == std::string_view::npos
+                ? 0
+                : LastScopeSeparator(qualified_name) + 2);
+        if (segment.starts_with("template<")) {
+            const auto close = UEMeta::Testing::Detail::MatchingAngleBracket(
+                segment, std::string_view{"template"}.size());
+            if (close == std::string_view::npos) return {};
+            segment.remove_prefix(close + 1);
+        }
+
+        const auto arguments = segment.find('<');
+        if (arguments == std::string_view::npos) return {};
+        const auto close = UEMeta::Testing::Detail::MatchingAngleBracket(segment, arguments);
+        if (close == std::string_view::npos) return {};
+        return CanonicalTemplateArguments(segment.substr(arguments + 1, close - arguments - 1));
+    }
+
     const TLRecordDeclaration&
     FindRecord(const std::string_view qualified_name,
                const std::optional<TemplateSpecializationKind> specialization_kind = std::nullopt,
                const std::string_view template_arguments = {}) {
-        const auto key = RecordKey(qualified_name, specialization_kind, template_arguments);
-        const auto& declarations = RecordDeclarations();
-        const auto found = declarations.find(key);
-        EXPECT_NE(found, declarations.end()) << "No parser output for record " << key;
-        if (found == declarations.end()) {
+        const auto expected_scope = UEMeta::Testing::Detail::UndecoratedScope(qualified_name);
+        const auto expected_arguments = CanonicalTemplateArguments(
+            template_arguments.empty() ? ExpectedTemplateArguments(qualified_name) : template_arguments);
+        std::vector<const TLRecordDeclaration*> matches;
+
+        for (const auto& declaration : RecordDeclarations()) {
+            const auto& identifier = declaration.metadata().identifier();
+            if (UEMeta::Testing::Detail::UndecoratedScope(identifier.qualified_name())
+                != expected_scope) continue;
+
+            if (specialization_kind) {
+                if (!declaration.has_template_details()
+                    || !declaration.template_details().has_specialization_kind()
+                    || declaration.template_details().specialization_kind() != *specialization_kind
+                    || CanonicalTemplateArguments(TemplateArguments(declaration.template_details()))
+                        != expected_arguments) {
+                    continue;
+                }
+            }
+            else if (declaration.has_template_details()) {
+                const auto& details = declaration.template_details();
+                if (!details.has_specialization_kind()) continue;
+                if (expected_arguments.empty()) {
+                    if (details.specialization_kind() != TEMPLATE_SPECIALIZATION_NONE) continue;
+                }
+                else if (CanonicalTemplateArguments(TemplateArguments(details)) != expected_arguments) {
+                    continue;
+                }
+            }
+
+            matches.push_back(&declaration);
+        }
+
+        if (matches.size() > 1) {
+            const auto parent_separator = LastScopeSeparator(qualified_name);
+            if (parent_separator != std::string_view::npos) {
+                const auto& parent = FindRecord(qualified_name.substr(0, parent_separator));
+                const auto& child_hashes = UEMeta::Testing::VersionedValue(parent.nested_hashes());
+                std::erase_if(matches, [&](const TLRecordDeclaration* candidate) {
+                    return std::ranges::find(
+                        child_hashes, candidate->metadata().identifier().qualified_name_hash())
+                        == child_hashes.end();
+                });
+            }
+        }
+
+        EXPECT_EQ(matches.size(), 1) << "No unique parser output for record " << qualified_name;
+        if (matches.size() != 1) {
             static const TLRecordDeclaration missing;
             return missing;
         }
-        return found->second;
+        return *matches.front();
     }
 
     void ExpectOptionalInt64(const bool has_value, const ParseResult::VersionedInt64& actual,
@@ -313,7 +361,8 @@ namespace {
                           const std::string_view expected_nested_qualified_name) {
         const auto& nested_hashes = UEMeta::Testing::VersionedValue(declaration.nested_hashes());
         ASSERT_EQ(nested_hashes.size(), 1);
-        const auto expected_hash = UEMeta::Testing::QualifiedNameHash(expected_nested_qualified_name);
+        const auto expected_hash =
+            FindRecord(expected_nested_qualified_name).metadata().identifier().qualified_name_hash();
         EXPECT_NE(std::find(nested_hashes.begin(), nested_hashes.end(), expected_hash), nested_hashes.end());
     }
 
@@ -335,7 +384,7 @@ namespace {
         ASSERT_NE(found, declaration.fields().end()) << "No field named " << expected_name;
 
         EXPECT_EQ(
-            found->occurrence_index(),
+            UEMeta::Testing::VersionedValue(found->occurrence_index()),
             static_cast<std::uint64_t>(std::distance(declaration.fields().begin(), found)));
         ASSERT_TRUE(found->has_identifier());
         UEMeta::Testing::ExpectIdentifier(found->identifier(), expected_name,
@@ -366,12 +415,12 @@ namespace {
         const auto expected_qualified_name = QualifiedName(expected_name);
         const auto found =
             std::find_if(declaration.bases().begin(), declaration.bases().end(), [&](const BaseSpecifier& base) {
-                return base.identifier().qualified_name() == expected_qualified_name;
+                return base.identifier().name() == expected_name;
             });
         ASSERT_NE(found, declaration.bases().end()) << "No base named " << expected_name;
 
         EXPECT_EQ(
-            found->occurrence_index(),
+            UEMeta::Testing::VersionedValue(found->occurrence_index()),
             static_cast<std::uint64_t>(std::distance(declaration.bases().begin(), found)));
         ASSERT_TRUE(found->has_identifier());
         UEMeta::Testing::ExpectIdentifier(found->identifier(), expected_name, expected_qualified_name,
@@ -385,6 +434,12 @@ namespace {
         UEMeta::Testing::ExpectTypeInfo(
             found->type_info(),
             {expected_name, expected_name, false, RecordSourcePath()});
+        EXPECT_EQ(
+            found->type_info().identifier().qualified_name_hash(),
+            found->identifier().qualified_name_hash());
+        EXPECT_EQ(
+            found->type_info().identifier().qualified_name_hash(),
+            FindRecord(expected_qualified_name).metadata().identifier().qualified_name_hash());
     }
 
     void ExpectMethod(const TLRecordDeclaration& declaration, const std::string_view owner_qualified_name,
@@ -3019,9 +3074,7 @@ const TLRecordDeclaration& ExpectDependentBase(
     EXPECT_TRUE(base.has_identifier());
     UEMeta::Testing::ExpectIdentifier(
         base.identifier(), expected_identifier_name, expected_identifier_qualified_name, expected_source_path);
-    EXPECT_EQ(
-        base.identifier().qualified_name_hash(),
-        UEMeta::Testing::QualifiedNameHash(expected_identifier_qualified_name));
+    EXPECT_TRUE(base.identifier().qualified_name().empty());
     EXPECT_EQ(
         UEMeta::Testing::VersionedValue(base.identifier().file_path_hash()),
         std::hash<std::string>{}(expected_source_path.string()));
@@ -3093,28 +3146,18 @@ TEST(RecordTests, DependentPackBaseIsComplete) {
         1);
 
     const auto& method = declaration.methods(0).common().identifier();
-    EXPECT_EQ(
-        method.qualified_name(),
-        QualifiedName("template<typename...>DependentPackBasesRecord")
-            + "::template<typename...>Accept(typename&&...)");
-    ASSERT_EQ(method.scope_size(), 5);
-    EXPECT_EQ(method.scope(0), "UEMeta");
-    EXPECT_EQ(method.scope(1), "Testing");
-    EXPECT_EQ(method.scope(2), "Types");
-    EXPECT_EQ(method.scope(3), "DependentPackBasesRecord");
-    EXPECT_EQ(method.scope(4), "Accept");
+    EXPECT_TRUE(method.qualified_name().empty());
 }
 
-TEST(RecordTests, CanonicalConversionFunctionNormalizesItsDependentTargetType) {
+TEST(RecordTests, ConversionFunctionHasStableIdentityAndPlainScope) {
     const auto record_name = QualifiedName("template<typename>CanonicalConversionRecord");
     const auto& declaration = FindRecord(record_name, TEMPLATE_SPECIALIZATION_NONE);
     ASSERT_EQ(declaration.methods_size(), 1);
-    EXPECT_EQ(
-        declaration.methods(0).common().identifier().qualified_name(),
-        record_name + "::template<typename>operator typename()const");
+    const auto& identifier = declaration.methods(0).common().identifier();
+    EXPECT_TRUE(identifier.qualified_name().empty());
 }
 
-TEST(RecordTests, CanonicalFunctionQualifiedNamesMatchRequestedShape) {
+TEST(RecordTests, OverloadedFunctionIdentitiesUseParameterTypesAndPlainScopes) {
     constexpr std::string_view record_qualified_name = "::B::template<typename>A";
     const auto& declaration = FindRecord(record_qualified_name, TEMPLATE_SPECIALIZATION_NONE);
     ExpectRecordCore(
@@ -3143,9 +3186,22 @@ TEST(RecordTests, CanonicalFunctionQualifiedNamesMatchRequestedShape) {
             declaration.methods().begin(),
             declaration.methods().end(),
             [&](const MemberFunction& method) {
-                return method.common().identifier().qualified_name() == expected_qualified_name;
+                if (method.common().identifier().name() != "func"
+                    || method.common().parameters_size() != expected_parameters.size()) {
+                    return false;
+                }
+                auto expected = expected_parameters.begin();
+                for (const auto& parameter : method.common().parameters()) {
+                    if (UEMeta::Testing::VersionedValue(parameter.type_info().type())
+                        != expected->type_info.type) {
+                        return false;
+                    }
+                    ++expected;
+                }
+                return true;
             });
-        ASSERT_NE(found, declaration.methods().end()) << "No method named " << expected_qualified_name;
+        EXPECT_NE(found, declaration.methods().end()) << "No method named " << expected_qualified_name;
+        if (found == declaration.methods().end()) return std::uint64_t{};
         UEMeta::Testing::ExpectFunctionCommon(
             found->common(),
             "func",
@@ -3161,25 +3217,21 @@ TEST(RecordTests, CanonicalFunctionQualifiedNamesMatchRequestedShape) {
             std::nullopt,
             expected_parameters,
             FUNCTION_DEFINITION_NORMAL);
+        return found->common().identifier().qualified_name_hash();
     };
 
-    expect_overload(
+    const auto int_overload_hash = expect_overload(
         "::B::template<typename>A::template<typename>func(int,typename&)",
         {{"b", {}, {"int", "int"}, {}, {}},
          {"val", {}, {"T &", "T", true}, {}, {}}});
-    expect_overload(
+    const auto double_overload_hash = expect_overload(
         "::B::template<typename>A::template<typename>func(double,typename*)",
         {{"b", {}, {"double", "double"}, {}, {}},
          {"val", {}, {"T *", "T", true}, {}, {}}});
+    EXPECT_NE(int_overload_hash, double_overload_hash);
 
     const auto& requested_identifier = declaration.methods(0).common().identifier();
-    EXPECT_EQ(
-        requested_identifier.qualified_name(),
-        "::B::template<typename>A::template<typename>func(int,typename&)");
-    ASSERT_EQ(requested_identifier.scope_size(), 3);
-    EXPECT_EQ(requested_identifier.scope(0), "B");
-    EXPECT_EQ(requested_identifier.scope(1), "A");
-    EXPECT_EQ(requested_identifier.scope(2), "func");
+    EXPECT_TRUE(requested_identifier.qualified_name().empty());
     EXPECT_TRUE(UEMeta::Testing::VersionedValue(requested_identifier.documentation()).empty());
 }
 

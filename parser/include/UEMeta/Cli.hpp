@@ -58,12 +58,6 @@ namespace UEMeta {
         [[nodiscard]] bool PrefersClang() const;
 
         /**
-         * @brief Returns true when the user wants the serialized files to indicate a declaration's name instead of the
-         * name's hash
-         */
-        [[nodiscard]] bool PrefersFullNameInFileName() const;
-
-        /**
          * @brief Returns true when the user wants implicit (compiler-generated) template specializations serialized.
          */
         [[nodiscard]] bool ProcessImplicitSpecializations() const;
@@ -109,11 +103,11 @@ namespace UEMeta {
         }
 
         std::string ToString() const {
-            return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
+            return fmtquill::format("compile_commands={}\nprefer_clang={}\n"
                                           "process_implicit_specializations={}\ndump_to_json={}\nstrip_commands={}\n"
                                           "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\nclang_path={}\n"
                                           "log={}\noutput_directory={}", compile_commands, prefer_clang,
-                                          prefer_full_name_in_file_name, process_implicit_specializations,
+                                          process_implicit_specializations,
                                           dump_to_json, strip_commands, additional_clang_args,
                                           builtin_subpaths, format_string_map.at(format), clang_path.string(),
                                           log.string(), output_directory.string());
@@ -168,7 +162,6 @@ namespace UEMeta {
 
         bool prefer_clang{};
         bool dump_to_json{};
-        bool prefer_full_name_in_file_name{};
         bool process_implicit_specializations{};
         SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
         std::unordered_set<std::string> strip_commands{};

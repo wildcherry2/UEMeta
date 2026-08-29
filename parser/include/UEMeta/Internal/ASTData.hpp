@@ -35,12 +35,6 @@ namespace UEMeta {
             return msg;
         }
 
-        void Invalidate(const google::protobuf::Message* msg) const {
-            if (const auto found = std::find(std::execution::par_unseq, to_serialize.begin(), to_serialize.end(), msg); found != to_serialize.end()) {
-                to_serialize.erase(found);
-            }
-        }
-
         void AddVisitedDecl(const clang::Decl* clang_decl, google::protobuf::Message* msg) {
             visited_decls.insert(std::pair{clang_decl, msg});
             all_unique_visited_decls.push_back(clang_decl);
@@ -50,6 +44,7 @@ namespace UEMeta {
         [[nodiscard]] bool OnVisit(const DeclType* decl) {
             // don't process a nullptr
             if (!decl) return true;
+            if (IsRejected(decl)) return true;
 
             // if the decl is within the local scope of a function or method, don't process it
             if constexpr (std::same_as<DeclType, clang::FunctionDecl>
@@ -99,6 +94,12 @@ namespace UEMeta {
                 }
             }
 
+            const auto* named_decl = llvm::dyn_cast<clang::NamedDecl>(decl);
+            if (!named_decl || GetDeclarationIdentityHash(named_decl) == 0) {
+                RejectDeclaration(decl);
+                return true;
+            }
+
             if (const auto as_tag = llvm::dyn_cast_or_null<clang::TagDecl>(decl)) {
                 // if this is a forward declaration...
                 if (!as_tag->isThisDeclarationADefinition()) {
@@ -144,13 +145,14 @@ namespace UEMeta {
             return false;
         }
 
-        [[nodiscard]] bool OnAfterVisit(const clang::Decl* clang_decl, const uint64_t clang_decl_fqn_hash) const {
+        [[nodiscard]] bool OnAfterVisit(const clang::Decl* clang_decl, const uint64_t declaration_identity_hash) const {
+            if (IsRejected(clang_decl)) return true;
             // populate parent nested hashes
             if (const auto decl_context = clang_decl->getDeclContext(); decl_context->isRecord()) {
                 auto* as_cls = llvm::cast<clang::RecordDecl>(decl_context);
                 if (const auto parent = visited_decls.find(as_cls); parent != visited_decls.end()) {
                     if (auto* parent_record = dynamic_cast<ParserTypes::TLRecordDeclaration*>(parent->getSecond())) {
-                        Proto::AddVersioned(parent_record->mutable_nested_hashes(), clang_decl_fqn_hash);
+                        Proto::AddVersioned(parent_record->mutable_nested_hashes(), declaration_identity_hash);
                     }
                 }
             }
@@ -364,18 +366,13 @@ namespace UEMeta {
 
                 const auto GetOutData = [&] () -> std::pair<std::filesystem::path, google::protobuf::Message*> {
                     if (const auto* p_file = dynamic_cast<ParserTypes::TLFileData*>(msg)) {
-                        if (cfg.PrefersFullNameInFileName()) {
-                            return {out_dir / fmtquill::format("{}-{}.file{}",
-                                std::filesystem::path{p_file->path()}.filename().string(),
-                                Proto::GetVersioned(p_file->file_occurrence()), is_json ? "json" : "bin"), msg};
-                        }
                         // file path is in format {filepathhash}-{fileoccurrenceindex}.file[bin|json]
                         return {out_dir / fmtquill::format("{}-{}.file{}",
                             p_file->path_hash(), Proto::GetVersioned(p_file->file_occurrence()),
                             is_json ? "json" : "bin"), msg};
                     }
 
-                    // file path is in format {qualnamehash}-{contenthash}-{filepathhash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var][bin|json]
+                    // file path is in format {identityhash}-{contenthash}-{filepathhash}-{occurrenceindex}.[class|struct|enum|union|alias|function|fwdecl|var][bin|json]
                     DeclInfo* info{};
                     try {
                         info = &GetInfo(msg);
@@ -384,19 +381,10 @@ namespace UEMeta {
                         return std::pair<std::filesystem::path, google::protobuf::Message*>{};
                     }
 
-                    const auto& ident = info->metadata->identifier();
-
-                    if (cfg.PrefersFullNameInFileName()) {
-                        return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name(),
+                    const auto& identifier = info->metadata->identifier();
+                    return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", identifier.qualified_name_hash(),
                         Proto::GetVersioned(info->metadata->content_hash()),
-                        Proto::GetVersioned(ident.file_path_hash()),
-                        Proto::GetVersioned(info->metadata->occurrence_index()),
-                        info->extension, is_json ? "json" : "bin"), info->message};
-                    }
-
-                    return {out_dir / fmtquill::format("{}-{}-{}-{}.{}{}", ident.qualified_name_hash(),
-                        Proto::GetVersioned(info->metadata->content_hash()),
-                        Proto::GetVersioned(ident.file_path_hash()),
+                        Proto::GetVersioned(identifier.file_path_hash()),
                         Proto::GetVersioned(info->metadata->occurrence_index()),
                         info->extension, is_json ? "json" : "bin"), info->message};
 
@@ -439,6 +427,76 @@ namespace UEMeta {
         }
 
     private:
+        [[nodiscard]] bool IsRejected(const clang::Decl* declaration) const {
+            for (auto* current = declaration; current;) {
+                if (rejected_decls.contains(current->getCanonicalDecl())) return true;
+                const auto* declaration_context = current->getDeclContext();
+                current = declaration_context && declaration_context->isRecord()
+                    ? clang::Decl::castFromDeclContext(declaration_context)
+                    : nullptr;
+            }
+            return false;
+        }
+
+        void RejectDeclaration(const clang::Decl* declaration) {
+            // A nested serialized declaration is part of its owning record's
+            // output contract. If it has no stable identity, neither it nor
+            // any record that contains it can be serialized safely.
+            const auto Describe = [&](const clang::Decl* rejected) {
+                if (const auto* named = llvm::dyn_cast<clang::NamedDecl>(rejected)) {
+                    auto name = named->getQualifiedNameAsString();
+                    if (!name.empty()) return name;
+                }
+                return ClangToString(*context, rejected);
+            };
+            const auto rejected_name = Describe(declaration);
+            for (auto* current = declaration; current;) {
+                const bool was_inserted = rejected_decls.insert(current->getCanonicalDecl()).second;
+                if (was_inserted) {
+                    if (current == declaration) {
+                        UEM_WARN(
+                            "Rejecting serialized declaration because Clang could not generate a USR: {}",
+                            rejected_name);
+                    }
+                    else {
+                        UEM_WARN(
+                            "Pruning owning record {} because nested serialized declaration {} was rejected",
+                            Describe(current), rejected_name);
+                    }
+                }
+                const auto* declaration_context = current->getDeclContext();
+                current = declaration_context && declaration_context->isRecord()
+                    ? clang::Decl::castFromDeclContext(declaration_context)
+                    : nullptr;
+            }
+
+            std::set<const google::protobuf::Message*> rejected_messages;
+            std::vector<const clang::Decl*> rejected_visited;
+            for (const auto& [mapped_declaration, message] : visited_decls) {
+                if (IsRejected(mapped_declaration)) {
+                    rejected_messages.insert(message);
+                    rejected_visited.push_back(mapped_declaration);
+                }
+            }
+            std::vector<const clang::Decl*> rejected_forward_declarations;
+            for (const auto& [mapped_declaration, message] : visited_forward_decls) {
+                if (IsRejected(mapped_declaration)) {
+                    rejected_messages.insert(message);
+                    rejected_forward_declarations.push_back(mapped_declaration);
+                }
+            }
+            for (const auto* rejected : rejected_visited) visited_decls.erase(rejected);
+            for (const auto* rejected : rejected_forward_declarations) {
+                visited_forward_decls.erase(rejected);
+            }
+            std::erase_if(to_serialize, [&](const auto* message) {
+                return rejected_messages.contains(message);
+            });
+            std::erase_if(all_unique_visited_decls, [&](const auto* mapped_declaration) {
+                return IsRejected(mapped_declaration);
+            });
+        }
+
         static std::string NormalizePath(const std::string_view path) {
             return std::filesystem::path{std::string{path}}.lexically_normal().generic_string();
         }
@@ -459,6 +517,7 @@ namespace UEMeta {
         // we see that a declaration is nested within another.
         llvm::DenseMap<const clang::Decl*, google::protobuf::Message*> visited_decls{};
         llvm::DenseMap<const clang::Decl*, google::protobuf::Message*> visited_forward_decls{};
+        std::set<const clang::Decl*> rejected_decls{};
         std::set<std::string> builtin_paths{};
 
         // maps file -> include paths

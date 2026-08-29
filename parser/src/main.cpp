@@ -16,7 +16,7 @@ int main(int argc, char** argv) {
         UEM_INFO("Using config:\n{}", UEMeta::Config::GetConfig().ToString());
 
 #if defined(DEBUG)
-        UEM_INFO("Using debug build of parser! Default output is JSON, and files will have their FQNs rather than FQN hashes!");
+        UEM_INFO("Using debug build of parser! Default output is JSON.");
 #endif
 
         const auto tool = UEMeta::MakeTool();

@@ -34,5 +34,10 @@ namespace UEMeta::Testing {
             ? std::hash<std::string>{}(expected.source_path->string())
             : 0;
         EXPECT_EQ(VersionedValue(type_info.source_path_hash()), expected_source_path_hash);
+
+        ASSERT_TRUE(type_info.has_identifier());
+        EXPECT_TRUE(type_info.identifier().has_documentation());
+        EXPECT_TRUE(type_info.identifier().has_file_path());
+        EXPECT_TRUE(type_info.identifier().has_file_path_hash());
     }
 }
