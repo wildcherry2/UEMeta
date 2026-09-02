@@ -91,7 +91,7 @@ message DeclarationMetadata {
     // ID formed from the hash of the fully qualified name and equivalent of the forward declaration of this declaration without parameter names or parameter default values
     // (template or function).
     // Identifies a unique type across all versions. TypeRefs may reference this type_id.
-    uint64 type_id = 8;
+    Hash type_id = 8;
 
     repeated uint64 forward_declaration_occurrence_indices = 9;
 }
@@ -213,7 +213,7 @@ message TypeRef {
     VersionedString type_name = 1;
 
     // identifier for the type; may point to a TL* type, or be 0 for builtin or template/template dependent types
-    VersionedUint64 type_id = 2;
+    Hash type_id = 2;
 }
 
 // this doesn't need to be versioned as a whole if type_ids for fields and vars include their type in the hash
@@ -223,6 +223,11 @@ message TypeRefOrAnon {
         TLRecordDeclaration anon_record = 2;
         TLEnumDeclaration anon_enum = 3;
     }
+}
+
+message Hash {
+    fixed64 a = 1;
+    fixed64 b = 2;
 }
 
 // Any top level item

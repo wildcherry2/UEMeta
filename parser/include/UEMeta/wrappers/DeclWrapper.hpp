@@ -47,12 +47,6 @@ namespace UEMeta {
             : std::variant<llvm::StringRef, std::string>(decl->getNameAsString());
 
             occurrence_index = allocateDeclOccurrence();
-
-            content_hash = computeContentHash(context);
-            if (content_hash == 0) {
-                throw std::runtime_error("Invalid content hash!");
-            }
-
             is_anonymous = isAnonymous();
 
             clang::QualType qual_type = getQualType(context);
@@ -78,12 +72,14 @@ namespace UEMeta {
         llvm::StringRef documentation;
         std::variant<llvm::StringRef, std::string> simple_name;
         uint64_t occurrence_index{};
-        uint64_t content_hash{};
         uint64_t type_id{};
         std::string fqn{};
         bool is_anonymous{};
 
-        virtual uint64_t computeContentHash(clang::ASTContext& ctx) = 0;
+        virtual uint64_t computeContentHash(clang::ASTContext& ctx) {
+            return 0;
+        }
+
         virtual uint64_t computeTypeId(std::string_view fqn, clang::ASTContext& ctx) = 0;
         virtual bool isAnonymous() = 0;
         virtual clang::QualType getQualType(clang::ASTContext& ctx) = 0;
