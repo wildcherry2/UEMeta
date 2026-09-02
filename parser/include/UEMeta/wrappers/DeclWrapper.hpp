@@ -11,6 +11,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/AST/QualTypeNames.h"
+#include "boost/hash2/xxh3.hpp"
 
 namespace UEMeta {
 
@@ -21,8 +22,13 @@ namespace UEMeta {
     public:
         virtual ~DeclWrapper() noexcept = default;
         virtual void serialize(const std::filesystem::path& to_dir) = 0;
+        virtual clang::NamedDecl* getUnderlyingDecl() = 0;
         void addForwardDeclaration();
 
+        template<DerivedDeclType T>
+        T* getUnderlyingDeclAsOrNull() {
+            return llvm::dyn_cast_or_null<T>(getUnderlyingDecl());
+        }
     protected:
         std::vector<uint64_t> forward_declarations{};
         static uint64_t allocateDeclOccurrence();

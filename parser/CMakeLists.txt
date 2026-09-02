@@ -77,6 +77,11 @@ set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
     CACHE STRING "Protobuf Git tag fetched by CMake"
 )
+set(UEMETA_BOOST_VERSION "1.91.0" CACHE STRING "Boost release fetched by CMake")
+set(UEMETA_BOOST_GIT_TAG
+    "boost-${UEMETA_BOOST_VERSION}"
+    CACHE STRING "Boost Git tag fetched by CMake"
+)
 set(UEMETA_GOOGLETEST_VERSION "1.14.0" CACHE STRING "GoogleTest release fetched by CMake")
 set(UEMETA_GOOGLETEST_GIT_TAG
     "v${UEMETA_GOOGLETEST_VERSION}"
@@ -125,6 +130,19 @@ FetchContent_Declare(protobuf
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protobuf-${UEMETA_PROTOBUF_VERSION}"
     SYSTEM
 )
+
+# Hash2 is header-only, as are the Boost libraries it depends on. Fetch the
+# individual modules rather than the full Boost superproject to keep downloads
+# small and all revisions locked together.
+foreach(UEMETA_BOOST_LIBRARY IN ITEMS config mp11 describe container_hash assert hash2)
+    FetchContent_Declare(boost_${UEMETA_BOOST_LIBRARY}
+        GIT_REPOSITORY "https://github.com/boostorg/${UEMETA_BOOST_LIBRARY}.git"
+        GIT_TAG "${UEMETA_BOOST_GIT_TAG}"
+        GIT_PROGRESS TRUE
+        SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/boost-${UEMETA_BOOST_LIBRARY}-${UEMETA_BOOST_VERSION}"
+        SYSTEM
+    )
+endforeach()
 
 function(UEMeta_FetchContent_MakeAvailable name)
     string(TOLOWER "${name}" name_lc)
@@ -184,6 +202,16 @@ endfunction()
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
+
+# Individual Boost library CMake projects use this version from Boost's
+# superproject. Keep it defined while their projects are configured.
+set(BOOST_SUPERPROJECT_VERSION "${UEMETA_BOOST_VERSION}")
+UEMeta_FetchContent_MakeAvailable(boost_config)
+UEMeta_FetchContent_MakeAvailable(boost_mp11)
+UEMeta_FetchContent_MakeAvailable(boost_describe)
+UEMeta_FetchContent_MakeAvailable(boost_container_hash)
+UEMeta_FetchContent_MakeAvailable(boost_assert)
+UEMeta_FetchContent_MakeAvailable(boost_hash2)
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
@@ -370,6 +398,7 @@ target_link_libraries(parser PRIVATE
     clangFrontend
     clangASTMatchers
     CLI11::CLI11
+    Boost::hash2
     quill::quill
     protobuf::libprotobuf
 )
