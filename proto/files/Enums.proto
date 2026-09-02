@@ -9,14 +9,6 @@ enum RecordKind {
     RECORD_KIND_UNION = 3;
 }
 
-enum ForwardDeclarationKind {
-    FORWARD_DECLARATION_KIND_UNSPECIFIED = 0;
-    FORWARD_DECLARATION_KIND_CLASS = 1;
-    FORWARD_DECLARATION_KIND_STRUCT = 2;
-    FORWARD_DECLARATION_KIND_UNION = 3;
-    FORWARD_DECLARATION_KIND_ENUM = 4;
-}
-
 // The unscoped value also represents the absence of a scoped enum keyword.
 enum EnumScope {
     ENUM_SCOPE_UNSCOPED = 0;

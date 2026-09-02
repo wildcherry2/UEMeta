@@ -52,15 +52,6 @@ message TLEnumDeclaration {
     repeated Enumerator enumerators = 3;
 }
 
-// Top-level forward declaration.
-message TLForwardDeclaration {
-    DeclarationMetadata metadata = 1;
-    ForwardDeclarationKind kind = 2;
-    optional TemplateDetails template_details = 3;
-    // Populated only when kind is FORWARD_DECLARATION_KIND_ENUM.
-    optional EnumDetails enum_details = 4;
-}
-
 // Top-level alias declaration, including typedefs and using declarations.
 message TLAliasDeclaration {
     DeclarationMetadata metadata = 1;
@@ -79,10 +70,11 @@ message TLFreeFunctionDeclaration {
 message TLGlobalVariableDeclaration {
     DeclarationMetadata metadata = 1;
     optional TemplateDetails template_details = 2;
-    TypeRef type_ref = 3;
+    TypeRefOrAnon type_ref = 3;
     VersionedVariableStorageClass storage_class = 4;
     VersionedString default_value = 5;
     VersionedConstantEvaluationKind constant_evaluation_kind = 6;
+    bool is_anon_enum_value = 7;
 }
 
 message DeclarationMetadata {
@@ -90,8 +82,9 @@ message DeclarationMetadata {
     // The index of this declaration relative to the other declarations in the same file
     VersionedUint32 occurrence_index = 2;
     optional bool is_anonymous = 3;
-    string name = 4;
-    string qualified_name = 5;
+    // name might be missing if it's a special declaration or if it's anonymous
+    optional string name = 4;
+    optional string qualified_name = 5;
     VersionedString file_path = 6;
     VersionedString documentation = 7;
 
@@ -99,6 +92,8 @@ message DeclarationMetadata {
     // (template or function).
     // Identifies a unique type across all versions. TypeRefs may reference this type_id.
     uint64 type_id = 8;
+
+    repeated uint64 forward_declaration_occurrence_indices = 9;
 }
 
 // Shared by record, function, variable, alias, and forward-declaration
@@ -202,7 +197,7 @@ message Field {
     VersionedUint64 offset_bits = 7;
     VersionedUint64 content_hash = 8;
     VersionedString default_value = 9;
-    TypeRef type_ref = 10;
+    TypeRefOrAnon type_ref = 10;
     VersionedUint64 local_occurrence_index = 11;
 }
 
@@ -221,16 +216,24 @@ message TypeRef {
     VersionedUint64 type_id = 2;
 }
 
+// this doesn't need to be versioned as a whole if type_ids for fields and vars include their type in the hash
+message TypeRefOrAnon {
+    oneof value {
+        TypeRef type_ref = 1;
+        TLRecordDeclaration anon_record = 2;
+        TLEnumDeclaration anon_enum = 3;
+    }
+}
+
 // Any top level item
 message TLItem {
     oneof value {
         TLRecordDeclaration record = 1;
         TLEnumDeclaration enum_declaration = 2;
-        TLForwardDeclaration forward_declaration = 3;
-        TLAliasDeclaration alias = 4;
-        TLFreeFunctionDeclaration function = 5;
-        TLGlobalVariableDeclaration variable = 6;
-        TLFileData file_data = 7;
+        TLAliasDeclaration alias = 3;
+        TLFreeFunctionDeclaration function = 4;
+        TLGlobalVariableDeclaration variable = 5;
+        TLFileData file_data = 6;
     }
 }
 
