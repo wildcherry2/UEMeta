@@ -48,8 +48,15 @@ message TLRecordDeclaration {
 // Top-level enum declaration.
 message TLEnumDeclaration {
     DeclarationMetadata metadata = 1;
-    EnumDetails details = 2;
-    repeated Enumerator enumerators = 3;
+
+    // int, unsigned, long, etc.
+    // if missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values for unscoped, or int for scoped).
+    VersionedString underlying_type = 2;
+
+    // enum class/struct, if missing then the enum is unscoped.
+    optional EnumScope scope = 3;
+
+    repeated Enumerator enumerators = 4;
 }
 
 // Top-level alias declaration, including typedefs and using declarations.
@@ -83,17 +90,17 @@ message DeclarationMetadata {
     VersionedUint32 occurrence_index = 2;
     optional bool is_anonymous = 3;
     // name might be missing if it's a special declaration or if it's anonymous
-    optional string name = 4;
-    optional string qualified_name = 5;
-    VersionedString file_path = 6;
-    VersionedString documentation = 7;
+    optional string qualified_name = 4;
+    VersionedString file_path = 5;
+    VersionedString documentation = 6;
 
     // ID formed from the hash of the fully qualified name and equivalent of the forward declaration of this declaration without parameter names or parameter default values
     // (template or function).
     // Identifies a unique type across all versions. TypeRefs may reference this type_id.
-    Hash type_id = 8;
+    // May be missing if the declaration is anonymous
+    optional Hash type_id = 7;
 
-    repeated uint64 forward_declaration_occurrence_indices = 9;
+    repeated uint64 forward_declaration_occurrence_indices = 8;
 }
 
 // Shared by record, function, variable, alias, and forward-declaration
@@ -127,15 +134,6 @@ message TemplateParameter {
     optional TypeRef default_type = 6;
 
     repeated TemplateParameter parameters = 7;
-}
-
-message EnumDetails {
-    // int, unsigned, long, etc.
-    // if missing, the underlying type is implementation defined (usually the smallest primitive that can hold all values for unscoped, or int for scoped).
-    VersionedString underlying_type = 1;
-
-    // enum class/struct, if missing then the enum is unscoped.
-    optional EnumScope scope = 2;
 }
 
 // A function owned by a TLRecordDeclaration, including constructors,
