@@ -86,8 +86,8 @@ message TLGlobalVariableDeclaration {
 
 message DeclarationMetadata {
     VersionedUint64 content_hash = 1;
-    // The index of this declaration relative to the other declarations in the same file
-    VersionedUint32 occurrence_index = 2;
+    // The index of this declaration relative to the other declarations
+    VersionedUint64 occurrence_index = 2;
     optional bool is_anonymous = 3;
     // name might be missing if it's a special declaration or if it's anonymous
     optional string qualified_name = 4;
@@ -100,7 +100,7 @@ message DeclarationMetadata {
     // May be missing if the declaration is anonymous
     optional Hash type_id = 7;
 
-    repeated uint64 forward_declaration_occurrence_indices = 8;
+    repeated VersionedUint64List forward_declaration_occurrence_indices = 8;
 }
 
 // Shared by record, function, variable, alias, and forward-declaration
@@ -174,7 +174,7 @@ message Parameter {
 }
 
 message Enumerator {
-    VersionedString name = 1;
+    string name = 1;
     VersionedString documentation = 2;
     VersionedString value = 3;
 }

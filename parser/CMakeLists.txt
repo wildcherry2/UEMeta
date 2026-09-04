@@ -334,7 +334,8 @@ add_executable(parser
         ${UEMETA_PROTO_GENERATED_HEADERS}
         src/HeartbeatLogger.cpp
         src/wrappers/DeclWrapper.cpp
-        src/wrappers/EnumDeclWrapper.cpp)
+        src/wrappers/EnumDeclWrapper.cpp
+        src/wrappers/MessageAllocator.cpp)
 
 set_target_properties(parser PROPERTIES
     CXX_STANDARD 23
