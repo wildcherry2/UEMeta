@@ -36,11 +36,11 @@ namespace UEMeta {
     class DeclWrapper {
     public:
         // ReSharper disable once CppNonExplicitConvertingConstructor
-        DeclWrapper(const clang::NamedDecl* decl) : decl(decl) {}
+        DeclWrapper(const clang::NamedDecl* decl) : decl(decl), context(decl->getASTContext()) {}
         virtual ~DeclWrapper() noexcept = default;
         [[nodiscard]] virtual bool serialize(const std::filesystem::path& out_dir) const = 0;
         [[nodiscard]] virtual std::vector<google::protobuf::Message*> serialize() const = 0;
-        virtual void onVisit(clang::ASTContext& ctx);
+        virtual void compute();
 
         [[nodiscard]] const clang::NamedDecl* getUnderlyingDecl() const;
         void addForwardDeclaration();
@@ -64,6 +64,8 @@ namespace UEMeta {
         [[nodiscard]] const T* getUnderlyingUnsafe() const {
             return llvm::cast<T>(decl);
         }
+
+        clang::ASTContext& context;
     private:
         const clang::NamedDecl* decl;
         std::vector<uint64_t> forward_declarations{};

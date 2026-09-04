@@ -12,7 +12,7 @@ namespace UEMeta {
         [[nodiscard]] bool serialize(const std::filesystem::path &out_dir) const override;
         [[nodiscard]] std::vector<google::protobuf::Message*> serialize() const override;
 
-        void onVisit(clang::ASTContext &context) override;
+        void compute() override;
 
     protected:
         [[nodiscard]] Hash computeTypeId(std::string_view fqn, clang::ASTContext &ctx) const override;

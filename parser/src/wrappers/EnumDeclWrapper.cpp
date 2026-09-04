@@ -53,8 +53,8 @@ std::vector<google::protobuf::Message*> UEMeta::EnumDeclWrapper::serialize() con
     // TODO reuse VarWrapper machinery
 }
 
-void UEMeta::EnumDeclWrapper::onVisit(clang::ASTContext& context) {
-    DeclWrapper::onVisit(context);
+void UEMeta::EnumDeclWrapper::compute() {
+    DeclWrapper::compute();
     const clang::EnumDecl* decl = Decl();
     clang::QualType underlying = decl->getIntegerType();
     if (underlying.isNull()) underlying = decl->getPromotionType();

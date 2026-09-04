@@ -7,7 +7,7 @@ UEMeta::Hash::Hash(boost::hash2::xxh3_128& hasher) {
     b = values[1];
 }
 
-void UEMeta::DeclWrapper::onVisit(clang::ASTContext& context) {
+void UEMeta::DeclWrapper::compute() {
     const clang::SourceManager& source_manager = context.getSourceManager();
     file_location = source_manager.getFilename(source_manager.getExpansionLoc(decl->getLocation()));
     if (const clang::RawComment* comment = context.getRawCommentForDeclNoCache(decl)) {
