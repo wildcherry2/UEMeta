@@ -38,7 +38,15 @@ namespace UEMeta {
         || std::same_as<T, ParserTypes::VersionedInt64>;
 
     template<std::integral ValueType, PrimitiveVersionedIntegral MessageType>
-    void SetVersionedInteger(MessageType* p_msg, ValueType value) {
+    void SetVersionedInteger(MessageType* p_msg, ValueType value) { //todo transition to SetVersioned
+        const std::string& version_str = Config::GetConfig().Version();
+        auto* p_version = p_msg->add_versions();
+        p_version->add_source_versions(version_str);
+        p_version->set_value(value);
+    }
+
+    template<typename MessageType, typename ValueType>
+    void SetVersioned(MessageType* p_msg, ValueType value) {
         const std::string& version_str = Config::GetConfig().Version();
         auto* p_version = p_msg->add_versions();
         p_version->add_source_versions(version_str);
@@ -53,4 +61,6 @@ namespace UEMeta {
             p_version->add_value(value);
         }
     }
+
+    static uint64_t allocateDeclOccurrence();
 }

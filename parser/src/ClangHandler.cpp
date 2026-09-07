@@ -410,6 +410,9 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clan
 
             void Initialize(clang::ASTContext &Context) override {
                 UEM_INFO("Starting TU '{}' parsing (this may take a moment)!", tu_name);
+                clang::PrintingPolicy pp{Context.getPrintingPolicy()};
+                pp.FullyQualifiedName = true;
+                Context.setPrintingPolicy(pp);
                 parse_logger.Start();
             }
 

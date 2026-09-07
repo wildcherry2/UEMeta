@@ -35,17 +35,17 @@ file(MAKE_DIRECTORY
     "${UEMETA_DEPENDENCY_LOCK_ROOT}"
 )
 
-set(UEMETA_LLVM_VERSION "22.1.6" CACHE STRING "LLVM release fetched by CMake")
+set(UEMETA_LLVM_VERSION "23.1.0" CACHE STRING "LLVM release fetched by CMake")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(UEMETA_LLVM_DEFAULT_PACKAGE "LLVM-${UEMETA_LLVM_VERSION}-Linux-X64")
     set(UEMETA_LLVM_DEFAULT_PREBUILT_URL_HASH
-        "SHA256=c5ac8ef89ca39d30cb32e9b83772f995dd891c685ebc188d593c943a64d5f8b5"
+        "SHA256=18da30f77f475688a18f7704d23f9f155ae007ed9922dbed6850a9419d9fec8c"
     )
 elseif(WIN32)
     set(UEMETA_LLVM_DEFAULT_PACKAGE "clang+llvm-${UEMETA_LLVM_VERSION}-x86_64-pc-windows-msvc")
     set(UEMETA_LLVM_DEFAULT_PREBUILT_URL_HASH
-        "SHA256=657343edf361ca463bd642e39c74b251c6338b96cdbd55ff277555298b027696"
+        "SHA256=5799ebeca6870e9e61d5b4c8bc869ca8490e8db55f22d1388c4545404864d9e3"
     )
 else()
     message(FATAL_ERROR "No LLVM prebuilt package is configured for ${CMAKE_SYSTEM_NAME}")
@@ -62,6 +62,9 @@ set(UEMETA_LLVM_PREBUILT_URL_HASH
     "${UEMETA_LLVM_DEFAULT_PREBUILT_URL_HASH}"
     CACHE STRING "LLVM binary release archive hash"
 )
+set(UEMETA_LLVM_LIBXML2_VERSION "2.9.12" CACHE STRING "libxml2 release used by the LLVM Windows archive")
+set(UEMETA_LLVM_ZLIB_VERSION "1.3.2" CACHE STRING "zlib release used by the LLVM Windows archive")
+set(UEMETA_LLVM_ZSTD_VERSION "1.5.7" CACHE STRING "zstd release used by the LLVM Windows archive")
 set(UEMETA_CLI11_VERSION "2.6.2" CACHE STRING "CLI11 release fetched by CMake")
 set(UEMETA_CLI11_GIT_TAG
     "37bb6edc5317e99af72ef48405e65d9ca5218861"
@@ -76,6 +79,11 @@ set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to gen
 set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
     CACHE STRING "Protobuf Git tag fetched by CMake"
+)
+set(UEMETA_ABSEIL_VERSION "20250512.1" CACHE STRING "Abseil release fetched by CMake")
+set(UEMETA_ABSEIL_GIT_TAG
+    "${UEMETA_ABSEIL_VERSION}"
+    CACHE STRING "Abseil Git tag fetched by CMake"
 )
 set(UEMETA_BOOST_VERSION "1.91.0" CACHE STRING "Boost release fetched by CMake")
 set(UEMETA_BOOST_GIT_TAG
@@ -107,6 +115,34 @@ FetchContent_Declare(llvm_prebuilt
     SOURCE_SUBDIR cmake-do-not-add
 )
 
+if(WIN32)
+    # LLVM's Windows library archive was built against these static libraries,
+    # but does not bundle them. Its exported targets reference their canonical
+    # CMake target names, so make the matching dependencies available first.
+    FetchContent_Declare(llvm_libxml2
+        URL "https://gitlab.gnome.org/GNOME/libxml2/-/archive/v${UEMETA_LLVM_LIBXML2_VERSION}/libxml2-v${UEMETA_LLVM_LIBXML2_VERSION}.tar.gz"
+        URL_HASH "SHA256=98bfa7a9a5e2a75638422050740448ee9f02bf4dc2075c9822d7747d5ff9e617"
+        DOWNLOAD_DIR "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}/llvm_libxml2"
+        SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/llvm-libxml2-${UEMETA_LLVM_LIBXML2_VERSION}"
+        SYSTEM
+    )
+    FetchContent_Declare(llvm_zlib
+        URL "https://github.com/madler/zlib/releases/download/v${UEMETA_LLVM_ZLIB_VERSION}/zlib-${UEMETA_LLVM_ZLIB_VERSION}.tar.gz"
+        URL_HASH "SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
+        DOWNLOAD_DIR "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}/llvm_zlib"
+        SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/llvm-zlib-${UEMETA_LLVM_ZLIB_VERSION}"
+        SYSTEM
+    )
+    FetchContent_Declare(llvm_zstd
+        URL "https://github.com/facebook/zstd/releases/download/v${UEMETA_LLVM_ZSTD_VERSION}/zstd-${UEMETA_LLVM_ZSTD_VERSION}.tar.gz"
+        URL_HASH "SHA256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3"
+        DOWNLOAD_DIR "${UEMETA_DEPENDENCY_DOWNLOAD_ROOT}/llvm_zstd"
+        SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/llvm-zstd-${UEMETA_LLVM_ZSTD_VERSION}"
+        SOURCE_SUBDIR build/cmake
+        SYSTEM
+    )
+endif()
+
 FetchContent_Declare(cli11
     GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
     GIT_TAG "${UEMETA_CLI11_GIT_TAG}"
@@ -128,6 +164,14 @@ FetchContent_Declare(protobuf
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
     GIT_PROGRESS TRUE
     SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/protobuf-${UEMETA_PROTOBUF_VERSION}"
+    SYSTEM
+)
+
+FetchContent_Declare(absl
+    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+    GIT_TAG "${UEMETA_ABSEIL_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/abseil-${UEMETA_ABSEIL_VERSION}"
     SYSTEM
 )
 
@@ -199,7 +243,97 @@ function(UEMeta_AppendTargetInterfaceIncludes target)
     endif()
 endfunction()
 
+if(MSVC)
+    # The official LLVM Windows archive is release-built with /MT and STL debug
+    # iterators disabled, so every static dependency in the final binary must
+    # use the same runtime even for the Debug preset.
+    set(UEMETA_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
+
 UEMeta_FetchContent_MakeAvailable(llvm_prebuilt)
+
+if(WIN32)
+    block(SCOPE_FOR VARIABLES)
+        set(BUILD_SHARED_LIBS OFF)
+        set(LIBXML2_WITH_C14N OFF)
+        set(LIBXML2_WITH_CATALOG OFF)
+        set(LIBXML2_WITH_DEBUG OFF)
+        set(LIBXML2_WITH_DOCB OFF)
+        set(LIBXML2_WITH_FTP OFF)
+        set(LIBXML2_WITH_HTML OFF)
+        set(LIBXML2_WITH_HTTP OFF)
+        set(LIBXML2_WITH_ICONV OFF)
+        set(LIBXML2_WITH_ICU OFF)
+        set(LIBXML2_WITH_ISO8859X OFF)
+        set(LIBXML2_WITH_LEGACY OFF)
+        set(LIBXML2_WITH_LZMA OFF)
+        set(LIBXML2_WITH_MEM_DEBUG OFF)
+        set(LIBXML2_WITH_MODULES OFF)
+        set(LIBXML2_WITH_OUTPUT ON)
+        set(LIBXML2_WITH_PATTERN OFF)
+        set(LIBXML2_WITH_PROGRAMS OFF)
+        set(LIBXML2_WITH_PUSH OFF)
+        set(LIBXML2_WITH_PYTHON OFF)
+        set(LIBXML2_WITH_READER OFF)
+        set(LIBXML2_WITH_REGEXPS OFF)
+        set(LIBXML2_WITH_RUN_DEBUG OFF)
+        set(LIBXML2_WITH_SAX1 ON)
+        set(LIBXML2_WITH_SCHEMAS OFF)
+        set(LIBXML2_WITH_SCHEMATRON OFF)
+        set(LIBXML2_WITH_TESTS OFF)
+        set(LIBXML2_WITH_THREADS ON)
+        set(LIBXML2_WITH_THREAD_ALLOC OFF)
+        set(LIBXML2_WITH_TREE ON)
+        set(LIBXML2_WITH_VALID OFF)
+        set(LIBXML2_WITH_WRITER OFF)
+        set(LIBXML2_WITH_XINCLUDE OFF)
+        set(LIBXML2_WITH_XPATH OFF)
+        set(LIBXML2_WITH_XPTR OFF)
+        set(LIBXML2_WITH_ZLIB OFF)
+        UEMeta_FetchContent_MakeAvailable(llvm_libxml2)
+
+        set(ZLIB_BUILD_TESTING OFF)
+        set(ZLIB_BUILD_SHARED OFF)
+        set(ZLIB_BUILD_STATIC ON)
+        set(ZLIB_INSTALL OFF)
+        UEMeta_FetchContent_MakeAvailable(llvm_zlib)
+
+        set(ZSTD_BUILD_PROGRAMS OFF)
+        set(ZSTD_BUILD_TESTS OFF)
+        set(ZSTD_BUILD_STATIC ON)
+        set(ZSTD_BUILD_SHARED OFF)
+        UEMeta_FetchContent_MakeAvailable(llvm_zstd)
+
+        if(NOT TARGET LibXml2::LibXml2 AND TARGET LibXml2)
+            add_library(LibXml2::LibXml2 ALIAS LibXml2)
+        endif()
+        if(NOT TARGET ZLIB::ZLIB AND TARGET zlibstatic)
+            add_library(ZLIB::ZLIB ALIAS zlibstatic)
+        endif()
+        if(NOT TARGET zstd::libzstd_static AND TARGET libzstd_static)
+            add_library(zstd::libzstd_static ALIAS libzstd_static)
+        endif()
+
+        if(MSVC)
+            UEMeta_ConfigureMSVCDependencyTargets(
+                "${llvm_libxml2_SOURCE_DIR}"
+                "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+                ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
+            )
+            UEMeta_ConfigureMSVCDependencyTargets(
+                "${llvm_zlib_SOURCE_DIR}"
+                "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+                ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
+            )
+            UEMeta_ConfigureMSVCDependencyTargets(
+                "${llvm_zstd_SOURCE_DIR}/build/cmake"
+                "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+                ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
+            )
+        endif()
+    endblock()
+endif()
+
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
 
@@ -212,6 +346,10 @@ UEMeta_FetchContent_MakeAvailable(boost_describe)
 UEMeta_FetchContent_MakeAvailable(boost_container_hash)
 UEMeta_FetchContent_MakeAvailable(boost_assert)
 UEMeta_FetchContent_MakeAvailable(boost_hash2)
+
+set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+UEMeta_FetchContent_MakeAvailable(absl)
 
 set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_CONFORMANCE OFF CACHE BOOL "" FORCE)
@@ -228,10 +366,11 @@ UEMeta_AppendTargetInterfaceIncludes(
 )
 
 if(MSVC)
-    # The official LLVM Windows archive is release-built with /MT and STL debug
-    # iterators disabled, so every static dependency in the final binary must
-    # use the same runtime even for the Debug preset.
-    set(UEMETA_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    UEMeta_ConfigureMSVCDependencyTargets(
+        "${absl_SOURCE_DIR}"
+        "${UEMETA_MSVC_RUNTIME_LIBRARY}"
+        ${UEMETA_MSVC_EXTERNAL_DISABLED_WARNINGS}
+    )
     UEMeta_ConfigureMSVCDependencyTargets(
         "${protobuf_SOURCE_DIR}"
         "${UEMETA_MSVC_RUNTIME_LIBRARY}"
@@ -242,12 +381,29 @@ endif()
 set(LLVM_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/llvm" CACHE PATH "" FORCE)
 set(Clang_DIR "${llvm_prebuilt_SOURCE_DIR}/lib/cmake/clang" CACHE PATH "" FORCE)
 
+if(WIN32)
+    # The source targets above satisfy these dependencies. Prevent LLVM's
+    # installed config from redundantly searching for already-built packages.
+    set(CMAKE_DISABLE_FIND_PACKAGE_ZLIB TRUE)
+    set(CMAKE_DISABLE_FIND_PACKAGE_zstd TRUE)
+    set(CMAKE_DISABLE_FIND_PACKAGE_LibXml2 TRUE)
+    set(CMAKE_DISABLE_FIND_PACKAGE_DIASDK TRUE)
+endif()
+
 find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 
+if(WIN32)
+    unset(CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
+    unset(CMAKE_DISABLE_FIND_PACKAGE_zstd)
+    unset(CMAKE_DISABLE_FIND_PACKAGE_LibXml2)
+    unset(CMAKE_DISABLE_FIND_PACKAGE_DIASDK)
+endif()
+
 separate_arguments(UEMETA_LLVM_DEFINITIONS UNIX_COMMAND "${LLVM_DEFINITIONS}")
 
-# The Windows release archive records the release builder's DIA SDK path.
+# The Windows release archive either records the release builder's DIA SDK path
+# or references the DIASDK::Diaguids target without ensuring that it exists.
 if(MSVC AND TARGET LLVMDebugInfoPDB)
     find_library(UEMETA_DIAGUIDS_LIBRARY
         NAMES diaguids
@@ -262,6 +418,13 @@ if(MSVC AND TARGET LLVMDebugInfoPDB)
     )
 
     if(UEMETA_DIAGUIDS_LIBRARY)
+        if(NOT TARGET DIASDK::Diaguids)
+            add_library(DIASDK::Diaguids STATIC IMPORTED)
+            set_target_properties(DIASDK::Diaguids PROPERTIES
+                IMPORTED_LOCATION "${UEMETA_DIAGUIDS_LIBRARY}"
+            )
+        endif()
+
         get_target_property(_uemeta_pdb_links LLVMDebugInfoPDB INTERFACE_LINK_LIBRARIES)
         set(_uemeta_fixed_pdb_links)
 
@@ -333,9 +496,11 @@ add_executable(parser
         ${UEMETA_PROTO_GENERATED_SOURCES}
         ${UEMETA_PROTO_GENERATED_HEADERS}
         src/HeartbeatLogger.cpp
-        src/wrappers/DeclWrapper.cpp
         src/wrappers/EnumDeclWrapper.cpp
-        src/wrappers/MessageAllocator.cpp)
+        src/wrappers/MessageAllocator.cpp
+        src/wrappers/VarDeclWrapper.cpp
+        src/wrappers/Types.cpp
+        src/wrappers/DeclDb.cpp)
 
 set_target_properties(parser PROPERTIES
     CXX_STANDARD 23
@@ -400,6 +565,7 @@ target_link_libraries(parser PRIVATE
     clangASTMatchers
     CLI11::CLI11
     Boost::hash2
+    absl::flat_hash_map
     quill::quill
     protobuf::libprotobuf
 )
