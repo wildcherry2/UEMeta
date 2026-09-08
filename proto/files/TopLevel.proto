@@ -86,6 +86,10 @@ message DeclarationMetadata {
     VersionedUint64 occurrence_index = 1;
     optional bool is_anonymous = 2;
     // name might be missing if it's a special declaration or if it's anonymous
+    // note special handling for operators, especially conversion operators: 
+    //  namespace A { struct Result; }
+    //  namespace B { struct Source { operator A::Result(); }; }
+    //  is serialized as ::B::Source::operator ::A::Result
     optional string qualified_name = 3;
     VersionedString file_path = 4;
     VersionedString documentation = 5;
@@ -152,7 +156,7 @@ message MemberFunction {
 // like `FunctionDefinitionKind` or `is_explicit`, but it simplifies the processing this way
 message FunctionCommon {
     FunctionKind kind = 1;
-    optional TypeRef return_type = 2; // assume 'auto' if not given and not ctor/dtor; note that inline functions can have an anonymous deduced return type, but that's not accounted for currently
+    optional VersionedTypeRef return_type = 2; // assume 'auto' if not given and not ctor/dtor; note that inline functions can have an anonymous deduced return type, but that's not accounted for currently
     VersionedFunctionStorageClass storage_class = 3;
     VersionedConstantEvaluationKind consteval_kind = 4;
     optional bool is_explicit = 5; // only set for ctors and conversion ops

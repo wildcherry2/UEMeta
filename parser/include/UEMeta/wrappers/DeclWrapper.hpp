@@ -18,7 +18,7 @@ namespace UEMeta {
     class DeclWrapper {
     public:
         virtual ~DeclWrapper() noexcept = default;
-
+// update to take in optional T*? qne make out_dir optional?
         virtual void serialize(const std::filesystem::path &out_dir) const = 0;
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
@@ -79,7 +79,9 @@ namespace UEMeta {
             if (!params || !p_msg) throw std::invalid_argument("Parameters are not valid!");
 
             p_msg->set_specialization_kind(getTemplateSpecializationKind());
-            if (!get_if<false>(&primary_template_id) && !std::get_if<std::monostate>(&primary_template_id)) {
+            const bool* unresolved_primary = get_if<bool>(&primary_template_id);
+            if ((!unresolved_primary || *unresolved_primary)
+                && !std::get_if<std::monostate>(&primary_template_id)) {
                 putTypeRef(decl->getDeclName().isIdentifier() ? decl->getName().str() : decl->getNameAsString(), primary_template_id, p_msg->mutable_primary_template_decl_id());
             }
 
@@ -185,7 +187,7 @@ namespace UEMeta {
 
         const T* decl;
     private:
-        ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() requires TemplateSpecializableDeclType<T> {
+        ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires TemplateSpecializableDeclType<T> {
             switch (decl->getTemplateSpecializationKind()) {
                 case clang::TSK_Undeclared:
                     return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
@@ -202,11 +204,11 @@ namespace UEMeta {
             }
         }
 
-        ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() requires (!TemplateSpecializableDeclType<T>) {
+        ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires (!TemplateSpecializableDeclType<T>) {
             return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
         }
 
-        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::TypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) {
+        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::TypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
             if (def.getKind() == clang::TemplateArgument::Type) {
                 return putType(def.getAsType(), p_def, id_out_ptr);
             }
@@ -223,7 +225,9 @@ namespace UEMeta {
         void putType(const clang::QualType type, ParserTypes::TypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
             std::string fqn = clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
             if (id_out_ptr) id_out_ptr->emplace_back(fqn);
-            const DeclDb::QueryResult result = DeclDb::queryType(type);
+            const clang::QualType template_resolved_type = resolveTemplatedInstantiation(type);
+            const DeclDb::QueryResult result = DeclDb::queryType(
+                template_resolved_type.isNull() ? type : template_resolved_type);
             putTypeRef(fqn, result, p_def);
         }
     };
