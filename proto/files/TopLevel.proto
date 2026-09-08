@@ -157,10 +157,11 @@ message FunctionCommon {
     VersionedFunctionStorageClass storage_class = 3;
     VersionedConstantEvaluationKind consteval_kind = 4;
     optional bool is_explicit = 5; // only set for ctors and conversion ops
-    VersionedString inline_definition = 6;
-    optional TemplateDetails template_details = 7;
-    repeated Parameter parameters = 8;
-    optional FunctionDefinitionKind definition_kind = 9; // only set for functions that are deletable/defaultable
+    optional bool is_friend = 6;
+    VersionedString inline_definition = 7;
+    optional TemplateDetails template_details = 8;
+    repeated Parameter parameters = 9;
+    optional FunctionDefinitionKind definition_kind = 10; // only set for functions that are deletable/defaultable
 }
 
 message Parameter {
