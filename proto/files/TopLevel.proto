@@ -146,7 +146,6 @@ message MemberFunction {
     VersionedUint64 vtable_index = 7;
     VersionedInt64 vtable_offset = 8;
     VersionedString name = 9;
-    VersionedUint64 content_hash = 10;
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,
@@ -168,7 +167,6 @@ message Parameter {
     VersionedString name = 1;
     TypeRef type_ref = 2;
     VersionedString default_value = 3;
-    VersionedUint64 content_hash = 4;
 }
 
 message Enumerator {
@@ -191,10 +189,9 @@ message Field {
 
     // may also be missing if there's no layout
     VersionedUint64 offset_bits = 7;
-    VersionedUint64 content_hash = 8;
-    VersionedString default_value = 9;
-    TypeRefOrAnon type_ref = 10;
-    VersionedUint64 local_occurrence_index = 11;
+    VersionedString default_value = 8;
+    TypeRefOrAnon type_ref = 9;
+    VersionedUint64 local_occurrence_index = 10;
 }
 
 message BaseSpecifier {
