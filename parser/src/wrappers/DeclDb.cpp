@@ -127,7 +127,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
         if (isDeclInSystemOrStdHeader(decl)) return;
         if (isDeclInSystemOrStdHeader(decl->getTemplateInstantiationPattern())) return;
         if (decl->isLocalVarDeclOrParm()) return;
-        if (decl->isCXXClassMember() && decl->getStorageDuration() != clang::SD_Static) return;
+        if (decl->isCXXClassMember() && decl->getStorageDuration() != clang::SD_Static) return; //todo might need to forgo statics for proper nested hashes in records
         if (failsImplicitSpecOption(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 

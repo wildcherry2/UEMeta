@@ -125,8 +125,10 @@ namespace UEMeta {
                             AppendOut(std::string_view{"..."});
                         }
                         if (non_type_param->hasDefaultArgument()) {
-                            llvm::raw_string_ostream os {*p_param->mutable_default_value()};
+                            std::string out;
+                            llvm::raw_string_ostream os {out};
                             non_type_param->getDefaultArgument().getArgument().print(decl->getASTContext().getPrintingPolicy(), os, true);
+                            SetVersionedString(p_param->mutable_default_value(), out);
                         }
                     }
                     else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
@@ -214,9 +216,13 @@ namespace UEMeta {
             return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
         }
 
-        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::TypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
+        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
+            ParserTypes::VersionedTypeRef_VersionItem* p_version = p_def->add_versions();
+            p_version->add_source_versions(Config::GetConfig().Version());
+            ParserTypes::TypeRef* p_type_ref = p_version->mutable_value();
+
             if (def.getKind() == clang::TemplateArgument::Type) {
-                return putType(def.getAsType(), p_def, id_out_ptr);
+                return putType(def.getAsType(), p_type_ref, id_out_ptr);
             }
 
             // we only call this when we're dealing with type and template params,
@@ -224,8 +230,8 @@ namespace UEMeta {
             std::string out;
             llvm::raw_string_ostream os {out};
             def.print(decl->getASTContext().getPrintingPolicy(), os, true);
-            SetVersionedString(p_def->mutable_type_name(), out);
-            p_def->set_is_builtin_or_template(true);
+            SetVersionedString(p_type_ref->mutable_type_name(), out);
+            p_type_ref->set_is_builtin_or_template(true);
         }
 
         void putType(const clang::QualType type, ParserTypes::TypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {

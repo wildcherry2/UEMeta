@@ -9,6 +9,7 @@ namespace UEMeta {
         explicit EnumDeclWrapper(const clang::EnumDecl *decl) : DeclWrapper(decl) {}
         ~EnumDeclWrapper() noexcept override = default;
 
+        using DeclWrapper::serialize;
     protected:
         void serialize(const std::filesystem::path &out_dir, ProtoType* out_msg) const override;
 

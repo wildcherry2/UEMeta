@@ -5,24 +5,6 @@ package ParserTypes;
 import "Enums.proto";
 import "VersionedPrimitives.proto";
 
-// Used directly for the .file payload emitted by declaration splitting.
-message TLFileData {
-    string path = 1;
-    uint64 path_hash = 2;
-    VersionedUint32 file_occurrence = 3;
-    // these are the qualified name hashes of the types defined by this file, excluding forward declarations.
-    // you could use this to reconstruct the necessary includes for a file, rather than transitively including all headers
-    VersionedUint64List defined_type_hashes = 4;
-
-    // these are the qualified name hashes of the forward declarations in this file. they're excluded from the defined_types because
-    // they don't have a definition in this file, but they may be necessary if a file that includes this file depends on it
-    VersionedUint64List forward_declaration_hashes = 5;
-
-    // these are the full paths to 'builtin' includes that this file uses. Includes are considered builtin by the parser
-    // depending on the CLI arguments; these includes are consistent and always available, so they aren't tracked (like std/STL)
-    VersionedStringList builtin_includes = 6;
-}
-
 // Top-level record declaration (class/struct/union).
 message TLRecordDeclaration {
     DeclarationMetadata metadata = 1;
@@ -37,10 +19,11 @@ message TLRecordDeclaration {
     VersionedInt64 size_bytes = 5;
     // May be missing if the alignment is unknown (e.g. templates).
     VersionedInt64 align_bytes = 6;
+    // fields are added in order
     repeated Field fields = 7;
-    // hashes of records, enums, forward decls, static fields, and aliases that are 
+    // hashes of records, enums, and static fields that are 
     // nested within this record. this is not recursive; just direct nested declarations
-    VersionedUint64List nested_hashes = 8;
+    optional VersionedHashList nested_hashes = 8;
     repeated BaseSpecifier bases = 9;
     repeated MemberFunction methods = 10;
 }
@@ -129,10 +112,10 @@ message TemplateParameter {
     optional bool is_parameter_pack = 4;
 
     // when kind == TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the raw default value, if given
-    optional string default_value = 5; // potential weak point: this is a string, but it could implicate types that don't match `type` through polymorphic behavior
+    optional VersionedString default_value = 5; // potential weak point: this is a string, but it could implicate types that don't match `type` through polymorphic behavior
 
     // when kind != TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the default type, if given
-    optional TypeRef default_type = 6;
+    optional VersionedTypeRef default_type = 6;
 
     repeated TemplateParameter parameters = 7;
 }
@@ -149,7 +132,7 @@ message MemberFunction {
     VersionedBool is_deleted = 6;
     VersionedUint64 vtable_index = 7;
     VersionedInt64 vtable_offset = 8;
-    VersionedString name = 9;
+    string name = 9;
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,
@@ -159,8 +142,8 @@ message FunctionCommon {
     optional VersionedTypeRef return_type = 2; // assume 'auto' if not given and not ctor/dtor; note that inline functions can have an anonymous deduced return type, but that's not accounted for currently
     VersionedFunctionStorageClass storage_class = 3;
     VersionedConstantEvaluationKind consteval_kind = 4;
-    optional bool is_explicit = 5; // only set for ctors and conversion ops
-    optional bool is_friend = 6;
+    optional VersionedBool is_explicit = 5; // only settable for ctors and conversion ops
+    optional VersionedBool is_friend = 6;
     VersionedString inline_definition = 7;
     optional TemplateDetails template_details = 8;
     repeated Parameter parameters = 9;
@@ -194,12 +177,11 @@ message Field {
     // may also be missing if there's no layout
     VersionedUint64 offset_bits = 7;
     VersionedString default_value = 8;
-    TypeRefOrAnon type_ref = 9;
-    VersionedUint64 local_occurrence_index = 10;
+    VersionedTypeRefOrAnon type_ref = 9;
 }
 
 message BaseSpecifier {
-    AccessSpecifier access = 1;
+    VersionedAccessSpecifier access = 1;
     VersionedBool is_virtual = 2;
     VersionedUint64 offset = 3;
     TypeRef type_ref = 4;
@@ -207,7 +189,7 @@ message BaseSpecifier {
 
 message TypeRef {
     // type as declared, with qualifiers attached (including cvref, pointers, arrays, and namespace resolution)
-    VersionedString type_name = 1;
+    VersionedString type_name = 1; //todo maybe make this nonversioned
 
     oneof id {
         // identifier for the type; points to a serialized TL* type
@@ -232,6 +214,9 @@ message TypeRefOrAnon {
         TLEnumDeclaration anon_enum = 3;
     }
 }
+
+// general 'versioned' logic: if the field is part of the hashed string in the decl_id, it shouldn't be versioned,
+// otherwise it should be versioned
 
 // two versions of a TypeRef are the same if they have the same type_id; their type_name 
 // can still differ between versions, which is accounted for by the fact that type_name is versioned
@@ -270,6 +255,15 @@ message Hash {
     fixed64 b = 2;
 }
 
+message VersionedHashList {
+    message VersionItem {
+        repeated string source_versions = 1;
+        repeated Hash value = 2;
+    }
+
+    repeated VersionItem versions = 1;
+}
+
 // Any top level item
 message TLItem {
     oneof value {
@@ -277,7 +271,6 @@ message TLItem {
         TLEnumDeclaration enum_declaration = 2;
         TLFreeFunctionDeclaration function = 3;
         TLGlobalVariableDeclaration variable = 4;
-        TLFileData file_data = 5;
     }
 }
 

@@ -52,6 +52,16 @@ namespace UEMeta {
         p_version->set_value(value);
     }
 
+    inline void SetVersionedBool(ParserTypes::VersionedBool* p_msg, const bool value) {
+        const std::string& version_str = Config::GetConfig().Version();
+        if (value) {
+            p_msg->add_true_versions(version_str);
+        }
+        else {
+            p_msg->add_false_versions(version_str);
+        }
+    }
+
     inline void SetVersionedUint64List(ParserTypes::VersionedUint64List* p_msg, const std::vector<uint64_t>& value_vec) {
         const std::string& version_str = Config::GetConfig().Version();
         auto* p_version = p_msg->add_versions();

@@ -28,14 +28,14 @@ void UEMeta::FunctionDeclWrapper::putFunctionCommon(ParserTypes::FunctionCommon*
 
     if (const auto* constructor = llvm::dyn_cast<clang::CXXConstructorDecl>(decl)) {
         p_msg->set_kind(ParserTypes::FUNCTION_KIND_CONSTRUCTOR);
-        p_msg->set_is_explicit(constructor->isExplicit());
+        SetVersionedBool(p_msg->mutable_is_explicit(), constructor->isExplicit());
     }
     else if (llvm::isa<clang::CXXDestructorDecl>(decl)) {
         p_msg->set_kind(ParserTypes::FUNCTION_KIND_DESTRUCTOR);
     }
     else if (const auto* conversion = llvm::dyn_cast<clang::CXXConversionDecl>(decl)) {
         p_msg->set_kind(ParserTypes::FUNCTION_KIND_MEMBER_CONVERSION);
-        p_msg->set_is_explicit(conversion->isExplicit());
+        SetVersionedBool(p_msg->mutable_is_explicit(), conversion->isExplicit());
     }
     else if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(decl)) {
         p_msg->set_kind(method->isStatic()
@@ -72,7 +72,7 @@ void UEMeta::FunctionDeclWrapper::putFunctionCommon(ParserTypes::FunctionCommon*
             : ParserTypes::CONSTANT_EVALUATION_NONE);
 
     if (decl->getFriendObjectKind() != clang::Decl::FOK_None) {
-        p_msg->set_is_friend(true);
+        SetVersionedBool(p_msg->mutable_is_friend(), true);
     }
 
     if (decl->doesThisDeclarationHaveABody()) {
