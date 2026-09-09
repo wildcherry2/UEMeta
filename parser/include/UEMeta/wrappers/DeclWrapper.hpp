@@ -19,16 +19,22 @@ namespace UEMeta {
     public:
         using ProtoType = DeclToProtoTrait<T>::Type;
         virtual ~DeclWrapper() noexcept = default;
+        // note that subclasses may return nullptr under special circumstances
+        ProtoType *serialize(const std::filesystem::path &out_dir) const {
+            if (out_dir.empty() || !is_directory(out_dir)) throw std::invalid_argument("Out-of-directory path!");
+            return serialize(out_dir, getSingletonMessage<ProtoType>());
+        }
 
-        void serialize(const std::filesystem::path& out_dir) const { return serialize(out_dir, getSingletonMessage<ProtoType>()); }
-        void serialize(ProtoType* out_msg) const {
+        // note that subclasses may return nullptr under special circumstances
+        ProtoType *serialize(ProtoType *out_msg) const {
             if (!out_msg) throw std::invalid_argument("Can't serialize to null message!");
             return serialize({}, out_msg);
         }
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
         DeclWrapper(const T* decl) : decl(decl) {}
-        virtual void serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const = 0;
+        // under the public overloads, out_dir may or may not point to a directory, and out_msg is never nullptr
+        virtual ProtoType *serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const = 0;
 
         void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "", const Hash& decl_id = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();

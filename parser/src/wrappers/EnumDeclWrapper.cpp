@@ -5,7 +5,8 @@
 #include "clang/AST/QualTypeNames.h"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
-void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const {
+UEMeta::EnumDeclWrapper::ProtoType* UEMeta::EnumDeclWrapper::serialize(
+    const std::filesystem::path &out_dir, ProtoType *out_msg) const {
     // if it has a stable identity or depends on a declarator, serialize with global thread-local message allocation
     // and return it
     if (computeHasIdentity() || decl->isEmbeddedInDeclarator()) {
@@ -48,7 +49,7 @@ void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir, Pr
         }
 
         // todo do something with out_msg
-        return;
+        return out_msg;
     }
 
     // if it doesn't have a stable identity, then the enumerators will become owned by the nearest enclosing
@@ -60,6 +61,7 @@ void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir, Pr
     }
 
     // TODO reuse VarDeclWrapper machinery
+    return nullptr;
 }
 
 // enums don't have params or templates, so we just hash the fqn; exclude the underlying type since that's version
