@@ -6,6 +6,8 @@ import "Enums.proto";
 import "VersionedPrimitives.proto";
 
 // Top-level record declaration (class/struct/union).
+// If it's semantically anonymous, then its parts will bleed into the containing record rather than be serialized as an unidentifiable record,
+// similar to semantically anonymous enums getting split into static variables/fields.
 message TLRecordDeclaration {
   DeclarationMetadata metadata = 1;
   RecordKind kind = 2;
@@ -48,7 +50,7 @@ message TLFreeFunctionDeclaration {
   FunctionCommon common = 2;
 }
 
-// An independently tracked global-variable or static field declaration.
+// An independently tracked global-variable declaration.
 message TLGlobalVariableDeclaration {
   DeclarationMetadata metadata = 1;
   optional TemplateDetails template_details = 2;
@@ -139,6 +141,7 @@ message MemberFunction {
 
   // unique ID for this function, formed from the hash of the FQN, template param 'typename' and concrete types, and parameter types
   // effectively, the hash of a platform independent mangled name + template data.
+  // This is not in FunctionCommon because global functions have this in their DeclarationMetadata
   Hash func_id = 10;
 }
 
@@ -169,7 +172,7 @@ message Enumerator {
   VersionedString value = 3;
 }
 
-// A non-static data member owned by a TLRecordDeclaration.
+// A data member owned by a TLRecordDeclaration.
 message Field {
   string name = 1;
   VersionedString documentation = 2;
@@ -185,6 +188,9 @@ message Field {
   VersionedUint64 offset_bits = 7;
   VersionedString default_value = 8;
   VersionedTypeRefOrAnon type_ref = 9;
+  VersionedConstantEvaluationKind constant_evaluation_kind = 10;
+  VersionedVariableStorageClass storage_class = 11;
+  optional bool is_anon_enum_value = 12;
 }
 
 message BaseSpecifier {
