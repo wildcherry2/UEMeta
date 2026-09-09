@@ -20,15 +20,21 @@ namespace UEMeta {
         using ProtoType = DeclToProtoTrait<T>::Type;
         virtual ~DeclWrapper() noexcept = default;
 
-        void serialize(const std::filesystem::path& out_dir) const { return serialize(out_dir, getSingletonMessage<ProtoType>()); }
+        void serialize(const std::filesystem::path& out_dir) const {
+            if (out_dir.empty() || !is_directory(out_dir)) throw std::invalid_argument("Out-of-directory object!");
+            return serialize(out_dir, getSingletonMessage<ProtoType>());
+        }
+
         void serialize(ProtoType* out_msg) const {
             if (!out_msg) throw std::invalid_argument("Can't serialize to null message!");
             return serialize({}, out_msg);
         }
+
+        virtual void serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const = 0;
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
         DeclWrapper(const T* decl) : decl(decl) {}
-        virtual void serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const = 0;
+
 
         void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "", const Hash& decl_id = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();

@@ -9,10 +9,9 @@ namespace UEMeta {
         explicit EnumDeclWrapper(const clang::EnumDecl *decl) : DeclWrapper(decl) {}
         ~EnumDeclWrapper() noexcept override = default;
 
+        void serialize(const std::filesystem::path &out_dir, ProtoType* out_msg) const override;
         using DeclWrapper::serialize;
     protected:
-        void serialize(const std::filesystem::path &out_dir, ProtoType* out_msg) const override;
-
         [[nodiscard]] Hash computeDeclId(std::string_view fqn) const;
         [[nodiscard]] bool computeHasIdentity() const;
         [[nodiscard]] std::string computeFQN() const;
