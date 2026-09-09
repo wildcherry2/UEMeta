@@ -8,11 +8,10 @@
 #include "UEMeta/wrappers/DeclDb.hpp"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
-void UEMeta::FunctionDeclWrapper::serialize(const std::filesystem::path& out_dir) const {
-    ParserTypes::TLFreeFunctionDeclaration* p_msg = MessageAllocator::GetFreeFunction();
+void UEMeta::FunctionDeclWrapper::serialize(const std::filesystem::path& out_dir, ProtoType* out_msg) const {
     const std::string fqn = computeFQN();
-    putMetadata(p_msg->mutable_metadata(), true, fqn, computeDeclId(fqn));
-    putFunctionCommon(p_msg->mutable_common());
+    putMetadata(out_msg->mutable_metadata(), true, fqn, computeDeclId(fqn));
+    putFunctionCommon(out_msg->mutable_common());
 }
 
 void UEMeta::FunctionDeclWrapper::putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const {

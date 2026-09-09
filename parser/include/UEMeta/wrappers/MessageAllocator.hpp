@@ -1,17 +1,16 @@
 #pragma once
 #include "TopLevel.pb.h"
+#include "Types.hpp"
 #include "llvm/ADT/StringRef.h"
 #include "UEMeta/Cli.hpp"
 
 namespace UEMeta {
-    class MessageAllocator {
-    public:
-        static ParserTypes::TLEnumDeclaration* GetEnum();
-        static ParserTypes::TLFileData* GetFileData();
-        static ParserTypes::TLFreeFunctionDeclaration* GetFreeFunction();
-        static ParserTypes::TLRecordDeclaration* GetRecord();
-        static ParserTypes::TLGlobalVariableDeclaration* GetGlobalVariable();
-    };
+    template<std::derived_from<google::protobuf::Message> MessageType>
+    static MessageType* getSingletonMessage() {
+        thread_local MessageType p_msg;
+        p_msg.Clear();
+        return &p_msg;
+    }
 
     template<typename T>
     concept Stringish = std::same_as<T, llvm::StringRef> || std::same_as<T, std::string> || std::same_as<T, std::string_view>;

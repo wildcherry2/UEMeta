@@ -17,12 +17,18 @@ namespace UEMeta {
     template<WrapableDecl T>
     class DeclWrapper {
     public:
+        using ProtoType = DeclToProtoTrait<T>::Type;
         virtual ~DeclWrapper() noexcept = default;
-// update to take in optional T*? qne make out_dir optional?
-        virtual void serialize(const std::filesystem::path &out_dir) const = 0;
+
+        void serialize(const std::filesystem::path& out_dir) const { return serialize(out_dir, getSingletonMessage<ProtoType>()); }
+        void serialize(ProtoType* out_msg) const {
+            if (!out_msg) throw std::invalid_argument("Can't serialize to null message!");
+            return serialize({}, out_msg);
+        }
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
         DeclWrapper(const T* decl) : decl(decl) {}
+        virtual void serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const = 0;
 
         void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "", const Hash& decl_id = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();
@@ -187,7 +193,7 @@ namespace UEMeta {
 
         const T* decl;
     private:
-        ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires TemplateSpecializableDeclType<T> {
+        [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires TemplateSpecializableDeclType<T> {
             switch (decl->getTemplateSpecializationKind()) {
                 case clang::TSK_Undeclared:
                     return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
@@ -204,7 +210,7 @@ namespace UEMeta {
             }
         }
 
-        ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires (!TemplateSpecializableDeclType<T>) {
+        [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires (!TemplateSpecializableDeclType<T>) {
             return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
         }
 

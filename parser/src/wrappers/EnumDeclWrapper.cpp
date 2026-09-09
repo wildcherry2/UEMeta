@@ -5,15 +5,14 @@
 #include "clang/AST/QualTypeNames.h"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
-void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir) const {
+void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const {
     // if it has a stable identity or depends on a declarator, serialize with global thread-local message allocation
     // and return it
     if (computeHasIdentity() || decl->isEmbeddedInDeclarator()) {
-        ParserTypes::TLEnumDeclaration* p_msg = MessageAllocator::GetEnum();
         {
             const std::string fqn = computeFQN();
             const Hash decl_id = computeDeclId(fqn);
-            putMetadata(p_msg->mutable_metadata(), true, fqn, decl_id);
+            putMetadata(out_msg->mutable_metadata(), true, fqn, decl_id);
         }
         {
             clang::QualType underlying = decl->getIntegerType();
@@ -23,16 +22,16 @@ void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir) co
                 if (underlying_type.empty()) {
                     throw std::runtime_error("Underlying type of enumerator is unknown!");
                 }
-                SetVersionedString(p_msg->mutable_underlying_type(), underlying_type);
+                SetVersionedString(out_msg->mutable_underlying_type(), underlying_type);
             }
             else {
                 throw std::runtime_error("Underlying type of enumerator is unknown!");
             }
         }
 
-        p_msg->set_scope(!decl->isScoped() ? ParserTypes::ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ParserTypes::ENUM_SCOPE_CLASS : ParserTypes::ENUM_SCOPE_STRUCT);
+        out_msg->set_scope(!decl->isScoped() ? ParserTypes::ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ParserTypes::ENUM_SCOPE_CLASS : ParserTypes::ENUM_SCOPE_STRUCT);
         for (const clang::EnumConstantDecl* enumerator : decl->enumerators()) {
-            auto* p_enumerator = p_msg->add_enumerators();
+            auto* p_enumerator = out_msg->add_enumerators();
 
             if (decl->getDeclName().isIdentifier()) {
                 p_enumerator->set_name(decl->getName().str());
@@ -48,7 +47,7 @@ void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir) co
             SetVersionedString(p_enumerator->mutable_value(), llvm::toString(enumerator->getInitVal(), 10));
         }
 
-        // todo do something with p_msg
+        // todo do something with out_msg
         return;
     }
 

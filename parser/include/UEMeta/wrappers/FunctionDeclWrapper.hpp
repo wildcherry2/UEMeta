@@ -8,9 +8,8 @@ namespace UEMeta {
         explicit FunctionDeclWrapper(const clang::FunctionDecl* decl): DeclWrapper(decl) {}
         ~FunctionDeclWrapper() noexcept override = default;
 
-        void serialize(const std::filesystem::path& out_dir) const override;
-
     protected:
+        void serialize(const std::filesystem::path& out_dir, ProtoType *out_msg) const override;
         void putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const;
 
     private:

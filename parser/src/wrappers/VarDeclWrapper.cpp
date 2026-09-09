@@ -2,28 +2,27 @@
 #include "clang/AST/DeclTemplate.h"
 #include "UEMeta/wrappers/DeclDb.hpp"
 
-void UEMeta::VarDeclWrapper::serialize(const std::filesystem::path &out_dir) const {
-    ParserTypes::TLGlobalVariableDeclaration* p_msg = MessageAllocator::GetGlobalVariable();
+void UEMeta::VarDeclWrapper::serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const {
     const std::string fqn = computeFQN();
 
     // takes care of DeclarationMetadata, TemplateDetails, and type_ref
-    putMetadata(p_msg->mutable_metadata(), true, fqn, computeDeclIdWithTemplateDetailsAndType(fqn, p_msg));
+    putMetadata(out_msg->mutable_metadata(), true, fqn, computeDeclIdWithTemplateDetailsAndType(fqn, out_msg));
 
-    SetVersioned(p_msg->mutable_storage_class(),
+    SetVersioned(out_msg->mutable_storage_class(),
         decl->getTLSKind() != clang::VarDecl::TLS_None ? ParserTypes::VAR_STORAGE_CLASS_THREAD_LOCAL
         : decl->getStorageClass() == clang::SC_Static ? ParserTypes::VAR_STORAGE_CLASS_STATIC
         : decl->getStorageClass() == clang::SC_Extern && decl->isExternC() ? ParserTypes::VAR_STORAGE_CLASS_EXTERN_C
         : decl->getStorageClass() == clang::SC_Extern ? ParserTypes::VAR_STORAGE_CLASS_EXTERN
         : ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
 
-    SetVersioned(p_msg->mutable_constant_evaluation_kind(),
+    SetVersioned(out_msg->mutable_constant_evaluation_kind(),
         decl->isConstexpr() ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE);
 
     if (const auto* initializer = decl->getInit()) {
         std::string out;
         llvm::raw_string_ostream os(out);
         initializer->printPretty(os, nullptr, getASTContext().getPrintingPolicy());
-        SetVersionedString(p_msg->mutable_default_value(), out);
+        SetVersionedString(out_msg->mutable_default_value(), out);
     }
 }
 

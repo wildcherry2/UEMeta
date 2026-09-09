@@ -11,7 +11,10 @@
 
 namespace UEMeta {
     template<typename T>
-    concept WrapableDecl = std::derived_from<T, clang::NamedDecl>;
+    concept WrapableDecl = std::same_as<clang::VarDecl, T>
+        || std::same_as<clang::FunctionDecl, T>
+        || std::same_as<clang::EnumDecl, T>
+        || std::same_as<clang::RecordDecl, T>;
 
     template<typename T>
     concept TagDeclDerived = std::derived_from<T, clang::TagDecl>;
@@ -23,6 +26,29 @@ namespace UEMeta {
     };
 
     using AnyString = std::variant<std::string, std::string_view, llvm::StringRef>;
+
+    template<WrapableDecl T>
+    struct DeclToProtoTrait {};
+
+    template<>
+    struct DeclToProtoTrait<clang::VarDecl> {
+        using Type = ParserTypes::TLGlobalVariableDeclaration;
+    };
+
+    template<>
+    struct DeclToProtoTrait<clang::FunctionDecl> {
+        using Type = ParserTypes::TLFreeFunctionDeclaration;
+    };
+
+    template<>
+    struct DeclToProtoTrait<clang::EnumDecl> {
+        using Type = ParserTypes::TLEnumDeclaration;
+    };
+
+    template<>
+    struct DeclToProtoTrait<clang::RecordDecl> {
+        using Type = ParserTypes::TLRecordDeclaration;
+    };
 
     struct Hash {
         union {
