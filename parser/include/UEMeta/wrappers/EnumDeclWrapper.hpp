@@ -11,8 +11,7 @@ namespace UEMeta {
 
         using DeclWrapper::serialize;
     protected:
-        // returns nullptr if it's an anonymous enum, since that means each enumerator was serialized as a static variable
-        ProtoType* serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const override;
+        void serialize(const std::filesystem::path &out_dir, ProtoType* out_msg) const override;
 
         [[nodiscard]] Hash computeDeclId(std::string_view fqn) const;
         [[nodiscard]] bool computeHasIdentity() const;

@@ -10,7 +10,7 @@ namespace UEMeta {
 
         using DeclWrapper::serialize;
     protected:
-        ProtoType* serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const override;
+        void serialize(const std::filesystem::path& out_dir, ProtoType *out_msg) const override;
         void putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const;
 
     private:

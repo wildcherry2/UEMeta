@@ -2,8 +2,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "UEMeta/wrappers/DeclDb.hpp"
 
-UEMeta::VarDeclWrapper::ProtoType* UEMeta::VarDeclWrapper::serialize(
-    const std::filesystem::path &out_dir, ProtoType *out_msg) const {
+void UEMeta::VarDeclWrapper::serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const {
     const std::string fqn = computeFQN();
 
     // takes care of DeclarationMetadata, TemplateDetails, and type_ref
@@ -25,9 +24,6 @@ UEMeta::VarDeclWrapper::ProtoType* UEMeta::VarDeclWrapper::serialize(
         initializer->printPretty(os, nullptr, getASTContext().getPrintingPolicy());
         SetVersionedString(out_msg->mutable_default_value(), out);
     }
-
-    //todo handle file serialization
-    return out_msg;
 }
 
 std::string UEMeta::VarDeclWrapper::computeFQN() const {
