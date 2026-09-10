@@ -4,6 +4,7 @@
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace UEMeta {
@@ -11,7 +12,7 @@ namespace UEMeta {
     public:
         using QueryResult = std::variant<Hash, uint64_t, bool, llvm::StringRef, std::monostate>;
 
-        // DeclWrappers call this to bind a Decl to a Hash
+        // DeclWrappers call this to bind a themselves to a Hash globally
         static void addDeclIdentity(clang::Decl* decl, const Hash& hash);
 
         // returns Hash if the decl is mapped to a full declaration with that identity Hash,
@@ -32,7 +33,7 @@ namespace UEMeta {
         // note that this means forward declarations after the defining declaration are ignored
         static QueryResult queryType(clang::QualType type);
 
-        static void serializeIfNeeded(const clang::EnumDecl* decl);
+        static void serializeIfNeeded(clang::EnumDecl* decl);
         static void serializeIfNeeded(clang::VarDecl* decl);
     private:
         DeclDb() = default;
@@ -47,5 +48,12 @@ namespace UEMeta {
         // note that the vector should only have one Decl*, and it should be the same as the key Decl*.
         // this preserves the order of forward declarations and the actual declarations relative to each other
         static llvm::DenseMap<clang::Decl*, llvm::SmallVector<std::variant<uint64_t, clang::Decl*>>> decl_to_forward_decl_occurrence_map;
+
+        // Set of all visited Decls. Not all Decls get a Hash/identity, but are eligible for visitation
+        // anyways from the AST visitor, so we can use this to quickly skip over things we don't care about before
+        // using lengthier predicates. For instance, a static field in a class is a VarDecl, but we handle those
+        // during RecordDecl parsing, so we can check this set on each VarDecl visit to quickly skip over the
+        // double visit.
+        static llvm::DenseSet<clang::Decl*> visited_decls;
     };
 }

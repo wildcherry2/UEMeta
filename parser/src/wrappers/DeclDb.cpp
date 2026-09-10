@@ -30,6 +30,7 @@ void UEMeta::DeclDb::addDeclIdentity(clang::Decl* decl, const Hash& hash) {
     if (!decl) throw std::runtime_error("Can't addDeclIdentity with null Decl pointer!");
     decl_to_identity_map.insert({decl, hash});
     identity_to_decl_map.insert({hash, decl});
+    visited_decls.insert(decl);
 }
 
 UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryDeclIdentity(const clang::Decl* decl) {
@@ -91,14 +92,15 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(const clang::QualType type
     }
 }
 
-void UEMeta::DeclDb::serializeIfNeeded(const clang::EnumDecl* decl) {
+void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
     try {
         if (!decl) return;
+        if (visited_decls.contains(decl)) return;
+        visited_decls.insert(decl);
         if (isDeclInSystemOrStdHeader(decl)) return;
         // if this enum is completely anonymous and attached to a declarator (like a VarDecl or FieldDecl), we'll get it later
         if (isTagAnonymousAndEmbedded(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
-        if (decl_to_identity_map.contains(decl)) return;
 
         if (!decl->isThisDeclarationADefinition()) {
             auto* def = decl->getDefinition();
@@ -124,10 +126,12 @@ void UEMeta::DeclDb::serializeIfNeeded(const clang::EnumDecl* decl) {
 void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
     try {
         if (!decl) return;
+        if (visited_decls.contains(decl)) return;
+        visited_decls.insert(decl);
         if (isDeclInSystemOrStdHeader(decl)) return;
         if (isDeclInSystemOrStdHeader(decl->getTemplateInstantiationPattern())) return;
         if (decl->isLocalVarDeclOrParm()) return;
-        if (decl->isCXXClassMember() && decl->getStorageDuration() != clang::SD_Static) return; //todo might need to forgo statics for proper nested hashes in records
+        if (decl->isCXXClassMember()) return;
         if (failsImplicitSpecOption(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
