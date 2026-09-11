@@ -3,6 +3,7 @@
 #include "UEMeta/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 #include "UEMeta/wrappers/VarDeclWrapper.hpp"
+#include "boost/smart_ptr/local_shared_ptr.hpp"
 
 static bool isDeclInFunctionOrMethod(const clang::Decl* decl);
 static bool isDeclInSystemOrStdHeader(const clang::Decl* decl);
@@ -117,7 +118,8 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
             return;
         }
 
-        EnumDeclWrapper(decl).serialize(Config::GetConfig().OutputDirectory().UnderlyingPath());
+        const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
+        auto result = EnumDeclWrapper(decl, arena).serialize();
     } catch (std::exception& e) {
         UEM_ERROR("{}", e.what());
     }
@@ -135,7 +137,8 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
         if (failsImplicitSpecOption(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
-        VarDeclWrapper(decl).serialize(Config::GetConfig().OutputDirectory().UnderlyingPath());
+        const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
+        auto result = VarDeclWrapper(decl, arena).serialize();
     } catch (std::exception& e) {
         UEM_ERROR("{}", e.what());
     }

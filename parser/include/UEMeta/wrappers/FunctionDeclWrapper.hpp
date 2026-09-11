@@ -5,11 +5,10 @@
 namespace UEMeta {
     class FunctionDeclWrapper final : public DeclWrapper<clang::FunctionDecl> {
     public:
-        explicit FunctionDeclWrapper(const clang::FunctionDecl* decl): DeclWrapper(decl) {}
-        ~FunctionDeclWrapper() noexcept override = default;
+        FunctionDeclWrapper(const clang::FunctionDecl* const decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+            : DeclWrapper(decl, arena) {}
 
-        using DeclWrapper::serialize;
-        void serialize(const std::filesystem::path& out_dir, ProtoType *out_msg) const override;
+        [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* serialize() const;
     protected:
         void putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const;
 

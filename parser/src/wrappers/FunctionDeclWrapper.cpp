@@ -8,10 +8,12 @@
 #include "UEMeta/wrappers/DeclDb.hpp"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
-void UEMeta::FunctionDeclWrapper::serialize(const std::filesystem::path& out_dir, ProtoType* out_msg) const {
+ParserTypes::TLFreeFunctionDeclaration* UEMeta::FunctionDeclWrapper::serialize() const {
+    const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(arena.get());
     const std::string fqn = computeFQN();
     putMetadata(out_msg->mutable_metadata(), true, fqn, computeDeclId(fqn));
     putFunctionCommon(out_msg->mutable_common());
+    return out_msg;
 }
 
 void UEMeta::FunctionDeclWrapper::putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const {

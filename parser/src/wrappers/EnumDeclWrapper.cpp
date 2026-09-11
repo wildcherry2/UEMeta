@@ -5,10 +5,11 @@
 #include "clang/AST/QualTypeNames.h"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
-void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const {
+UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() const {
     // if it has a stable identity or depends on a declarator, serialize with global thread-local message allocation
     // and return it
     if (computeHasIdentity() || decl->isEmbeddedInDeclarator()) {
+        const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLEnumDeclaration>(arena.get());
         {
             const std::string fqn = computeFQN();
             const Hash decl_id = computeDeclId(fqn);
@@ -46,9 +47,7 @@ void UEMeta::EnumDeclWrapper::serialize(const std::filesystem::path &out_dir, Pr
 
             SetVersionedString(p_enumerator->mutable_value(), llvm::toString(enumerator->getInitVal(), 10));
         }
-
-        // todo do something with out_msg
-        return;
+        return out_msg;
     }
 
     // if it doesn't have a stable identity, then the enumerators will become owned by the nearest enclosing

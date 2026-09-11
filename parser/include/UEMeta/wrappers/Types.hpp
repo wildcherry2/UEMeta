@@ -25,6 +25,9 @@ namespace UEMeta {
         {a->getTemplateSpecializationKind()} -> std::same_as<clang::TemplateSpecializationKind>;
     };
 
+    template<typename T>
+    concept ProtoMessage = std::derived_from<T, google::protobuf::Message>;
+
     using AnyString = std::variant<std::string, std::string_view, llvm::StringRef>;
 
     template<WrapableDecl T>

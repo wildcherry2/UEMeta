@@ -2,15 +2,17 @@
 #include "UEMeta/wrappers/DeclWrapper.hpp"
 #include "TopLevel.pb.h"
 #include "clang/AST/Decl.h"
+#include <variant>
+#include <vector>
 
 namespace UEMeta {
     class EnumDeclWrapper final : public DeclWrapper<clang::EnumDecl> {
     public:
-        explicit EnumDeclWrapper(const clang::EnumDecl *decl) : DeclWrapper(decl) {}
-        ~EnumDeclWrapper() noexcept override = default;
+        using SerializeResult = std::variant<std::vector<ParserTypes::TLGlobalVariableDeclaration*>, ParserTypes::TLEnumDeclaration*>;
+        explicit EnumDeclWrapper(const clang::EnumDecl *decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+            : DeclWrapper(decl, arena) {}
 
-        void serialize(const std::filesystem::path &out_dir, ProtoType* out_msg) const override;
-        using DeclWrapper::serialize;
+        [[nodiscard]] SerializeResult serialize() const;
     protected:
         [[nodiscard]] Hash computeDeclId(std::string_view fqn) const;
         [[nodiscard]] bool computeHasIdentity() const;

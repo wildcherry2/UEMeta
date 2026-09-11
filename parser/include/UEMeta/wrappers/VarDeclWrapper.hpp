@@ -4,11 +4,9 @@
 namespace UEMeta {
     class VarDeclWrapper final : public DeclWrapper<clang::VarDecl> {
     public:
-        explicit VarDeclWrapper(const clang::VarDecl* decl): DeclWrapper(decl) {}
-        ~VarDeclWrapper() noexcept override = default;
-
-        using DeclWrapper::serialize;
-        void serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const override;
+        explicit VarDeclWrapper(const clang::VarDecl* decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+            : DeclWrapper(decl, arena) {}
+        [[nodiscard]] ParserTypes::TLGlobalVariableDeclaration* serialize() const;
     protected:
 
         [[nodiscard]] std::string computeFQN() const;

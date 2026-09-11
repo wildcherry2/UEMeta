@@ -12,29 +12,14 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/AST/DeclTemplate.h"
 #include "UEMeta/wrappers/Types.hpp"
+#include "boost/smart_ptr/local_shared_ptr.hpp"
 
 namespace UEMeta {
     template<WrapableDecl T>
     class DeclWrapper {
-    public:
-        using ProtoType = DeclToProtoTrait<T>::Type;
-        virtual ~DeclWrapper() noexcept = default;
-
-        void serialize(const std::filesystem::path& out_dir) const {
-            if (out_dir.empty() || !is_directory(out_dir)) throw std::invalid_argument("Out-of-directory object!");
-            return serialize(out_dir, getSingletonMessage<ProtoType>());
-        }
-
-        void serialize(ProtoType* out_msg) const {
-            if (!out_msg) throw std::invalid_argument("Can't serialize to null message!");
-            return serialize({}, out_msg);
-        }
-
-        virtual void serialize(const std::filesystem::path &out_dir, ProtoType *out_msg) const = 0;
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
-        DeclWrapper(const T* decl) : decl(decl) {}
-
+        DeclWrapper(const T* decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena) : decl(decl), arena(arena) {}
 
         void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "", const Hash& decl_id = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();
@@ -200,6 +185,7 @@ namespace UEMeta {
         [[nodiscard]] clang::ASTContext& getASTContext() const { return decl->getASTContext(); }
 
         const T* decl;
+        boost::local_shared_ptr<google::protobuf::Arena> arena;
     private:
         [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires TemplateSpecializableDeclType<T> {
             switch (decl->getTemplateSpecializationKind()) {

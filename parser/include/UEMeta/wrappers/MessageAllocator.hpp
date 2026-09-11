@@ -5,13 +5,6 @@
 #include "UEMeta/Cli.hpp"
 
 namespace UEMeta {
-    template<std::derived_from<google::protobuf::Message> MessageType>
-    static MessageType* getSingletonMessage() {
-        thread_local MessageType p_msg;
-        p_msg.Clear();
-        return &p_msg;
-    }
-
     template<typename T>
     concept Stringish = std::same_as<T, llvm::StringRef> || std::same_as<T, std::string> || std::same_as<T, std::string_view>;
 

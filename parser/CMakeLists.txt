@@ -175,10 +175,20 @@ FetchContent_Declare(absl
     SYSTEM
 )
 
-# Hash2 is header-only, as are the Boost libraries it depends on. Fetch the
-# individual modules rather than the full Boost superproject to keep downloads
-# small and all revisions locked together.
-foreach(UEMETA_BOOST_LIBRARY IN ITEMS config mp11 describe container_hash assert hash2)
+# Hash2 and SmartPtr are header-only, as are the Boost libraries they depend on.
+# Fetch the individual modules rather than the full Boost superproject to keep
+# downloads small and all revisions locked together.
+foreach(UEMETA_BOOST_LIBRARY IN ITEMS
+        config
+        mp11
+        describe
+        container_hash
+        assert
+        static_assert
+        core
+        throw_exception
+        hash2
+        smart_ptr)
     FetchContent_Declare(boost_${UEMETA_BOOST_LIBRARY}
         GIT_REPOSITORY "https://github.com/boostorg/${UEMETA_BOOST_LIBRARY}.git"
         GIT_TAG "${UEMETA_BOOST_GIT_TAG}"
@@ -345,7 +355,11 @@ UEMeta_FetchContent_MakeAvailable(boost_mp11)
 UEMeta_FetchContent_MakeAvailable(boost_describe)
 UEMeta_FetchContent_MakeAvailable(boost_container_hash)
 UEMeta_FetchContent_MakeAvailable(boost_assert)
+UEMeta_FetchContent_MakeAvailable(boost_static_assert)
+UEMeta_FetchContent_MakeAvailable(boost_core)
+UEMeta_FetchContent_MakeAvailable(boost_throw_exception)
 UEMeta_FetchContent_MakeAvailable(boost_hash2)
+UEMeta_FetchContent_MakeAvailable(boost_smart_ptr)
 
 set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
@@ -566,6 +580,7 @@ target_link_libraries(parser PRIVATE
     clangASTMatchers
     CLI11::CLI11
     Boost::hash2
+    Boost::smart_ptr
     absl::flat_hash_map
     quill::quill
     protobuf::libprotobuf
