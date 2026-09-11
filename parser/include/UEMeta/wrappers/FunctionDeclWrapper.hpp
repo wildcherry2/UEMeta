@@ -3,10 +3,11 @@
 #include "DeclWrapper.hpp"
 
 namespace UEMeta {
-    class FunctionDeclWrapper final : public DeclWrapper<clang::FunctionDecl> {
+    template<std::derived_from<clang::FunctionDecl> T = clang::FunctionDecl>
+    class FunctionDeclWrapper : public DeclWrapper<T> {
     public:
-        FunctionDeclWrapper(const clang::FunctionDecl* const decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
-            : DeclWrapper(decl, arena) {}
+        FunctionDeclWrapper(const T* const decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+            : DeclWrapper<T>(decl, arena) {}
 
         [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* serialize() const;
     protected:

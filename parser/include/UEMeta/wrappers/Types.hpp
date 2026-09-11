@@ -8,13 +8,15 @@
 #include "clang/Basic/Specifiers.h"
 #include "llvm/ADT/StringRef.h"
 #include "absl/hash/hash.h"
+#include "clang/AST/DeclCXX.h"
 
 namespace UEMeta {
     template<typename T>
     concept WrapableDecl = std::same_as<clang::VarDecl, T>
         || std::same_as<clang::FunctionDecl, T>
         || std::same_as<clang::EnumDecl, T>
-        || std::same_as<clang::RecordDecl, T>;
+        || std::same_as<clang::RecordDecl, T>
+        || std::same_as<clang::CXXMethodDecl, T>;
 
     template<typename T>
     concept TagDeclDerived = std::derived_from<T, clang::TagDecl>;
