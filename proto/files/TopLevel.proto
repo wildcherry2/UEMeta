@@ -5,6 +5,8 @@ package ParserTypes;
 import "Enums.proto";
 import "VersionedPrimitives.proto";
 
+// Be sure not to allocate optional messages until we know they're needed.
+
 // Top-level record declaration (class/struct/union).
 // If it's semantically anonymous, then its parts will bleed into the containing record rather than be serialized as an unidentifiable record,
 // similar to semantically anonymous enums getting split into static variables/fields.
@@ -12,22 +14,17 @@ message TLRecordDeclaration {
   DeclarationMetadata metadata = 1;
   RecordKind kind = 2;
   optional TemplateDetails template_details = 3;
-  // if set, then the record has all methods defined in this class are inlined in the header.
-  // this does not imply anything about parent classes though; inherited method definitions may not be defined in their header.
-  // this is useful to know since if a record is header only and doesn't change, then it can be simply copied completely, and
-  // if it has changed then you at least know that this class can be completely defined in the header.
-  VersionedBool is_complete_definition = 4;
   // May be missing if the size is unknown (e.g. templates).
-  VersionedInt64 size_bytes = 5;
+  optional VersionedInt64 size_bytes = 4;
   // May be missing if the alignment is unknown (e.g. templates).
-  VersionedInt64 align_bytes = 6;
+  optional VersionedInt64 align_bytes = 5;
   // fields are added in order
-  repeated Field fields = 7;
+  repeated Field fields = 6;
   // hashes of records, enums, and static fields that are 
   // nested within this record. this is not recursive; just direct nested declarations
-  optional VersionedHashList nested_hashes = 8;
-  repeated BaseSpecifier bases = 9;
-  repeated MemberFunction methods = 10;
+  optional VersionedHashList nested_hashes = 7;
+  repeated BaseSpecifier bases = 8;
+  repeated MemberFunction methods = 9;
 }
 
 // Top-level enum declaration.
@@ -77,7 +74,7 @@ message DeclarationMetadata {
   //  is serialized as ::B::Source::operator ::A::Result
   optional string qualified_name = 3;
   VersionedString file_path = 4;
-  VersionedString documentation = 5;
+  optional VersionedString documentation = 5;
 
   // ID formed from the hash of the fully qualified name and equivalent of the forward declaration of this declaration without parameter names or parameter default values
   // (template or function). Effectively, the hash of a platform independent mangled name.
@@ -168,25 +165,25 @@ message Parameter {
 
 message Enumerator {
   string name = 1;
-  VersionedString documentation = 2;
+  optional VersionedString documentation = 2;
   VersionedString value = 3;
 }
 
 // A data member owned by a TLRecordDeclaration.
 message Field {
   string name = 1;
-  VersionedString documentation = 2;
+  optional VersionedString documentation = 2;
   VersionedAccessSpecifier access = 3;
   VersionedBool is_mutable = 4;
   VersionedBool is_bitfield = 5;
 
   // if is_bitfield, then this is the bit width, otherwise this is the size of the field in the layout (same thing, really)
   // may be missing for non-bitfields if there's no layout (primary template)
-  VersionedUint64 bit_width = 6;
+  optional VersionedUint64 bit_width = 6;
 
   // may also be missing if there's no layout
-  VersionedUint64 offset_bits = 7;
-  VersionedString default_value = 8;
+  optional VersionedUint64 offset_bits = 7;
+  optional VersionedString default_value = 8;
   VersionedTypeRefOrAnon type_ref = 9;
   VersionedConstantEvaluationKind constant_evaluation_kind = 10;
   VersionedVariableStorageClass storage_class = 11;
