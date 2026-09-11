@@ -7,6 +7,20 @@ import "VersionedPrimitives.proto";
 
 // Be sure not to allocate optional messages until we know they're needed.
 
+// For anonymous things, we define 'syntactically' anonymous and 'semantically' anonymous as distinct cases.
+// Syntactically anonymous means that the declaration is anonymous by the standard's definition, and semantically
+// anonymous means that they're anonymous by our definition.
+// The difference is the concept of 'identity'. For instance, a syntactically anonymous enum like:
+// `enum { A, B, C } var;` has the anonymous enum `enum { A, B, C }`, but because we can tie its identity to the variable `var`,
+// it's not semantically anonymous. Without that `var`, it would be semantically anonymous because we have nothing to tie its identity to,
+// outside of the surrounding scope, which might be global or a record.
+// A declaration's identity is the hash of a 'platform independent' mangled name that's always guaranteed to exist, so if we can't stably mangle
+// it across versions (like semantically anonymous things), we have to tie it to its surrounding context on a case-by-case basis.
+// For instance, a semantically anonymous enum is serialized as a VariableGroup, where each enumerator is treated like a global variable for
+// serialization and identity purposes. The same goes for a global semantically anonymous union (global semantically anonymous structs and classes are forbidden by the standard).
+// Because the standard dictates that a semantically anonymous global union can only have fields, we can also treat them as global variables for serialization and identity purposes, and we can serialize them as a VariableGroup as well. The only difference is that the VariableGroup will have is_global_union = true, which indicates that the variables are actually fields of a global union rather than global variables themselves.
+// When something semantically anonymous is nested within a record, its contents are absorbed into the nearest non-anonymous record.
+
 // Top-level record declaration (class/struct/union).
 // If it's semantically anonymous, then its parts will bleed into the containing record rather than be serialized as an unidentifiable record,
 // similar to semantically anonymous enums getting split into static variables/fields.
@@ -286,4 +300,11 @@ message TLItem {
 
 message TLItemList {
   repeated TLItem items = 1;
+}
+
+// A group of variables, synthesized from a semantic global anonymous enum or a global (static) union.
+// Non-global anonymous enums and records are absorbed into their containing record, so they aren't represented by this.
+message VariableGroup {
+  repeated TLGlobalVariableDeclaration variables = 1;
+  optional bool is_global_union = 2;
 }

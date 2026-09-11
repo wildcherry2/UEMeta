@@ -35,6 +35,14 @@ namespace UEMeta {
 
         static void serializeIfNeeded(clang::EnumDecl* decl);
         static void serializeIfNeeded(clang::VarDecl* decl);
+
+        // Adds a new forward declaration for the given declaration.
+        // Throws if forDecl is not a definition.
+        // Does not add forDecl to the visited decls list, nor does it require that forDecl has been encountered/serialized already.
+        static void addForwardDeclaration(clang::TagDecl* forDecl);
+
+        // Marks the declaration as visited, ensuring that it won't be serialized multiple times.
+        static void addDeclarationAsVisited(clang::Decl* decl);
     private:
         DeclDb() = default;
 

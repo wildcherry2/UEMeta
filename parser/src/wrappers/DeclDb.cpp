@@ -109,12 +109,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
                 //todo log or something since this is an undefined enum
                 return;
             }
-            if (const auto other_decls = decl_to_forward_decl_occurrence_map.find(def); other_decls != decl_to_forward_decl_occurrence_map.end()) {
-                other_decls->second.emplace_back(allocateDeclOccurrence());
-            }
-            else {
-                decl_to_forward_decl_occurrence_map.insert({def, {std::variant<uint64_t, clang::Decl*>{allocateDeclOccurrence()}}});
-            }
+            addForwardDeclaration(def);
             return;
         }
 
@@ -142,6 +137,26 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
     } catch (std::exception& e) {
         UEM_ERROR("{}", e.what());
     }
+}
+
+void UEMeta::DeclDb::addForwardDeclaration(clang::TagDecl* forDecl) {
+    if (!forDecl || !forDecl->isThisDeclarationADefinition()) {
+        throw std::invalid_argument("Failed to addForwardDeclaration because the declaration is not a definition!");
+    }
+    if (const auto other_decls = decl_to_forward_decl_occurrence_map.find(forDecl); other_decls != decl_to_forward_decl_occurrence_map.end()) {
+        other_decls->second.emplace_back(allocateDeclOccurrence());
+    }
+    else {
+        decl_to_forward_decl_occurrence_map.insert({forDecl, {std::variant<uint64_t, clang::Decl*>{allocateDeclOccurrence()}}});
+    }
+}
+
+void UEMeta::DeclDb::addDeclarationAsVisited(clang::Decl* decl) {
+    if (!decl) {
+        throw std::invalid_argument("Failed to addDeclarationAsVisited because decl is null!");
+    }
+
+    visited_decls.insert(decl);
 }
 
 bool isDeclInFunctionOrMethod(const clang::Decl* decl) {

@@ -8,7 +8,7 @@
 namespace UEMeta {
     class EnumDeclWrapper final : public DeclWrapper<clang::EnumDecl> {
     public:
-        using SerializeResult = std::variant<std::vector<ParserTypes::TLGlobalVariableDeclaration*>, ParserTypes::TLEnumDeclaration*>;
+        using SerializeResult = std::variant<ParserTypes::VariableGroup*, ParserTypes::TLEnumDeclaration*>;
         explicit EnumDeclWrapper(const clang::EnumDecl *decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
             : DeclWrapper(decl, arena) {}
 
