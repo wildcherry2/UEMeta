@@ -13,6 +13,7 @@ namespace UEMeta {
             : DeclWrapper(decl, arena) {}
 
         [[nodiscard]] SerializeResult serialize() const;
+        // todo make overloads to serialize to fields/vars
     protected:
         [[nodiscard]] Hash computeDeclId(std::string_view fqn) const;
         [[nodiscard]] bool computeHasIdentity() const;

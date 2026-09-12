@@ -19,7 +19,7 @@ namespace UEMeta {
         using super = DeclWrapper<T>;
 
         [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* serialize() const {
-            const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(arena.get());
+            const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(super::arena.get());
             const std::string fqn = computeFQN();
             super::putMetadata(
                 out_msg->mutable_metadata(),
@@ -31,17 +31,6 @@ namespace UEMeta {
         }
     protected:
         void putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const {
-            const auto PutFunctionTypeRef = [this](const clang::QualType declared_type, ParserTypes::TypeRef* p_type_ref) {
-                const clang::QualType template_resolved_type = super::resolveTemplatedInstantiation(declared_type);
-                const DeclDb::QueryResult type_query = DeclDb::queryType(
-                    template_resolved_type.isNull() ? declared_type : template_resolved_type);
-                super::putTypeRef(
-                    clang::TypeName::getFullyQualifiedName(
-                        declared_type, super::getASTContext(), super::getASTContext().getPrintingPolicy(), true),
-                    type_query,
-                    p_type_ref);
-            };
-
             if (const auto* constructor = llvm::dyn_cast<clang::CXXConstructorDecl>(super::decl)) {
                 p_msg->set_kind(ParserTypes::FUNCTION_KIND_CONSTRUCTOR);
                 SetVersionedBool(p_msg->mutable_is_explicit(), constructor->isExplicit());
@@ -66,7 +55,7 @@ namespace UEMeta {
                 ParserTypes::VersionedTypeRef_VersionItem* return_type_version =
                     p_msg->mutable_return_type()->add_versions();
                 return_type_version->add_source_versions(Config::GetConfig().Version());
-                PutFunctionTypeRef(super::decl->getReturnType(), return_type_version->mutable_value());
+                putFunctionTypeRef(super::decl->getReturnType(), return_type_version->mutable_value());
             }
 
             SetVersioned(
@@ -109,7 +98,7 @@ namespace UEMeta {
                     SetVersionedString(p_parameter->mutable_name(), parameter->getNameAsString());
                 }
 
-                PutFunctionTypeRef(parameter->getType(), p_parameter->mutable_type_ref());
+                putFunctionTypeRef(parameter->getType(), p_parameter->mutable_type_ref());
 
                 if (parameter->hasDefaultArg() && !parameter->hasUnparsedDefaultArg()) {
                     if (const clang::Expr* default_argument = parameter->getDefaultArg()) {
@@ -131,15 +120,22 @@ namespace UEMeta {
             }
         }
 
-    private:
+        // Keep name and identity construction available to the member-function wrapper.
         [[nodiscard]] std::string computeFQN() const {
             std::string out;
             llvm::raw_string_ostream os{out};
             super::putContextFQN(os);
+            os << computeName();
+            return out;
+        }
 
+        // Conversion operators need a fully qualified target type in their name.
+        [[nodiscard]] std::string computeName() const {
+            std::string out;
+            llvm::raw_string_ostream os{out};
             if (const auto* conversion = llvm::dyn_cast<clang::CXXConversionDecl>(super::decl)) {
                 os << "operator " << clang::TypeName::getFullyQualifiedName(
-                    conversion->getConversionType(),
+                    conversion->getConversionType().getCanonicalType(),
                     super::getASTContext(),
                     super::getASTContext().getPrintingPolicy(),
                     true);
@@ -166,12 +162,21 @@ namespace UEMeta {
                 hasher.update(parameter_type.data(), parameter_type.size());
             }
 
+            // cv/ref qualifiers distinguish otherwise identical member overloads.
+            if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(super::decl)) {
+                if (method->isConst()) hasher.update(" const", 6);
+                if (method->isVolatile()) hasher.update(" volatile", 9);
+                if (method->getRefQualifier() == clang::RQ_LValue) hasher.update(" &", 2);
+                if (method->getRefQualifier() == clang::RQ_RValue) hasher.update(" &&", 3);
+            }
+
             const clang::FunctionTemplateDecl* described_template = super::decl->getDescribedFunctionTemplate();
             const clang::FunctionTemplateDecl* primary_template = nullptr;
             DeclDb::QueryResult primary_template_id{false};
             if (!described_template) {
                 primary_template = super::decl->getPrimaryTemplate();
-                if (primary_template) {
+                // Member func_ids are owned by records and are not top-level DeclDb identities.
+                if (primary_template && !llvm::isa<clang::CXXMethodDecl>(super::decl)) {
                     primary_template_id = DeclDb::queryDeclIdentity(primary_template->getTemplatedDecl());
                 }
             }
@@ -207,5 +212,28 @@ namespace UEMeta {
 
             return Hash{hasher};
         }
+
+    private:
+        // Keep function/method type spelling here; DeclDb owns declaration and pattern lookup.
+        void putFunctionTypeRef(clang::QualType declared_type, ParserTypes::TypeRef* p_type_ref) const {
+            super::putTypeRef(
+                clang::TypeName::getFullyQualifiedName(
+                    declared_type, super::getASTContext(), super::getASTContext().getPrintingPolicy(), true),
+                DeclDb::queryType(declared_type), p_type_ref);
+        }
+    };
+
+    // Member functions share function serialization but belong to their record's arena.
+    class MethodDeclWrapper final : public FunctionDeclWrapper<clang::CXXMethodDecl> {
+    public:
+        explicit MethodDeclWrapper(const clang::CXXMethodDecl* decl,
+                                   const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+            : FunctionDeclWrapper(decl, arena) {}
+
+        // The record supplies layout availability; dependent records have no vtable offsets.
+        [[nodiscard]] ParserTypes::MemberFunction* serialize(bool has_known_layout = false) const;
+
+    private:
+        void putVTableDetails(ParserTypes::MemberFunction* p_msg) const;
     };
 }

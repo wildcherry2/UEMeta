@@ -362,32 +362,24 @@ namespace UEMeta {
             }
         }
 
-        // Given a QualType, likely from a variable, field, param, or return value, gets the QualType of the instantiated
-        // template, if it exists. This is so fields like `vector<int>` get type ids equivalent to the `vector<T>` decl,
-        // rather than a (possibly skipped) generated `vector<int>` implicit specialization
-        [[nodiscard]] clang::QualType resolveTemplatedInstantiation(const clang::QualType in) const {
-            if (const auto as_record = in->getAsCXXRecordDecl()) {
-                if (const auto instantiated_from = as_record->getTemplateInstantiationPattern()) {
-                    if (const auto* partial = llvm::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(instantiated_from)) {
-                        return partial->getCanonicalInjectedSpecializationType(getASTContext());
-                    }
-
-                    if (const auto* primary = instantiated_from->getDescribedClassTemplate()) {
-                        return primary->getCanonicalInjectedSpecializationType(getASTContext());
-                    }
-                }
-            }
-
-            return clang::QualType{};
-        }
-
         [[nodiscard]] clang::ASTContext& getASTContext() const { return decl->getASTContext(); }
 
         const T* decl;
         boost::local_shared_ptr<google::protobuf::Arena> arena;
     private:
-        [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires TemplateSpecializableDeclType<T> {
-            switch (decl->getTemplateSpecializationKind()) {
+        [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const {
+            // Record wrappers accept C records too, so recover C++ template information dynamically.
+            clang::TemplateSpecializationKind kind = clang::TSK_Undeclared;
+            if constexpr (std::same_as<T, clang::RecordDecl>) {
+                if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+                    kind = cxx->getTemplateSpecializationKind();
+                }
+            }
+            else if constexpr (TemplateSpecializableDeclType<T>) {
+                kind = decl->getTemplateSpecializationKind();
+            }
+
+            switch (kind) {
                 case clang::TSK_Undeclared:
                     return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
                 case clang::TSK_ImplicitInstantiation:
@@ -401,10 +393,6 @@ namespace UEMeta {
                 default:
                     throw std::runtime_error("Unknown template specialization kind!");
             }
-        }
-
-        [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const requires (!TemplateSpecializableDeclType<T>) {
-            return ParserTypes::TEMPLATE_SPECIALIZATION_NONE;
         }
 
         void putTemplateRef(const clang::TemplateArgument& argument,
@@ -470,9 +458,8 @@ namespace UEMeta {
                     id_out_ptr->emplace_back(fqn);
                 }
             }
-            const clang::QualType template_resolved_type = resolveTemplatedInstantiation(type);
-            const DeclDb::QueryResult result = DeclDb::queryType(
-                template_resolved_type.isNull() ? type : template_resolved_type);
+            // DeclDb resolves generated instantiations to the source template/specialization declaration.
+            const DeclDb::QueryResult result = DeclDb::queryType(type);
             putTypeRef(fqn, result, p_def);
         }
     };

@@ -48,8 +48,8 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
 
     {
         const clang::QualType declared_type = decl->getType(); // this should always be what we print for the type's type_name
-        const clang::QualType template_resolved_type = resolveTemplatedInstantiation(declared_type); // type of the underlying primary or specialized template, if it exists
-        auto type_query = DeclDb::queryType(template_resolved_type.isNull() ? declared_type : template_resolved_type);
+        // Let DeclDb resolve instantiations to their source template/specialization declaration.
+        auto type_query = DeclDb::queryType(declared_type);
         if (get_if<std::monostate>(&type_query)) {
             throw std::runtime_error{"Failed to query global variable type (exception)!"};
         }

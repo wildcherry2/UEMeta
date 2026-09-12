@@ -207,7 +207,8 @@ message Enumerator {
 
 // A data member owned by a TLRecordDeclaration.
 message Field {
-  string name = 1;
+  // may be missing a name in unnamed bitfields (which is rarely used, but still)
+  optional string name = 1;
   optional VersionedString documentation = 2;
   VersionedAccessSpecifier access = 3;
   VersionedBool is_mutable = 4;

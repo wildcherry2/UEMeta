@@ -2,8 +2,11 @@
 
 #include "UEMeta/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
+#include "UEMeta/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/wrappers/VarDeclWrapper.hpp"
 #include "boost/smart_ptr/local_shared_ptr.hpp"
+#include "clang/AST/DeclTemplate.h"
+#include "clang/AST/Type.h"
 
 static bool isDeclInFunctionOrMethod(const clang::Decl* decl);
 static bool isDeclInSystemOrStdHeader(const clang::Decl* decl);
@@ -69,25 +72,58 @@ clang::Decl* UEMeta::DeclDb::queryDecl(const Hash& hash) {
     return decl_it->second;
 }
 
-UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(const clang::QualType type) {
+UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(clang::QualType type) {
     try {
-        if (type.isNull()) {
-            return false;
+        // Resolve aliases, then strip structural layers that have no declaration identity.
+        // Callers keep the original QualType for spelling; only this lookup peels Node*[N] to Node.
+        if (type.isNull()) return false;
+        type = type.getCanonicalType();
+        while (true) {
+            if (type->isPointerType() || type->isReferenceType()) {
+                type = type->getPointeeType();
+            }
+            else if (const auto* array = llvm::dyn_cast<clang::ArrayType>(type.getTypePtr())) {
+                type = array->getElementType();
+            }
+            else break;
         }
 
-        if (type->isBuiltinType() || type->isDependentType() || type->isTemplateTypeParmType()) {
-            return true;
+        // Select the source declaration BEFORE querying: a generated instantiation is never
+        // a reference target, even if it happens to have a registered hash. Clang's tag
+        // conversion already prefers the definition, matching the keys used by DeclDb.
+        if (const auto* target = type->getAsTagDecl()) {
+            if (const auto* record = llvm::dyn_cast<clang::CXXRecordDecl>(target)) {
+                // The pattern is the primary record or selected partial specialization, not
+                // necessarily the primary. Written primary/partial/explicit specializations
+                // have no instantiation pattern and retain their own declaration identity.
+                // Explicit instantiations also refer to their pattern; they are not explicit specializations.
+                if (const auto* pattern = record->getTemplateInstantiationPattern()) {
+                    target = pattern->getDefinitionOrSelf();
+                }
+                else if (const auto* specialization = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record);
+                         specialization && !llvm::isa<clang::ClassTemplatePartialSpecializationDecl>(specialization)
+                         && specialization->getSpecializationKind() != clang::TSK_ExplicitSpecialization) {
+                    // A use such as Box<int>* can exist before Clang selects an instantiation
+                    // pattern. Do not guess a primary/partial or query the generated placeholder.
+                    return false;
+                }
+            }
+            else if (const auto* enumeration = llvm::dyn_cast<clang::EnumDecl>(target)) {
+                // Enums instantiated as members of class templates likewise refer to the source enum.
+                if (const auto* pattern = enumeration->getTemplateInstantiationPattern()) {
+                    target = pattern->getDefinitionOrSelf();
+                }
+            }
+
+            // Preserve the selected declaration's hash, forward occurrence, header or error.
+            // An unknown selected pattern must not fall back to its generated instantiation.
+            const QueryResult result = queryDeclIdentity(target);
+            if (const bool* known = std::get_if<bool>(&result); !known || *known) return result;
         }
 
-        if (const clang::TagDecl *as_tag = type->getAsTagDecl()) {
-            return queryDeclIdentity(as_tag);
-        }
-
-        if (const clang::EnumDecl *as_enum = type->getAsEnumDecl()) {
-            return queryDeclIdentity(as_enum);
-        }
-
-        return false;
+        // Classify types without a known declaration only after identity lookup, so dependent
+        // record identities are not hidden by the generic builtin/template marker.
+        return type->isBuiltinType() || type->isDependentType() || type->isTemplateTypeParmType();
     } catch (...) {
         return std::monostate{};
     }
@@ -135,6 +171,38 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
         const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
         auto result = VarDeclWrapper(decl, arena).serialize();
     } catch (std::exception& e) {
+        UEM_ERROR("{}", e.what());
+    }
+}
+
+void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
+    try {
+        // Records already consumed by an enclosing wrapper must not be serialized again by the visitor.
+        if (!decl || visited_decls.contains(decl)) return;
+        visited_decls.insert(decl);
+        if (decl->isImplicit() || isDeclInSystemOrStdHeader(decl) || isDeclInFunctionOrMethod(decl)) return;
+        if (isTagAnonymousAndEmbedded(decl)) return;
+
+        // Honor instantiation filtering while preserving explicit and partial specializations.
+        // todo remove and deny by default when implicit option is taken out
+        if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
+            if (isDeclInSystemOrStdHeader(cxx->getTemplateInstantiationPattern())) return;
+            if (!Config::GetConfig().ProcessImplicitSpecializations()
+                && cxx->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) return;
+        }
+
+        // Semantically anonymous member storage is extracted by its nearest owning record.
+        if (decl->isAnonymousStructOrUnion()
+            && decl->getDeclContext()->getNonTransparentContext()->isRecord()) return;
+
+        // The wrapper registers forwards and named identities during its declaration walk.
+        //todo handle if decl is a forward declaration here instead
+        const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
+        const auto results = RecordDeclWrapper(decl, arena).serialize();
+        // TODO: Save results together with arena when the single-pass output sink is connected.
+        (void)results;
+    }
+    catch (const std::exception& e) {
         UEM_ERROR("{}", e.what());
     }
 }

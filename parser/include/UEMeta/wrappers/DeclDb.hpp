@@ -25,23 +25,36 @@ namespace UEMeta {
 
         static clang::Decl* queryDecl(const Hash& hash);
 
-        // returns Hash if the underlying type is mapped to a known full declaration with that identity Hash,
-        // string if it's from a system or std:: header,
-        // uint64_t if the underlying type is mapped to a forward declaration,
-        // true if the type is primitive, or false if we don't know the type at all
-        // monostate is returned on exception
-        // note that this means forward declarations after the defining declaration are ignored
+        // Query the declaration referenced by a type, resolving aliases and peeling pointers,
+        // references and arrays. Pass the original QualType; callers retain it for type spelling.
+        // References target source declarations, never generated instantiations. Before lookup,
+        // an instantiated record is mapped to its selected primary or partial-specialization
+        // declaration; a written explicit specialization retains its own declaration identity.
+        // This includes explicitly requested instantiations, which are not explicit specializations.
+        // Member enums instantiated from class templates likewise use their source enum declaration.
+        // A registered instantiation hash is ignored, even when its source declaration is unknown.
+        // If Clang has not selected a pattern for a generated specialization use, return false.
+        // These are read-only lookups: no definition is instantiated or serialized here.
+        //
+        // Returns Hash for a known serialized declaration, string for a system/std header,
+        // uint64_t for the latest forward occurrence, or monostate on exception.
+        // If no declaration result is known, returns true for builtin/dependent/template-parameter
+        // types, otherwise false. Dependent records with known identities return their identities.
+        // Forward declarations after a registered definition do not replace its hash.
         static QueryResult queryType(clang::QualType type);
 
         static void serializeIfNeeded(clang::EnumDecl* decl);
         static void serializeIfNeeded(clang::VarDecl* decl);
+        static void serializeIfNeeded(clang::RecordDecl* decl);
 
         // Adds a new forward declaration for the given declaration.
         // Throws if forDecl is not a definition.
         // Does not add forDecl to the visited decls list, nor does it require that forDecl has been encountered/serialized already.
         static void addForwardDeclaration(clang::TagDecl* forDecl);
 
-        // Marks the declaration as visited, ensuring that it won't be serialized multiple times.
+        // Marks a top-level output candidate as visited, preventing duplicate serialization.
+        // Wrappers use this for candidates they consume, such as nested records and enums;
+        // member-only nodes do not need marking just because a wrapper encounters them.
         static void addDeclarationAsVisited(clang::Decl* decl);
     private:
         DeclDb() = default;
@@ -57,11 +70,10 @@ namespace UEMeta {
         // this preserves the order of forward declarations and the actual declarations relative to each other
         static llvm::DenseMap<clang::Decl*, llvm::SmallVector<std::variant<uint64_t, clang::Decl*>>> decl_to_forward_decl_occurrence_map;
 
-        // Set of all visited Decls. Not all Decls get a Hash/identity, but are eligible for visitation
-        // anyways from the AST visitor, so we can use this to quickly skip over things we don't care about before
-        // using lengthier predicates. For instance, a static field in a class is a VarDecl, but we handle those
-        // during RecordDecl parsing, so we can check this set on each VarDecl visit to quickly skip over the
-        // double visit.
+        // Declarations already considered by the top-level entry points or consumed by wrappers.
+        // Visitation does not imply an identity: an embedded anonymous record has no standalone
+        // hash, but must still be skipped when the outer visitor reaches its RecordDecl.
+        // Class-member eligibility filters handle static fields/methods without wrapper-side entries.
         static llvm::DenseSet<clang::Decl*> visited_decls;
     };
 }

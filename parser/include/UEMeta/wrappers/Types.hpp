@@ -13,6 +13,7 @@
 namespace UEMeta {
     template<typename T>
     concept WrapableDecl = std::same_as<clang::VarDecl, T>
+        || std::same_as<clang::FieldDecl, T>
         || std::same_as<clang::FunctionDecl, T>
         || std::same_as<clang::EnumDecl, T>
         || std::same_as<clang::RecordDecl, T>

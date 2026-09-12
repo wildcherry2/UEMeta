@@ -513,6 +513,8 @@ add_executable(parser
         src/wrappers/EnumDeclWrapper.cpp
         src/wrappers/MessageAllocator.cpp
         src/wrappers/VarDeclWrapper.cpp
+        src/wrappers/MethodDeclWrapper.cpp
+        src/wrappers/RecordDeclWrapper.cpp
         src/wrappers/Types.cpp
         src/wrappers/DeclDb.cpp)
 
