@@ -42,6 +42,10 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
     boost::hash2::xxh3_128 hasher;
     hasher.update(fqn.data(), fqn.size());
 
+    const clang::VarTemplateDecl* described_template = decl->getDescribedVarTemplate();
+    const auto* specialization = llvm::dyn_cast<clang::VarTemplateSpecializationDecl>(decl);
+    const auto* partial_specialization = llvm::dyn_cast<clang::VarTemplatePartialSpecializationDecl>(decl);
+
     {
         const clang::QualType declared_type = decl->getType(); // this should always be what we print for the type's type_name
         const clang::QualType template_resolved_type = resolveTemplatedInstantiation(declared_type); // type of the underlying primary or specialized template, if it exists
@@ -59,20 +63,29 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
         std::string type_name = clang::TypeName::getFullyQualifiedName(declared_type, getASTContext(),
                                                                  getASTContext().getPrintingPolicy(), true);
         putTypeRef(type_name, type_query, type_ref);
-        if (decl->getDescribedVarTemplate()) [[unlikely]] {
+        if (described_template || specialization) [[unlikely]] {
             hasher.update(type_name.data(), type_name.size());
         }
     }
 
+    const clang::TemplateParameterList* declared_params = described_template
+        ? described_template->getTemplateParameters()
+        : partial_specialization
+            ? partial_specialization->getTemplateParameters()
+            : nullptr;
+    const clang::TemplateArgumentList* specialization_args = specialization
+        ? &specialization->getTemplateArgs()
+        : nullptr;
 
-    if (decl->getDescribedVarTemplate()) [[unlikely]] {
+    if (declared_params || specialization_args) [[unlikely]] {
         std::vector<AnyString> out;
-        DeclDb::QueryResult resolved_primary_template = decl->getTemplateSpecializationKind() == clang::TSK_Undeclared
-            ? DeclDb::QueryResult{false}
-            : DeclDb::queryDeclIdentity(decl->getTemplateInstantiationPattern());
+        const DeclDb::QueryResult resolved_primary_template = specialization
+            ? DeclDb::queryDeclIdentity(specialization->getSpecializedTemplate()->getTemplatedDecl())
+            : DeclDb::QueryResult{false};
 
-        putTemplateDetails(decl->getDescribedVarTemplate()->getTemplateParameters(),
+        putTemplateDetails(declared_params,
             p_msg->mutable_template_details(),
+            specialization_args,
             resolved_primary_template,
             &out);
 

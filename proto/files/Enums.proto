@@ -71,11 +71,24 @@ enum ConstantEvaluationKind {
 
 enum TemplateParameterKind {
     TEMPLATE_PARAMETER_KIND_UNSPECIFIED = 0;
+    // Indicates a generic template parameter with the typename keyword, like `T` in `template<typename T> class Foo`
     TEMPLATE_PARAMETER_KIND_TYPENAME = 1;
+    // Indicates a generic template parameter with the class keyword, like `T` in `template<class T> class Foo`
     TEMPLATE_PARAMETER_KIND_CLASS = 2;
+    // Inidicates a non-type template parameter, like `N` in `template<int N> class Foo`
     TEMPLATE_PARAMETER_KIND_NON_TYPE = 3;
+    // Indicates a nested template list of some sort, declared with the 'typename' keyword
     TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE = 4;
+    // Indicates a nested template list of some sort, declared with the 'class' keyword
     TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE = 5;
+    // In a specialized parameter list, this is a generic template parameter carried over from the main template parameter list
+    TEMPLATE_PARAMETER_KIND_SPEC_GENERIC = 6;
+    // In a specialized parameter list, this is a non-generic type placed in the list (like substituting `int` for `T` in `template<typename T> class Foo<int>`)
+    TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TYPE = 7;
+    // In a specialized parameter list, this is a non-generic value placed in the list (like substituting `5` for `N` in `template<int N> class Foo<5>`)
+    TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_VALUE = 8;
+    // In a specialized parameter list, this is a template substituted in for a template-template parameter
+    TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TEMPLATE = 9;
 }
 
 enum TemplateSpecializationKind {

@@ -21,7 +21,11 @@ namespace UEMeta {
         [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* serialize() const {
             const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(arena.get());
             const std::string fqn = computeFQN();
-            super::putMetadata(out_msg->mutable_metadata(), true, fqn, computeDeclId(fqn));
+            super::putMetadata(
+                out_msg->mutable_metadata(),
+                true,
+                fqn,
+                computeDeclIdWithTemplateDetails(fqn, out_msg->mutable_common()));
             putFunctionCommon(out_msg->mutable_common());
             return out_msg;
         }
@@ -96,18 +100,6 @@ namespace UEMeta {
                 }
             }
 
-            if (const clang::FunctionTemplateDecl* described_template = super::decl->getDescribedFunctionTemplate()) {
-                super::putTemplateDetails(
-                    described_template->getTemplateParameters(),
-                    p_msg->mutable_template_details());
-            }
-            else if (const clang::FunctionTemplateDecl* primary_template = super::decl->getPrimaryTemplate()) {
-                super::putTemplateDetails(
-                    primary_template->getTemplateParameters(),
-                    p_msg->mutable_template_details(),
-                    DeclDb::queryDeclIdentity(primary_template->getTemplatedDecl()));
-            }
-
             for (const clang::ParmVarDecl* parameter : super::decl->parameters()) {
                 ParserTypes::Parameter* p_parameter = p_msg->add_parameters();
                 if (parameter->getDeclName().isIdentifier()) {
@@ -159,7 +151,9 @@ namespace UEMeta {
             return out;
         }
 
-        [[nodiscard]] Hash computeDeclId(std::string_view fqn) const {
+        [[nodiscard]] Hash computeDeclIdWithTemplateDetails(
+            std::string_view fqn,
+            ParserTypes::FunctionCommon* p_msg) const {
             boost::hash2::xxh3_128 hasher;
             boost::hash2::hash_append(hasher, boost::hash2::endian::little, fqn);
 
@@ -172,15 +166,29 @@ namespace UEMeta {
                 hasher.update(parameter_type.data(), parameter_type.size());
             }
 
-            const clang::FunctionTemplateDecl* function_template = super::decl->getDescribedFunctionTemplate();
-            if (!function_template) function_template = super::decl->getPrimaryTemplate();
-            if (function_template) {
-                ParserTypes::TemplateDetails template_details;
+            const clang::FunctionTemplateDecl* described_template = super::decl->getDescribedFunctionTemplate();
+            const clang::FunctionTemplateDecl* primary_template = nullptr;
+            DeclDb::QueryResult primary_template_id{false};
+            if (!described_template) {
+                primary_template = super::decl->getPrimaryTemplate();
+                if (primary_template) {
+                    primary_template_id = DeclDb::queryDeclIdentity(primary_template->getTemplatedDecl());
+                }
+            }
+
+            const clang::TemplateParameterList* declared_params = described_template
+                ? described_template->getTemplateParameters()
+                : nullptr;
+            const clang::TemplateArgumentList* specialization_args =
+                super::decl->getTemplateSpecializationArgs();
+
+            if (declared_params || specialization_args) {
                 std::vector<AnyString> template_identity;
                 super::putTemplateDetails(
-                    function_template->getTemplateParameters(),
-                    &template_details,
-                    DeclDb::QueryResult{false},
+                    declared_params,
+                    p_msg->mutable_template_details(),
+                    specialization_args,
+                    primary_template_id,
                     &template_identity);
 
                 for (const AnyString& str : template_identity) {
@@ -195,14 +203,6 @@ namespace UEMeta {
                     }
                 }
 
-                if (const clang::TemplateArgumentList* arguments = super::decl->getTemplateSpecializationArgs()) {
-                    for (const clang::TemplateArgument& argument : arguments->asArray()) {
-                        std::string out;
-                        llvm::raw_string_ostream os{out};
-                        argument.print(super::getASTContext().getPrintingPolicy(), os, true);
-                        boost::hash2::hash_append(hasher, boost::hash2::endian::little, out);
-                    }
-                }
             }
 
             return Hash{hasher};

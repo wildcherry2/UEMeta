@@ -102,11 +102,12 @@ message DeclarationMetadata {
 message TemplateDetails {
   // params should always be added in order of appearance
   repeated TemplateParameter parameters = 1;
-  TemplateSpecializationKind specialization_kind = 2;
+  repeated TemplateParameter specialized_parameters = 2;
+  TemplateSpecializationKind specialization_kind = 3;
 
   // if this is a specialization, this is the type_id of the primary template that this is a specialization of.
   // if this is an instantiation, this is the type_id of the specialization or primary template that this is an instantiation of.
-  optional TypeRef primary_template_decl_id = 3;
+  optional TypeRef primary_template_decl_id = 4;
 }
 
 // Represents a single template parameter.
@@ -114,22 +115,42 @@ message TemplateDetails {
 //      With `typename T`, kind = TEMPLATE_PARAMETER_KIND_TYPENAME, identifier.name = "T", and the detail fields are empty.
 //      With `int N = 5`, kind = TEMPLATE_PARAMETER_KIND_NON_TYPE, identifier.name = "N", type = "int", and default_value = "5".
 // Because template parameters can themselves be templates, the `parameters` field allows for representing template template parameters. 
+// Note: template concepts and constraints aren't captured currently
 message TemplateParameter {
+  // Drives how the rest of the fields are interpreted
   TemplateParameterKind kind = 1;
 
-  // name of the parameter, like "T" in `template<typename T>` or "N" in `template<int N = 5>`
-  VersionedString name = 2;
+  // When kind == TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the name of the parameter (like `N` in `template<int N> class Foo`)
+  // Otherwise, unused
+  optional VersionedString name = 2;
 
-  // when kind == TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the type of the parameter
+  // When kind == TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the type of the parameter (like `int` in `template<int N>`)
+  // When kind == TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TYPE, this is the type of the concrete template param, 
+  //    where typename is the fully qualified name of the type (like `int&` in `template<typename T> class Foo<int&>`) and
+  //    id is the corresponding reference to the type
+  // When kind == TEMPLATE_PARAMETER_KIND_TYPENAME, TEMPLATE_PARAMETER_KIND_CLASS or TEMPLATE_PARAMETER_KIND_SPEC_GENERIC, typename is the generic name (like `T` 
+  //    in `template<typename T> class Foo`) and id set to 'true'
+  // When kind == TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE or TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE, typename is the name of the template parameter 
+  //    (like `T` in `template<template<typename> class T> class Foo`) and id set to 'true'
+  // When kind == TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TEMPLATE, this is the type of the substituted template
+  // Otherwise, unused
   optional TypeRef type = 3;
+
+  // True when this parameter is a pack
   optional bool is_parameter_pack = 4;
 
-  // when kind == TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the raw default value, if given
-  optional VersionedString default_value = 5; // potential weak point: this is a string, but it could implicate types that don't match `type` through polymorphic behavior
+  // When kind == TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the raw default value
+  // When kind == TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_VALUE, this is the raw concrete value
+  // Otherwise, unused. Note that this is a string, but it could implicate types that don't match `type` through polymorphic behavior.
+  optional VersionedString value = 5;
 
-  // when kind != TEMPLATE_PARAMETER_KIND_NON_TYPE, this is the default type, if given
+  // When kind == TEMPLATE_PARAMETER_KIND_TYPENAME or TEMPLATE_PARAMETER_KIND_CLASS, this is the default type for the parameter 
+  //    (like `int` in `template<typename T = int> class Foo`)
+  // When kind == TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE or TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE, this is the default type for the parameter
+  // Otherwise, unused.
   optional VersionedTypeRef default_type = 6;
 
+  // nested parameters
   repeated TemplateParameter parameters = 7;
 }
 
