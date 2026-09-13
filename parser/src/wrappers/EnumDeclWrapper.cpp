@@ -3,6 +3,7 @@
 #include "boost/hash2/hash_append_fwd.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"
+#include "llvm/ADT/StringExtras.h"
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
 UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() const {
@@ -59,6 +60,48 @@ UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() co
     }
 
     // TODO reuse VarDeclWrapper machinery
+}
+
+void UEMeta::EnumDeclWrapper::serializeAsFields(
+    ParserTypes::AccessSpecifier access, ParserTypes::TLRecordDeclaration* dest) const {
+    clang::QualType type = decl->getIntegerType();
+    if (type.isNull()) type = decl->getPromotionType();
+    if (type.isNull()) throw std::runtime_error("Underlying type of enumerator is unknown!");
+    const std::string type_name = clang::TypeName::getFullyQualifiedName(
+        type.getCanonicalType(), getASTContext(), getASTContext().getPrintingPolicy(), true);
+
+    for (const auto* enumerator : decl->enumerators()) {
+        auto* p_field = dest->add_fields();
+        if (enumerator->getDeclName()) p_field->set_name(enumerator->getNameAsString());
+        SetVersioned(p_field->mutable_access(), access);
+        if (const auto* comment = getASTContext().getRawCommentForAnyRedecl(enumerator)) {
+            SetVersionedString(p_field->mutable_documentation(), comment->getRawText(getASTContext().getSourceManager()));
+        }
+
+        // Every synthesized field shares the enum's underlying integer type.
+        auto* version = p_field->mutable_type_ref()->add_versions();
+        version->add_source_versions(Config::GetConfig().Version());
+        auto* type_ref = version->mutable_value()->mutable_type_ref();
+        SetVersionedString(type_ref->mutable_type_name(), type_name);
+        type_ref->set_is_builtin_or_template(true);
+
+        p_field->set_is_anon_enum_value(true);
+        SetVersionedBool(p_field->mutable_is_mutable(), false);
+        SetVersionedBool(p_field->mutable_is_bitfield(), false);
+        SetVersioned(p_field->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
+        SetVersioned(p_field->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
+
+        // Dependent enumerators retain their initializer expression until their values are known.
+        if (const auto* initializer = enumerator->getInitExpr(); initializer && initializer->isValueDependent()) {
+            std::string out;
+            llvm::raw_string_ostream os{out};
+            initializer->printPretty(os, nullptr, getASTContext().getPrintingPolicy());
+            SetVersionedString(p_field->mutable_default_value(), out);
+        }
+        else {
+            SetVersionedString(p_field->mutable_default_value(), llvm::toString(enumerator->getInitVal(), 10));
+        }
+    }
 }
 
 // enums don't have params or templates, so we just hash the fqn; exclude the underlying type since that's version

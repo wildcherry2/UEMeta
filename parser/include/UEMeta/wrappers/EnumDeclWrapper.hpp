@@ -13,7 +13,8 @@ namespace UEMeta {
             : DeclWrapper(decl, arena) {}
 
         [[nodiscard]] SerializeResult serialize() const;
-        // todo make overloads to serialize to fields/vars
+        // Append anonymous enumerators as static constexpr fields; access is resolved by the owning record.
+        void serializeAsFields(ParserTypes::AccessSpecifier access, ParserTypes::TLRecordDeclaration* dest) const;
     protected:
         [[nodiscard]] Hash computeDeclId(std::string_view fqn) const;
         [[nodiscard]] bool computeHasIdentity() const;

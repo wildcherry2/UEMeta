@@ -4,7 +4,6 @@
 #include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "clang/AST/DeclTemplate.h"
-#include "llvm/ADT/StringExtras.h"
 
 /*
  * Clang's AST (abstract syntax tree) contains both source declarations and compiler-created
@@ -465,26 +464,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(
     if (!enumeration->hasNameForLinkage()) {
         // Semantically anonymous enumerators become static constexpr fields of the nearest owning record.
         const auto access = inherited_access != clang::AS_none ? inherited_access : enumeration->getAccess();
-        clang::QualType type = enumeration->getIntegerType();
-        if (type.isNull()) type = enumeration->getPromotionType();
-        for (auto* enumerator : enumeration->enumerators()) {
-            auto* p_field = p_msg->add_fields();
-            putFieldMetadata(enumerator, p_field, access);
-            putFieldType(type.isNull() ? enumerator->getType() : type, p_field->mutable_type_ref());
-            p_field->set_is_anon_enum_value(true);
-            SetVersionedBool(p_field->mutable_is_mutable(), false);
-            SetVersionedBool(p_field->mutable_is_bitfield(), false);
-            SetVersioned(p_field->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
-            SetVersioned(p_field->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
-
-            // Dependent enumerators retain their initializer expression until their values are known.
-            if (const auto* initializer = enumerator->getInitExpr(); initializer && initializer->isValueDependent()) {
-                putInitializer(initializer, p_field->mutable_default_value());
-            }
-            else {
-                SetVersionedString(p_field->mutable_default_value(), llvm::toString(enumerator->getInitVal(), 10));
-            }
-        }
+        EnumDeclWrapper(enumeration, arena).serializeAsFields(getAccess(access, decl), p_msg);
         return;
     }
 
