@@ -7,6 +7,10 @@
 #include "UEMeta/wrappers/MessageAllocator.hpp"
 
 UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() const {
+    clang::QualType underlying = decl->getIntegerType();
+    if (underlying.isNull()) underlying = decl->getPromotionType();
+    if (underlying.isNull()) throw std::runtime_error("Underlying type of enumerator is unknown!");
+
     // if it has a stable identity or depends on a declarator, serialize with global thread-local message allocation
     // and return it
     if (computeHasIdentity() || decl->isEmbeddedInDeclarator()) {
@@ -17,18 +21,11 @@ UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() co
             putMetadata(out_msg->mutable_metadata(), true, fqn, decl_id);
         }
         {
-            clang::QualType underlying = decl->getIntegerType();
-            if (underlying.isNull()) underlying = decl->getPromotionType();
-            if (!underlying.isNull()) {
-                const auto underlying_type = underlying.getAsString();
-                if (underlying_type.empty()) {
-                    throw std::runtime_error("Underlying type of enumerator is unknown!");
-                }
-                SetVersionedString(out_msg->mutable_underlying_type(), underlying_type);
-            }
-            else {
+            const auto underlying_type = underlying.getAsString();
+            if (underlying_type.empty()) {
                 throw std::runtime_error("Underlying type of enumerator is unknown!");
             }
+            SetVersionedString(out_msg->mutable_underlying_type(), underlying_type);
         }
 
         out_msg->set_scope(!decl->isScoped() ? ParserTypes::ENUM_SCOPE_UNSCOPED : decl->isScopedUsingClassTag() ? ParserTypes::ENUM_SCOPE_CLASS : ParserTypes::ENUM_SCOPE_STRUCT);
@@ -59,7 +56,29 @@ UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() co
         putContextFQN(os);
     }
 
-    // TODO reuse VarDeclWrapper machinery
+    const std::string type_name = clang::TypeName::getFullyQualifiedName(
+        underlying.getCanonicalType(), getASTContext(), getASTContext().getPrintingPolicy(), true);
+
+    auto* group = google::protobuf::Arena::Create<ParserTypes::VariableGroup>(arena.get());
+    for (const auto* enumerator : decl->enumerators()) {
+        auto* p_variable = group->add_variables();
+        const std::string fqn = context_fqn + enumerator->getNameAsString();
+        boost::hash2::xxh3_128 hasher;
+        hasher.update(fqn.data(), fqn.size());
+        putMetadata(p_variable->mutable_metadata(), true, fqn, Hash{hasher});
+
+        p_variable->set_is_anon_enum_value(true);
+        SetVersioned(p_variable->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
+        SetVersionedString(p_variable->mutable_default_value(), llvm::toString(enumerator->getInitVal(), 10));
+        SetVersioned(p_variable->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
+
+        auto* version = p_variable->mutable_type_ref()->add_versions();
+        version->add_source_versions(Config::GetConfig().Version());
+        auto* type_ref = version->mutable_value()->mutable_type_ref();
+        SetVersionedString(type_ref->mutable_type_name(), type_name);
+        type_ref->set_is_builtin_or_template(true);
+    }
+    return group;
 }
 
 void UEMeta::EnumDeclWrapper::serializeAsFields(
