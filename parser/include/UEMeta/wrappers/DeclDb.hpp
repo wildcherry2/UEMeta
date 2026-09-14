@@ -27,6 +27,8 @@ namespace UEMeta {
 
         // Query the declaration referenced by a type, resolving aliases and peeling pointers,
         // references and arrays. Pass the original QualType; callers retain it for type spelling.
+        // If requested, unwrapped_type receives the canonical type after peeling those layers,
+        // before mapping instantiations to source declarations; it is null for a null input.
         // References target source declarations, never generated instantiations. Before lookup,
         // an instantiated record is mapped to its selected primary or partial-specialization
         // declaration; a written explicit specialization retains its own declaration identity.
@@ -41,7 +43,7 @@ namespace UEMeta {
         // If no declaration result is known, returns true for builtin/dependent/template-parameter
         // types, otherwise false. Dependent records with known identities return their identities.
         // Forward declarations after a registered definition do not replace its hash.
-        static QueryResult queryType(clang::QualType type);
+        static QueryResult queryType(clang::QualType type, clang::QualType* unwrapped_type = nullptr);
 
         static void serializeIfNeeded(clang::EnumDecl* decl);
         static void serializeIfNeeded(clang::VarDecl* decl);

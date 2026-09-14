@@ -72,7 +72,8 @@ clang::Decl* UEMeta::DeclDb::queryDecl(const Hash& hash) {
     return decl_it->second;
 }
 
-UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(clang::QualType type) {
+UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(clang::QualType type, clang::QualType* unwrapped_type) {
+    if (unwrapped_type) *unwrapped_type = {};
     try {
         // Resolve aliases, then strip structural layers that have no declaration identity.
         // Callers keep the original QualType for spelling; only this lookup peels Node*[N] to Node.
@@ -87,6 +88,7 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(clang::QualType type) {
             }
             else break;
         }
+        if (unwrapped_type) *unwrapped_type = type;
 
         // Select the source declaration BEFORE querying: a generated instantiation is never
         // a reference target, even if it happens to have a registered hash. Clang's tag

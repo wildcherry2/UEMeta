@@ -1,6 +1,8 @@
 #include "UEMeta/wrappers/VarDeclWrapper.hpp"
 #include "clang/AST/DeclTemplate.h"
 #include "UEMeta/wrappers/DeclDb.hpp"
+#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/wrappers/RecordDeclWrapper.hpp"
 
 ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::serialize() const {
     const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLGlobalVariableDeclaration>(arena.get());
@@ -49,7 +51,8 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
     {
         const clang::QualType declared_type = decl->getType(); // this should always be what we print for the type's type_name
         // Let DeclDb resolve instantiations to their source template/specialization declaration.
-        auto type_query = DeclDb::queryType(declared_type);
+        clang::QualType underlying;
+        const auto type_query = DeclDb::queryType(declared_type, &underlying);
         if (get_if<std::monostate>(&type_query)) {
             throw std::runtime_error{"Failed to query global variable type (exception)!"};
         }
@@ -57,12 +60,32 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
 
         type_ref_or_anon_version->add_source_versions(Config::GetConfig().Version());
         ParserTypes::TypeRefOrAnon* type_ref_or_anon = type_ref_or_anon_version->mutable_value();
-        // todo if type_query is false and the type is an anonymous record/enum, populate it
 
-        ParserTypes::TypeRef* type_ref = type_ref_or_anon->mutable_type_ref();
+        // Use DeclDb's unwrapped type to embed unnamed definitions in the variable's arena.
+        if (auto* tag = underlying.isNull() ? nullptr : underlying->getAsTagDecl(); tag && !tag->hasNameForLinkage()
+            && tag->isEmbeddedInDeclarator() && !tag->isFreeStanding()) {
+            if (auto* record = llvm::dyn_cast_or_null<clang::RecordDecl>(tag->getDefinition())) {
+                DeclDb::addDeclarationAsVisited(record);
+                const auto results = RecordDeclWrapper(record, arena).serialize();
+                if (results.size() != 1 || !std::holds_alternative<ParserTypes::TLRecordDeclaration*>(results.front())) {
+                    throw std::runtime_error("An embedded anonymous record did not produce a single record!");
+                }
+                type_ref_or_anon->set_allocated_anon_record(std::get<ParserTypes::TLRecordDeclaration*>(results.front()));
+            }
+            else if (auto* enumeration = llvm::dyn_cast_or_null<clang::EnumDecl>(tag->getDefinition())) {
+                DeclDb::addDeclarationAsVisited(enumeration);
+                const auto result = EnumDeclWrapper(enumeration, arena).serialize();
+                const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
+                if (!nested) throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
+                type_ref_or_anon->set_allocated_anon_enum(*nested);
+            }
+        }
+
         std::string type_name = clang::TypeName::getFullyQualifiedName(declared_type, getASTContext(),
                                                                  getASTContext().getPrintingPolicy(), true);
-        putTypeRef(type_name, type_query, type_ref);
+        if (type_ref_or_anon->value_case() == ParserTypes::TypeRefOrAnon::VALUE_NOT_SET) {
+            putTypeRef(type_name, type_query, type_ref_or_anon->mutable_type_ref());
+        }
         if (described_template || specialization) [[unlikely]] {
             hasher.update(type_name.data(), type_name.size());
         }
