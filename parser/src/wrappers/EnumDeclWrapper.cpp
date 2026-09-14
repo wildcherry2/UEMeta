@@ -4,7 +4,7 @@
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"
 #include "llvm/ADT/StringExtras.h"
-#include "UEMeta/wrappers/MessageAllocator.hpp"
+#include "UEMeta/wrappers/Utility.hpp"
 
 UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() const {
     clang::QualType underlying = decl->getIntegerType();

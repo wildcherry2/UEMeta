@@ -57,6 +57,6 @@ void UEMeta::MethodDeclWrapper::putVTableDetails(ParserTypes::MemberFunction* p_
     if (location.VBase) {
         offset += getASTContext().getASTRecordLayout(decl->getParent()).getVBaseClassOffset(location.VBase);
     }
-    SetVersionedInteger(p_msg->mutable_vtable_index(), location.Index);
-    SetVersionedInteger(p_msg->mutable_vtable_offset(), offset.getQuantity());
+    SetVersioned(p_msg->mutable_vtable_index(), location.Index);
+    SetVersioned(p_msg->mutable_vtable_offset(), offset.getQuantity());
 }

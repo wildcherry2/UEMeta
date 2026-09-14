@@ -139,8 +139,8 @@ std::vector<UEMeta::RecordDeclWrapper::SerializeResult> UEMeta::RecordDeclWrappe
         : decl->isStruct() ? ParserTypes::RECORD_KIND_STRUCT : ParserTypes::RECORD_KIND_UNION);
     const auto* layout = getLayout(decl);
     if (layout) {
-        SetVersionedInteger(p_msg->mutable_size_bytes(), layout->getSize().getQuantity());
-        SetVersionedInteger(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
+        SetVersioned(p_msg->mutable_size_bytes(), layout->getSize().getQuantity());
+        SetVersioned(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
     }
 
     // Clang stores bases outside decls(), so only base specifiers require their own loop.
@@ -345,15 +345,15 @@ void UEMeta::RecordDeclWrapper::handleField(
     // Bit widths can be known even when the enclosing record's layout remains dependent.
     if (field->isBitField()) {
         if (!field->getBitWidth()->isValueDependent()) {
-            SetVersionedInteger(p_msg->mutable_bit_width(), field->getBitWidthValue());
+            SetVersioned(p_msg->mutable_bit_width(), field->getBitWidthValue());
         }
     }
     else if (layout && !field->getType()->isIncompleteType()) {
-        SetVersionedInteger(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
+        SetVersioned(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
     }
     // The walk supplies the offset in the receiving record, whether the field is direct or raised.
     if (absolute_offset_bits) {
-        SetVersionedInteger(p_msg->mutable_offset_bits(), *absolute_offset_bits);
+        SetVersioned(p_msg->mutable_offset_bits(), *absolute_offset_bits);
     }
 
     // In-class initializers are source expressions, including dependent expressions.
@@ -375,7 +375,7 @@ void UEMeta::RecordDeclWrapper::handleStaticField(clang::VarDecl* field, ParserT
 
     // A static member has a type size but no offset within an instance of its owning record.
     if (!field->getType()->isDependentType() && !field->getType()->isIncompleteType()) {
-        SetVersionedInteger(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
+        SetVersioned(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
     }
     if (const auto* initializer = field->getInit()) {
         putInitializer(initializer, p_msg->mutable_default_value());
@@ -404,7 +404,7 @@ void UEMeta::RecordDeclWrapper::handleBase(
     if (const auto* base_record = type->getAsCXXRecordDecl(); layout && base_record) {
         const auto offset = base.isVirtual() ? layout->getVBaseClassOffset(base_record)
                                              : layout->getBaseClassOffset(base_record);
-        SetVersionedInteger(p_msg->mutable_offset(), offset.getQuantity());
+        SetVersioned(p_msg->mutable_offset(), offset.getQuantity());
     }
 }
 

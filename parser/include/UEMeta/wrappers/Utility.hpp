@@ -1,10 +1,77 @@
 #pragma once
+#include <concepts>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <variant>
+#include <vector>
+
 #include "TopLevel.pb.h"
-#include "Types.hpp"
-#include "llvm/ADT/StringRef.h"
 #include "UEMeta/Cli.hpp"
+#include "boost/hash2/xxh3.hpp"
+#include "clang/AST/Decl.h"
+#include "clang/Basic/Specifiers.h"
+#include "llvm/ADT/StringRef.h"
+#include "absl/hash/hash.h"
+#include "clang/AST/DeclCXX.h"
 
 namespace UEMeta {
+    template<typename T>
+    concept WrapableDecl = std::same_as<clang::VarDecl, T>
+        || std::same_as<clang::FieldDecl, T>
+        || std::same_as<clang::FunctionDecl, T>
+        || std::same_as<clang::EnumDecl, T>
+        || std::same_as<clang::RecordDecl, T>
+        || std::same_as<clang::CXXMethodDecl, T>;
+
+    template<typename T>
+    concept TagDeclDerived = std::derived_from<T, clang::TagDecl>;
+
+    template<typename T>
+    concept TemplateSpecializableDeclType = WrapableDecl<T> && requires(T* a)
+    {
+        {a->getTemplateSpecializationKind()} -> std::same_as<clang::TemplateSpecializationKind>;
+    };
+
+    template<typename T>
+    concept ProtoMessage = std::derived_from<T, google::protobuf::Message>;
+
+    using AnyString = std::variant<std::string, std::string_view, llvm::StringRef>;
+
+    struct Hash {
+        union {
+            uint64_t raw[2];
+            struct {
+                uint64_t a;
+                uint64_t b;
+            };
+        };
+
+        explicit Hash(boost::hash2::xxh3_128& hasher);
+        Hash() = default;
+
+        void putProtoHash(ParserTypes::Hash* hash) const;
+
+        friend bool operator==(const Hash &Lhs, const Hash &Rhs) {
+            return Lhs.a == Rhs.a
+                   && Lhs.b == Rhs.b;
+        }
+
+        friend bool operator!=(const Hash &Lhs, const Hash &Rhs) {
+            return !(Lhs == Rhs);
+        }
+
+        template <typename H>
+        friend H AbslHashValue(H state, const Hash& h) {
+            return H::combine(std::move(state), h.a, h.b);
+        }
+
+        explicit operator bool() const {
+            return a || b;
+        }
+    };
+
     template<typename T>
     concept Stringish = std::same_as<T, llvm::StringRef> || std::same_as<T, std::string> || std::same_as<T, std::string_view>;
 
@@ -22,19 +89,6 @@ namespace UEMeta {
         else {
             p_version->set_value(value.str());
         }
-    }
-
-    template<typename T>
-    concept PrimitiveVersionedIntegral = std::same_as<T, ParserTypes::VersionedUint32>
-        || std::same_as<T, ParserTypes::VersionedUint64>
-        || std::same_as<T, ParserTypes::VersionedInt64>;
-
-    template<std::integral ValueType, PrimitiveVersionedIntegral MessageType>
-    void SetVersionedInteger(MessageType* p_msg, ValueType value) { //todo transition to SetVersioned
-        const std::string& version_str = Config::GetConfig().Version();
-        auto* p_version = p_msg->add_versions();
-        p_version->add_source_versions(version_str);
-        p_version->set_value(value);
     }
 
     template<typename MessageType, typename ValueType>

@@ -1,7 +1,7 @@
 #include "UEMeta/wrappers/DeclDb.hpp"
 
 #include "UEMeta/wrappers/EnumDeclWrapper.hpp"
-#include "UEMeta/wrappers/MessageAllocator.hpp"
+#include "UEMeta/wrappers/Utility.hpp"
 #include "UEMeta/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/wrappers/VarDeclWrapper.hpp"
 #include "boost/smart_ptr/local_shared_ptr.hpp"

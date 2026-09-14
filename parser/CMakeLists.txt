@@ -511,7 +511,7 @@ add_executable(parser
         ${UEMETA_PROTO_GENERATED_HEADERS}
         src/HeartbeatLogger.cpp
         src/wrappers/EnumDeclWrapper.cpp
-        src/wrappers/MessageAllocator.cpp
+        src/wrappers/Utility.cpp
         src/wrappers/VarDeclWrapper.cpp
         src/wrappers/MethodDeclWrapper.cpp
         src/wrappers/RecordDeclWrapper.cpp

@@ -3,7 +3,7 @@
 #include <string_view>
 
 #include "DeclDb.hpp"
-#include "MessageAllocator.hpp"
+#include "Utility.hpp"
 #include "TopLevel.pb.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/ASTContext.h"
@@ -11,7 +11,6 @@
 #include "clang/AST/QualTypeNames.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/AST/DeclTemplate.h"
-#include "UEMeta/wrappers/Types.hpp"
 #include "boost/smart_ptr/local_shared_ptr.hpp"
 
 namespace UEMeta {
@@ -28,7 +27,7 @@ namespace UEMeta {
                 SetVersionedString(metadata->mutable_documentation(), comment->getRawText(source_manager));
             }
 
-            SetVersionedInteger(metadata->mutable_occurrence_index(), allocateDeclOccurrence());
+            SetVersioned(metadata->mutable_occurrence_index(), allocateDeclOccurrence());
 
             if (has_identity) {
                 if (fqn.empty() || fqn == "::") {

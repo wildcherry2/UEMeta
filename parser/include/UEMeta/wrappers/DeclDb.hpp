@@ -1,6 +1,6 @@
 #pragma once
 #include <variant>
-#include "Types.hpp"
+#include "Utility.hpp"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"

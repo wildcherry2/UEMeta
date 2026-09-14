@@ -1,4 +1,4 @@
-#include "UEMeta/wrappers/Types.hpp"
+#include "UEMeta/wrappers/Utility.hpp"
 
 UEMeta::Hash::Hash(boost::hash2::xxh3_128& hasher) {
     boost::hash2::digest<16> result = hasher.result();

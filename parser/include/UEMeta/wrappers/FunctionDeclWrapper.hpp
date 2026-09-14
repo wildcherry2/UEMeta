@@ -7,7 +7,7 @@
 #include "clang/AST/PrettyPrinter.h"
 #include "clang/AST/QualTypeNames.h"
 #include "UEMeta/wrappers/DeclDb.hpp"
-#include "UEMeta/wrappers/MessageAllocator.hpp"
+#include "UEMeta/wrappers/Utility.hpp"
 
 namespace UEMeta {
     template<std::derived_from<clang::FunctionDecl> T = clang::FunctionDecl>
