@@ -104,7 +104,3 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
 
     return Hash{hasher};
 }
-
-bool UEMeta::VarDeclWrapper::computeHasIdentity() const {
-    return true;
-}
