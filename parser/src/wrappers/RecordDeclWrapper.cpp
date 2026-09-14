@@ -103,12 +103,10 @@ private:
     const RecordDeclWrapper& owner;
 };
 
-// Entry-point phases: classify the occurrence, establish identity, emit available layout,
-// then consume bases and members. We never jump ahead to serialize a later definition.
+// Establish the definition's identity, emit available layout, then consume bases and members.
+// Callers handle forward occurrences before entering this serialization path.
 std::vector<UEMeta::RecordDeclWrapper::SerializeResult> UEMeta::RecordDeclWrapper::serialize() const {
-    // Forward occurrences are recorded without consuming the eventual definition's visit.
     if (!decl) throw std::invalid_argument("Cannot serialize a null record declaration!");
-    if (handleForwardDeclaration(const_cast<clang::RecordDecl*>(decl))) return {};
 
     // File-scope anonymous unions inject static variables into their enclosing namespace.
     if (decl->isUnion() && decl->isAnonymousStructOrUnion()
@@ -419,7 +417,6 @@ bool UEMeta::RecordDeclWrapper::handleForwardDeclaration(clang::TagDecl* tag) co
     if (auto* definition = tag->getDefinition()) {
         DeclDb::addForwardDeclaration(definition);
     }
-    // TODO: DeclDb cannot yet register a forward whose tag has no definition in this translation unit.
     return true;
 }
 

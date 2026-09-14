@@ -197,8 +197,14 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
         if (decl->isAnonymousStructOrUnion()
             && decl->getDeclContext()->getNonTransparentContext()->isRecord()) return;
 
-        // The wrapper registers forwards and named identities during its declaration walk.
-        //todo handle if decl is a forward declaration here instead
+        // Record the forward occurrence without consuming the eventual definition's visit.
+        if (!decl->isThisDeclarationADefinition()) {
+            if (auto* definition = decl->getDefinition()) {
+                addForwardDeclaration(definition);
+            }
+            return;
+        }
+
         const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
         const auto results = RecordDeclWrapper(decl, arena).serialize();
         // TODO: Save results together with arena when the single-pass output sink is connected.

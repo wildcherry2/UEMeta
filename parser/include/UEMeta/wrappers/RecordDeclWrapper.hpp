@@ -37,8 +37,8 @@ namespace UEMeta {
             : DeclWrapper(decl, arena) {}
 
         /**
-         * Returns no payload for a forward declaration, one record for an ordinary or
-         * field-owned definition, or one VariableGroup for a file-scope anonymous union.
+         * Returns one record for an ordinary or field-owned definition, or one VariableGroup
+         * for a file-scope anonymous union. Callers must handle forward declarations first.
          * The enum alternative is part of the result vocabulary, not currently emitted here.
          * Nested semantically anonymous records must go through their owner's extraction
          * path, not a standalone call to serialize().
