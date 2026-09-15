@@ -2,7 +2,6 @@
 // ReSharper disable CppMemberFunctionMayBeConst
 #include "UEMeta/ClangHandler.hpp"
 
-#include <atomic>
 #include <exception>
 #include <execution>
 #include <filesystem>
@@ -17,7 +16,6 @@
 #include <clang/AST/VTableBuilder.h>
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/AST/RecordLayout.h>
-#include <clang/Tooling/Tooling.h>
 #include <google/protobuf/util/json_util.h>
 #include "TopLevel.pb.h"
 
@@ -35,21 +33,6 @@ bool UEMeta::ClangHandler::shouldVisitImplicitCode() const { return false; } // 
 
 /// @brief Skips lambda body traversal.
 bool UEMeta::ClangHandler::shouldVisitLambdaBody() const { return false; } // NOLINT(*-convert-member-functions-to-static)
-
-/// @brief Runs Clang with ClangHandler and converts guarded exceptions into a nonzero result.
-int UEMeta::RunClangTool(clang::tooling::ClangTool& tool) noexcept {
-    GClangExceptionCaught.store(false, std::memory_order_relaxed);
-    try {
-        const auto result = tool.run(clang::tooling::newFrontendActionFactory<ClangHandler>().get());
-        return GClangExceptionCaught.load(std::memory_order_relaxed) ? 1 : result;
-    } catch (const std::exception& ex) {
-        LogClangException("ClangTool::run", ex);
-    } catch (...) {
-        LogClangUnknownException("ClangTool::run");
-    }
-
-    return 1;
-}
 
 /// @brief Logs the start of declaration traversal.
 void UEMeta::ClangHandler::BeginTranslationUnit(clang::ASTContext& ctx) {
@@ -354,43 +337,7 @@ bool UEMeta::ClangHandler::VisitVarDecl(clang::VarDecl* clang_decl) {
 
 UEMeta::ClangHandler::ClangHandler() : data(new ASTData()), logger("Visited {} total nodes...") {}
 
-bool UEMeta::ClangHandler::BeginSourceFileAction(clang::CompilerInstance& CI) {
-    class FileIncludeExtractor : public clang::PPCallbacks {
-    public:
-        explicit FileIncludeExtractor(ClangHandler* owner, const clang::SourceManager& source_manager) : owner(owner), source_manager(source_manager) {}
-
-        void InclusionDirective(clang::SourceLocation HashLoc, const clang::Token &IncludeTok,
-            llvm::StringRef FileName, bool IsAngled, clang::CharSourceRange FilenameRange,
-            clang::OptionalFileEntryRef File, llvm::StringRef SearchPath, llvm::StringRef RelativePath,
-            const clang::Module *SuggestedModule, bool ModuleImported,
-            clang::SrcMgr::CharacteristicKind FileType) override {
-
-            if (File) {
-                if (const auto source = source_manager.getFileEntryForID(source_manager.getFileID(HashLoc))) {
-                    const auto source_real_path = source->tryGetRealPathName();
-                    const auto include_real_path = File->getFileEntry().tryGetRealPathName();
-                    owner->data->Include(
-                        (source_real_path.empty() ? source_manager.getFilename(HashLoc) : source_real_path).str(),
-                        (include_real_path.empty() ? File->getName() : include_real_path).str());
-                }
-            }
-        }
-    private:
-        ClangHandler* owner;
-        const clang::SourceManager& source_manager;
-    };
-
-    try {
-        CI.getPreprocessor().addPPCallbacks(std::make_unique<FileIncludeExtractor>(this, CI.getSourceManager()));
-    } catch (const std::exception& ex) {
-        LogClangException("BeginSourceFileAction", ex);
-        throw;
-    } catch (...) {
-        LogClangUnknownException("BeginSourceFileAction");
-        throw;
-    }
-    return true;
-}
+UEMeta::ClangHandler::~ClangHandler() = default;
 
 /// @brief Creates the AST consumer for one translation unit.
 std::unique_ptr<clang::ASTConsumer> UEMeta::ClangHandler::CreateASTConsumer(clang::CompilerInstance& compiler,

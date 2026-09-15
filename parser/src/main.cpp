@@ -1,6 +1,7 @@
-#include "UEMeta/ClangHandler.hpp"
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/MakeTool.hpp"
+#include "UEMeta/MetaTool.hpp"
+
+#include <exception>
 
 /// @brief Initializes logging/configuration, builds the Clang tool, and runs the AST extraction pass.
 int main(int argc, char** argv) {
@@ -19,10 +20,9 @@ int main(int argc, char** argv) {
         UEM_INFO("Using debug build of parser! Default output is JSON, and files will have their FQNs rather than FQN hashes!");
 #endif
 
-        const auto tool = UEMeta::MakeTool();
-        if (!tool) return 0;
+        UEMeta::MetaTool tool;
 
-        switch (UEMeta::RunClangTool(tool->clang_tool)) {
+        switch (tool.RunClangTool()) {
             case 0: {
                 UEM_INFO("Successfully ran tool!");
                 return 0;

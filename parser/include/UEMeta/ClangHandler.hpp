@@ -12,23 +12,8 @@
 #include <google/protobuf/arena.h>
 #include "UEMeta/HeartbeatLogger.hpp"
 
-namespace clang::tooling {
-    /**
-     * @brief Forward declaration of Clang's command-line tool driver.
-     */
-    class ClangTool;
-}
-
 namespace UEMeta {
     class ASTData;
-
-    /**
-     * @brief Runs a configured Clang tool with UEMeta's AST frontend action.
-     *
-     * @param tool Clang tool to execute.
-     * @return Clang's run result, or 1 when visitor/callback exception guards recorded a failure.
-     */
-    int RunClangTool(clang::tooling::ClangTool& tool) noexcept;
 
     /**
      * @brief Clang frontend action and AST visitor that converts declarations into UEMeta models.
@@ -101,10 +86,9 @@ namespace UEMeta {
         bool VisitVarDecl(clang::VarDecl* decl);
 
         ClangHandler();
+        ~ClangHandler() override;
 
     protected:
-        bool BeginSourceFileAction(clang::CompilerInstance &CI) override;
-
         /**
          * @brief Creates the AST consumer and preprocessor callbacks for one translation unit.
          *

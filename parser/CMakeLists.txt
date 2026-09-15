@@ -524,7 +524,7 @@ source_group("Generated\\Protobuf" FILES
 add_executable(parser
         src/main.cpp src/ClangHandler.cpp
         src/Cli.cpp
-        src/MakeTool.cpp
+        src/MetaTool.cpp
         src/StablePath.cpp
         ${UEMETA_PROTO_GENERATED_SOURCES}
         ${UEMETA_PROTO_GENERATED_HEADERS}
