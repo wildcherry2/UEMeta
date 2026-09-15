@@ -1,6 +1,6 @@
 #include "UEMeta/wrappers/EnumDeclWrapper.hpp"
 
-#include "boost/hash2/hash_append_fwd.hpp"
+#include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"
 #include "llvm/ADT/StringExtras.h"
@@ -144,7 +144,7 @@ void UEMeta::EnumDeclWrapper::serializeAsFields(
 // sensitive
 UEMeta::Hash UEMeta::EnumDeclWrapper::computeDeclId(std::string_view fqn) const {
     boost::hash2::xxh3_128 hasher;
-    boost::hash2::hash_append(hasher, boost::hash2::endian::little, fqn);
+    boost::hash2::hash_append(hasher, boost::hash2::little_endian_flavor{}, fqn);
     return Hash{hasher};
 }
 

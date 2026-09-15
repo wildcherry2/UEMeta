@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DeclWrapper.hpp"
-#include "boost/hash2/hash_append_fwd.hpp"
+#include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/PrettyPrinter.h"
@@ -163,7 +163,7 @@ namespace UEMeta {
             std::string_view fqn,
             ParserTypes::FunctionCommon* p_msg) const {
             boost::hash2::xxh3_128 hasher;
-            boost::hash2::hash_append(hasher, boost::hash2::endian::little, fqn);
+            boost::hash2::hash_append(hasher, boost::hash2::little_endian_flavor{}, fqn);
 
             for (const clang::ParmVarDecl* parameter : super::decl->parameters()) {
                 const std::string parameter_type = clang::TypeName::getFullyQualifiedName(

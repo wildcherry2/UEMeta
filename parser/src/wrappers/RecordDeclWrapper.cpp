@@ -175,7 +175,7 @@ UEMeta::Hash UEMeta::RecordDeclWrapper::computeDeclIdWithTemplateDetails(
     std::string_view fqn, ParserTypes::TLRecordDeclaration* p_msg) const {
     // Record identity combines the FQN with the same template fragments used by the other wrappers.
     boost::hash2::xxh3_128 hasher;
-    boost::hash2::hash_append(hasher, boost::hash2::endian::little, fqn);
+    boost::hash2::hash_append(hasher, boost::hash2::little_endian_flavor{}, fqn);
     const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl);
     if (!cxx) return Hash{hasher};
 

@@ -70,9 +70,9 @@ namespace UEMeta {
 
         // maps non-forward, non-alias declarations to their serialized identity
         // also doubles as a way to check if we've visited the decl before
-        static llvm::DenseMap<const clang::Decl*, const Hash> decl_to_identity_map;
+        static llvm::DenseMap<const clang::Decl*, Hash> decl_to_identity_map;
 
-        static absl::flat_hash_map<const Hash, const clang::Decl*> identity_to_decl_map;
+        static absl::flat_hash_map<Hash, const clang::Decl*> identity_to_decl_map;
 
         // Maps definition declarations to all forward-declaration occurrence indices in visitation order.
         // Retain the full history for later consumers; identity lookup uses only the latest occurrence.

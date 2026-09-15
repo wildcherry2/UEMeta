@@ -55,13 +55,8 @@ namespace UEMeta {
     using AnyString = std::variant<std::string, std::string_view, llvm::StringRef>;
 
     struct Hash {
-        union {
-            uint64_t raw[2];
-            struct {
-                uint64_t a;
-                uint64_t b;
-            };
-        };
+        uint64_t a;
+        uint64_t b;
 
         explicit Hash(boost::hash2::xxh3_128& hasher);
         Hash() = default;

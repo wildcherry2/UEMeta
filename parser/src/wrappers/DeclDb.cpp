@@ -10,8 +10,8 @@
 #include "google/protobuf/util/json_util.h"
 #include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
 
-llvm::DenseMap<const clang::Decl*, const UEMeta::Hash> UEMeta::DeclDb::decl_to_identity_map;
-absl::flat_hash_map<const UEMeta::Hash, const clang::Decl*> UEMeta::DeclDb::identity_to_decl_map;
+llvm::DenseMap<const clang::Decl*, UEMeta::Hash> UEMeta::DeclDb::decl_to_identity_map;
+absl::flat_hash_map<UEMeta::Hash, const clang::Decl*> UEMeta::DeclDb::identity_to_decl_map;
 llvm::DenseMap<const clang::Decl*, llvm::SmallVector<uint64_t>>
     UEMeta::DeclDb::decl_to_forward_decl_occurrence_map;
 llvm::DenseSet<const clang::Decl*> UEMeta::DeclDb::visited_decls;
