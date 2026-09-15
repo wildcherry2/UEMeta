@@ -48,6 +48,7 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::EnumDecl* decl);
         static void serializeIfNeeded(clang::VarDecl* decl);
         static void serializeIfNeeded(clang::RecordDecl* decl);
+        static void serializeIfNeeded(clang::FunctionDecl* decl);
 
         // Adds a new forward declaration for the given declaration.
         // Throws if forDecl is not a definition.

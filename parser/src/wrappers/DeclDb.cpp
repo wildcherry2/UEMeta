@@ -8,6 +8,7 @@
 #include "clang/AST/Type.h"
 #include "CLI/ConfigFwd.hpp"
 #include "google/protobuf/util/json_util.h"
+#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
 
 static bool isDeclInFunctionOrMethod(const clang::Decl* decl);
 static bool isDeclInSystemOrStdHeader(const clang::Decl* decl);
@@ -210,6 +211,24 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
         RecordDeclWrapper(decl, arena).toFile();
     }
     catch (const std::exception& e) {
+        UEM_ERROR("{}", e.what());
+    }
+}
+
+void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
+    try {
+        if (!decl) return;
+        if (visited_decls.contains(decl)) return;
+        visited_decls.insert(decl);
+        if (isDeclInSystemOrStdHeader(decl)) return;
+        if (isDeclInSystemOrStdHeader(decl->getTemplateInstantiationPattern())) return;
+        if (decl->isCXXClassMember()) return;
+        if (failsImplicitSpecOption(decl)) return;
+        if (isDeclInFunctionOrMethod(decl)) return;
+
+        const auto arena = std::make_shared<google::protobuf::Arena>();
+        FunctionDeclWrapper(decl, arena).toFile();
+    } catch (std::exception& e) {
         UEM_ERROR("{}", e.what());
     }
 }
