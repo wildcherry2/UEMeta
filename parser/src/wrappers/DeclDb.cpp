@@ -67,7 +67,7 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryDeclIdentity(const clang::Decl*
     }
 }
 
-clang::Decl* UEMeta::DeclDb::queryDecl(const Hash& hash) {
+const clang::Decl* UEMeta::DeclDb::queryDecl(const Hash& hash) {
     if (!hash) return nullptr;
     const auto decl_it = identity_to_decl_map.find(hash);
     if (decl_it == identity_to_decl_map.end()) return nullptr;

@@ -23,7 +23,7 @@ namespace UEMeta {
         // note that this means forward declarations after the defining declaration are ignored
         static QueryResult queryDeclIdentity(const clang::Decl* decl);
 
-        static clang::Decl* queryDecl(const Hash& hash);
+        static const clang::Decl* queryDecl(const Hash& hash);
 
         // Query the declaration referenced by a type, resolving aliases and peeling pointers,
         // references and arrays. Pass the original QualType; callers retain it for type spelling.
@@ -68,19 +68,19 @@ namespace UEMeta {
 
         // maps non-forward, non-alias declarations to their serialized identity
         // also doubles as a way to check if we've visited the decl before
-        static llvm::DenseMap<clang::Decl*, Hash> decl_to_identity_map;
+        static llvm::DenseMap<const clang::Decl*, const Hash> decl_to_identity_map;
 
-        static absl::flat_hash_map<Hash, clang::Decl*> identity_to_decl_map;
+        static absl::flat_hash_map<const Hash, const clang::Decl*> identity_to_decl_map;
 
         // maps non-forward, non-alias declarations to a vector of forward declaration occurrence indices and a Decl
         // note that the vector should only have one Decl*, and it should be the same as the key Decl*.
         // this preserves the order of forward declarations and the actual declarations relative to each other
-        static llvm::DenseMap<clang::Decl*, llvm::SmallVector<std::variant<uint64_t, clang::Decl*>>> decl_to_forward_decl_occurrence_map;
+        static llvm::DenseMap<const clang::Decl*, llvm::SmallVector<std::variant<uint64_t, clang::Decl*>>> decl_to_forward_decl_occurrence_map;
 
         // Declarations already considered by the top-level entry points or consumed by wrappers.
         // Visitation does not imply an identity: an embedded anonymous record has no standalone
         // hash, but must still be skipped when the outer visitor reaches its RecordDecl.
         // Class-member eligibility filters handle static fields/methods without wrapper-side entries.
-        static llvm::DenseSet<clang::Decl*> visited_decls;
+        static llvm::DenseSet<const clang::Decl*> visited_decls;
     };
 }
