@@ -16,6 +16,8 @@ namespace UEMeta {
         [[nodiscard]] IntermediateRepresentation toIntermediateRepresentation() const;
         void toFile() const;
 
+        static void toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena);
+
         // Append anonymous enumerators as static constexpr fields; access is resolved by the owning record.
         void serializeAsFields(ParserTypes::AccessSpecifier access, ParserTypes::TLRecordDeclaration* dest) const;
     protected:

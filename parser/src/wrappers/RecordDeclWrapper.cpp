@@ -152,7 +152,10 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
 }
 
 void UEMeta::RecordDeclWrapper::toFile() const {
-    IntermediateRepresentation ir = toIntermediateRepresentation();
+    return toFile(toIntermediateRepresentation(), arena);
+}
+
+void UEMeta::RecordDeclWrapper::toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     if (auto** p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
         saveToFile(*p_record, arena);
     }
@@ -443,14 +446,12 @@ void UEMeta::RecordDeclWrapper::handleRecord(
 
     // Named nested declarations get independent arenas and contribute only their own IDs to this record.
     // nested_hashes contains direct children, not a recursive list of all their descendants.
-    // Copying these hashes does not preserve the nested payloads: the saving TODO below must
-    // eventually retain/consume each nested arena before this local owner is destroyed.
     const auto nested_arena = std::make_shared<google::protobuf::Arena>();
-    const auto result = RecordDeclWrapper(record, nested_arena).toIntermediateRepresentation();
+    auto result = RecordDeclWrapper(record, nested_arena).toIntermediateRepresentation();
     if (const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result)) {
         addNestedHash((*nested)->metadata(), p_msg);
     }
-    // TODO: Save the nested result together with nested_arena before releasing its arena here.
+    toFile(std::move(result), nested_arena);
 }
 
 // Enum policy mirrors record ownership, but anonymous enum contents are constants rather
@@ -474,7 +475,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(
 
     // Delegate named enums to their wrapper and publish the returned identity for following members.
     const auto nested_arena = std::make_shared<google::protobuf::Arena>();
-    const auto result = EnumDeclWrapper(enumeration, nested_arena).toIntermediateRepresentation();
+    auto result = EnumDeclWrapper(enumeration, nested_arena).toIntermediateRepresentation();
     const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
     if (!nested || !(*nested)->metadata().has_decl_id()) {
         throw std::runtime_error("A named nested enum did not produce an enum identity!");
@@ -484,7 +485,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(
     identity.b = (*nested)->metadata().decl_id().b();
     DeclDb::addDeclIdentity(enumeration, identity);
     addNestedHash((*nested)->metadata(), p_msg);
-    // TODO: Save *nested together with nested_arena before releasing its arena here.
+    EnumDeclWrapper::toFile(std::move(result), nested_arena);
 }
 
 void UEMeta::RecordDeclWrapper::addNestedHash(

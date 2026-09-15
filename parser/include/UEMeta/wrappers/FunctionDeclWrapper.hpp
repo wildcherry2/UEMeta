@@ -31,8 +31,11 @@ namespace UEMeta {
         }
 
         void toFile() const {
-            const ParserTypes::TLFreeFunctionDeclaration* ir = toIntermediateRepresentation();
-            Detail::DeclWrapperStatics::saveToFile(ir, super::arena);
+            return toFile(toIntermediateRepresentation(), super::arena);
+        }
+
+        static void toFile(const ParserTypes::TLFreeFunctionDeclaration* ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
+            Detail::DeclWrapperStatics::saveToFile(ir, arena);
         }
     protected:
         void putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const {

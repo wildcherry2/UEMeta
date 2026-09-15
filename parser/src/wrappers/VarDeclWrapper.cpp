@@ -32,7 +32,10 @@ ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediate
 }
 
 void UEMeta::VarDeclWrapper::toFile() const {
-    const ParserTypes::TLGlobalVariableDeclaration* ir = toIntermediateSerialization();
+    return toFile(toIntermediateSerialization(), arena);
+}
+
+void UEMeta::VarDeclWrapper::toFile(const ParserTypes::TLGlobalVariableDeclaration* ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     saveToFile(ir, arena);
 }
 

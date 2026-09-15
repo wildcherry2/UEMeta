@@ -47,7 +47,7 @@ namespace UEMeta {
          */
         [[nodiscard]] IntermediateRepresentation toIntermediateRepresentation() const;
         void toFile() const;
-
+		static void toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena);
     private:
         // A union field needs global-variable metadata without becoming a VarDecl identity.
         class GlobalUnionFieldWrapper;
