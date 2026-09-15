@@ -45,6 +45,9 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
 constexpr auto DUMP_HELP = "Overrides all output settings and dumps all output to a JSON file, either in the same directory"
                            "as the log file (if given) or the same directory as the program.";
 
+constexpr auto SYNC_HELP = "When passed, a declaration is saved to a file before moving on to the next file. "
+                          "This can alleviate memory usage issues, but incurs a performance/time-to-finish penalty.";
+
 constexpr auto PREFER_FULL_NAME_HELP = "By default, the hash of the fully qualified name of a declaration is inserted into"
                                        " the serialized file name. Specifying this make the fully qualified name of the"
                                        " declaration appear in the file name, instead of its hash.";

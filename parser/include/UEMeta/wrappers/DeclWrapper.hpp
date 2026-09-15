@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -11,14 +12,13 @@
 #include "clang/AST/QualTypeNames.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/AST/DeclTemplate.h"
-#include "boost/smart_ptr/local_shared_ptr.hpp"
 
 namespace UEMeta {
     template<WrapableDecl T>
     class DeclWrapper {
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
-        DeclWrapper(const T* decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena) : decl(decl), arena(arena) {}
+        DeclWrapper(const T* decl, const std::shared_ptr<google::protobuf::Arena>& arena) : decl(decl), arena(arena) {}
 
         void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "", const Hash& decl_id = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();
@@ -364,7 +364,7 @@ namespace UEMeta {
         [[nodiscard]] clang::ASTContext& getASTContext() const { return decl->getASTContext(); }
 
         const T* decl;
-        boost::local_shared_ptr<google::protobuf::Arena> arena;
+        std::shared_ptr<google::protobuf::Arena> arena;
     private:
         [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const {
             // Record wrappers accept C records too, so recover C++ template information dynamically.

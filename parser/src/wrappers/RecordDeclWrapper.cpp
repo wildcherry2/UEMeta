@@ -433,7 +433,7 @@ void UEMeta::RecordDeclWrapper::handleRecord(
     // nested_hashes contains direct children, not a recursive list of all their descendants.
     // Copying these hashes does not preserve the nested payloads: the saving TODO below must
     // eventually retain/consume each nested arena before this local owner is destroyed.
-    const auto nested_arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
+    const auto nested_arena = std::make_shared<google::protobuf::Arena>();
     const auto results = RecordDeclWrapper(record, nested_arena).serialize();
     for (const auto& result : results) {
         if (const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result)) {
@@ -466,7 +466,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(
     }
 
     // Delegate named enums to their wrapper and publish the returned identity for following members.
-    const auto nested_arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
+    const auto nested_arena = std::make_shared<google::protobuf::Arena>();
     const auto result = EnumDeclWrapper(enumeration, nested_arena).serialize();
     const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
     if (!nested || !(*nested)->metadata().has_decl_id()) {
@@ -573,30 +573,28 @@ void UEMeta::RecordDeclWrapper::putInitializer(
     SetVersionedString(p_msg, out);
 }
 
-ParserTypes::VariableGroup* UEMeta::RecordDeclWrapper::serializeGlobalUnion() const {
-    // The group retains the union relationship while each named field gets variable metadata.
-    auto* group = google::protobuf::Arena::Create<ParserTypes::VariableGroup>(arena.get());
-    group->set_is_global_union(true);
-    extractGlobalUnionFields(decl, group);
-    return group;
+std::vector<ParserTypes::TLGlobalVariableDeclaration*> UEMeta::RecordDeclWrapper::serializeGlobalUnion() const {
+    std::vector<ParserTypes::TLGlobalVariableDeclaration*> variables;
+    extractGlobalUnionFields(decl, variables);
+    return variables;
 }
 
-// Separate from record-member extraction: this output is a group of named global values,
+// Separate from record-member extraction: this output is a vector of named global values,
 // not a Fields list. Recursing over real storage fields suffices; repeated injection nodes
 // are skipped, and unnamed bitfields cannot become independently named global variables.
 // No anonymous-storage offsets are needed because TLGlobalVariableDeclaration has none.
 void UEMeta::RecordDeclWrapper::extractGlobalUnionFields(
-    const clang::RecordDecl* record, ParserTypes::VariableGroup* p_msg) const {
+    const clang::RecordDecl* record, std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const {
     for (clang::Decl* member : record->decls()) {
         // Anonymous storage recursively injects values; unnamed bitfields are padding, not variables.
         if (auto* field = llvm::dyn_cast<clang::FieldDecl>(member)) {
             if (field->isAnonymousStructOrUnion()) {
                 auto* anonymous = field->getType()->getAsRecordDecl();
                 DeclDb::addDeclarationAsVisited(anonymous);
-                extractGlobalUnionFields(anonymous, p_msg);
+                extractGlobalUnionFields(anonymous, variables);
             }
             else if (!field->getDeclName().isEmpty()) {
-                p_msg->mutable_variables()->AddAllocated(GlobalUnionFieldWrapper(field, *this).serialize());
+                variables.push_back(GlobalUnionFieldWrapper(field, *this).serialize());
             }
         }
         else if (auto* tag = llvm::dyn_cast<clang::TagDecl>(member)) {

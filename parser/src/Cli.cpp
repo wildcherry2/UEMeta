@@ -56,6 +56,11 @@ bool UEMeta::Config::DumpToJson() const {
     return dump_to_json;
 }
 
+bool UEMeta::Config::SyncSerialization() const {
+    AssertInitialized();
+    return sync_serialization;
+}
+
 UEMeta::Config::SerializationFormat UEMeta::Config::Format() const {
     AssertInitialized();
     return format;
@@ -130,6 +135,8 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.add_flag("--process-implicit-specializations", cfg.process_implicit_specializations, PROCESS_IMPLICIT_SPEC_HELP)
         ->default_val(false);
     app.add_flag("--dump", cfg.dump_to_json, DUMP_HELP)
+        ->default_val(false);
+    app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)
         ->default_val(false);
     app.add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
         ->required()

@@ -59,9 +59,9 @@ UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() co
     const std::string type_name = clang::TypeName::getFullyQualifiedName(
         underlying.getCanonicalType(), getASTContext(), getASTContext().getPrintingPolicy(), true);
 
-    auto* group = google::protobuf::Arena::Create<ParserTypes::VariableGroup>(arena.get());
+    std::vector<ParserTypes::TLGlobalVariableDeclaration*> variables;
     for (const auto* enumerator : decl->enumerators()) {
-        auto* p_variable = group->add_variables();
+        auto* p_variable = google::protobuf::Arena::Create<ParserTypes::TLGlobalVariableDeclaration>(arena.get());
         const std::string fqn = context_fqn + enumerator->getNameAsString();
         boost::hash2::xxh3_128 hasher;
         hasher.update(fqn.data(), fqn.size());
@@ -77,8 +77,9 @@ UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() co
         auto* type_ref = version->mutable_value()->mutable_type_ref();
         SetVersionedString(type_ref->mutable_type_name(), type_name);
         type_ref->set_is_builtin_or_template(true);
+        variables.push_back(p_variable);
     }
-    return group;
+    return variables;
 }
 
 void UEMeta::EnumDeclWrapper::serializeAsFields(

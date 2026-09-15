@@ -74,6 +74,11 @@ namespace UEMeta {
         [[nodiscard]] bool DumpToJson() const;
 
         /**
+         * @brief Returns true when the user wants synchronous serialization.
+         */
+        [[nodiscard]] bool SyncSerialization() const;
+
+        /**
          * @brief Returns the output format.
          */
         [[nodiscard]] SerializationFormat Format() const;
@@ -110,11 +115,11 @@ namespace UEMeta {
 
         std::string ToString() const {
             return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
-                                          "process_implicit_specializations={}\ndump_to_json={}\nstrip_commands={}\n"
+                                          "process_implicit_specializations={}\ndump_to_json={}\nsync_serialization={}\nstrip_commands={}\n"
                                           "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\nclang_path={}\n"
                                           "log={}\noutput_directory={}", compile_commands, prefer_clang,
                                           prefer_full_name_in_file_name, process_implicit_specializations,
-                                          dump_to_json, strip_commands, additional_clang_args,
+                                          dump_to_json, sync_serialization, strip_commands, additional_clang_args,
                                           builtin_subpaths, format_string_map.at(format), clang_path.string(),
                                           log.string(), output_directory.string());
         }
@@ -168,6 +173,7 @@ namespace UEMeta {
 
         bool prefer_clang{};
         bool dump_to_json{};
+        bool sync_serialization{};
         bool prefer_full_name_in_file_name{};
         bool process_implicit_specializations{};
         SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize

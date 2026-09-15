@@ -75,6 +75,11 @@ set(UEMETA_QUILL_GIT_TAG
     "v11.1.0"
     CACHE STRING "Quill Git tag fetched by CMake"
 )
+set(UEMETA_THREAD_POOL_VERSION "5.1.0" CACHE STRING "BS thread pool release fetched by CMake")
+set(UEMETA_THREAD_POOL_GIT_TAG
+    "v${UEMETA_THREAD_POOL_VERSION}"
+    CACHE STRING "BS thread pool Git tag fetched by CMake"
+)
 set(UEMETA_PROTOBUF_VERSION "35.1" CACHE STRING "Protobuf release matched to generated C++ protos")
 set(UEMETA_PROTOBUF_GIT_TAG
     "v${UEMETA_PROTOBUF_VERSION}"
@@ -159,6 +164,15 @@ FetchContent_Declare(quill
     SYSTEM
 )
 
+FetchContent_Declare(bs_thread_pool
+    GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
+    GIT_TAG "${UEMETA_THREAD_POOL_GIT_TAG}"
+    GIT_PROGRESS TRUE
+    SOURCE_DIR "${UEMETA_DEPENDENCY_SOURCE_ROOT}/bs-thread-pool-${UEMETA_THREAD_POOL_VERSION}"
+    SOURCE_SUBDIR cmake-do-not-add
+    SYSTEM
+)
+
 FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
     GIT_TAG "${UEMETA_PROTOBUF_GIT_TAG}"
@@ -175,7 +189,7 @@ FetchContent_Declare(absl
     SYSTEM
 )
 
-# Hash2 and SmartPtr are header-only, as are the Boost libraries they depend on.
+# Hash2 is header-only, as are the Boost libraries it depends on.
 # Fetch the individual modules rather than the full Boost superproject to keep
 # downloads small and all revisions locked together.
 foreach(UEMETA_BOOST_LIBRARY IN ITEMS
@@ -187,8 +201,7 @@ foreach(UEMETA_BOOST_LIBRARY IN ITEMS
         static_assert
         core
         throw_exception
-        hash2
-        smart_ptr)
+        hash2)
     FetchContent_Declare(boost_${UEMETA_BOOST_LIBRARY}
         GIT_REPOSITORY "https://github.com/boostorg/${UEMETA_BOOST_LIBRARY}.git"
         GIT_TAG "${UEMETA_BOOST_GIT_TAG}"
@@ -347,6 +360,13 @@ endif()
 UEMeta_FetchContent_MakeAvailable(cli11)
 UEMeta_FetchContent_MakeAvailable(quill)
 
+UEMeta_FetchContent_MakeAvailable(bs_thread_pool)
+find_package(Threads REQUIRED)
+add_library(BS_thread_pool INTERFACE)
+target_include_directories(BS_thread_pool SYSTEM INTERFACE "${bs_thread_pool_SOURCE_DIR}/include")
+target_compile_features(BS_thread_pool INTERFACE cxx_std_17)
+target_link_libraries(BS_thread_pool INTERFACE Threads::Threads)
+
 # Individual Boost library CMake projects use this version from Boost's
 # superproject. Keep it defined while their projects are configured.
 set(BOOST_SUPERPROJECT_VERSION "${UEMETA_BOOST_VERSION}")
@@ -359,7 +379,6 @@ UEMeta_FetchContent_MakeAvailable(boost_static_assert)
 UEMeta_FetchContent_MakeAvailable(boost_core)
 UEMeta_FetchContent_MakeAvailable(boost_throw_exception)
 UEMeta_FetchContent_MakeAvailable(boost_hash2)
-UEMeta_FetchContent_MakeAvailable(boost_smart_ptr)
 
 set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
@@ -515,7 +534,6 @@ add_executable(parser
         src/wrappers/VarDeclWrapper.cpp
         src/wrappers/MethodDeclWrapper.cpp
         src/wrappers/RecordDeclWrapper.cpp
-        src/wrappers/Types.cpp
         src/wrappers/DeclDb.cpp)
 
 set_target_properties(parser PROPERTIES
@@ -580,8 +598,8 @@ target_link_libraries(parser PRIVATE
     clangFrontend
     clangASTMatchers
     CLI11::CLI11
+    BS_thread_pool
     Boost::hash2
-    Boost::smart_ptr
     absl::flat_hash_map
     quill::quill
     protobuf::libprotobuf

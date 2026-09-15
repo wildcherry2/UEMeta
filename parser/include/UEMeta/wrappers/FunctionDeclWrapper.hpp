@@ -13,7 +13,7 @@ namespace UEMeta {
     template<std::derived_from<clang::FunctionDecl> T = clang::FunctionDecl>
     class FunctionDeclWrapper : public DeclWrapper<T> {
     public:
-        FunctionDeclWrapper(const T* decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+        FunctionDeclWrapper(const T* decl, const std::shared_ptr<google::protobuf::Arena>& arena)
             : DeclWrapper<T>(decl, arena) {}
 
         using super = DeclWrapper<T>;
@@ -227,7 +227,7 @@ namespace UEMeta {
     class MethodDeclWrapper final : public FunctionDeclWrapper<clang::CXXMethodDecl> {
     public:
         explicit MethodDeclWrapper(const clang::CXXMethodDecl* decl,
-                                   const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+                                   const std::shared_ptr<google::protobuf::Arena>& arena)
             : FunctionDeclWrapper(decl, arena) {}
 
         // The record supplies layout availability; dependent records have no vtable offsets.

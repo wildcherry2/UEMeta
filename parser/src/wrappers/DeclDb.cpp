@@ -4,9 +4,12 @@
 #include "UEMeta/wrappers/Utility.hpp"
 #include "UEMeta/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/wrappers/VarDeclWrapper.hpp"
-#include "boost/smart_ptr/local_shared_ptr.hpp"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Type.h"
+#include "CLI/ConfigFwd.hpp"
+#include "google/protobuf/util/json_util.h"
+
+BS::thread_pool<> UEMeta::DeclDb::serialization_pool;
 
 static bool isDeclInFunctionOrMethod(const clang::Decl* decl);
 static bool isDeclInSystemOrStdHeader(const clang::Decl* decl);
@@ -151,8 +154,16 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
             return;
         }
 
-        const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
-        auto result = EnumDeclWrapper(decl, arena).serialize();
+        const auto arena = std::make_shared<google::protobuf::Arena>();
+        const auto result = EnumDeclWrapper(decl, arena).serialize();
+        if (const auto* variables = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&result)) {
+            for (const auto* variable : *variables) {
+                serialize(variable, arena);
+            }
+        }
+        else if (const auto* p_enum = std::get_if<ParserTypes::TLEnumDeclaration*>(&result)) {
+            serialize(*p_enum, arena);
+        }
     } catch (std::exception& e) {
         UEM_ERROR("{}", e.what());
     }
@@ -170,8 +181,9 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
         if (failsImplicitSpecOption(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
-        const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
-        auto result = VarDeclWrapper(decl, arena).serialize();
+        const auto arena = std::make_shared<google::protobuf::Arena>();
+        const auto result = VarDeclWrapper(decl, arena).serialize();
+        serialize(result, arena);
     } catch (std::exception& e) {
         UEM_ERROR("{}", e.what());
     }
@@ -205,10 +217,20 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
             return;
         }
 
-        const auto arena = boost::local_shared_ptr<google::protobuf::Arena>(new google::protobuf::Arena());
-        const auto results = RecordDeclWrapper(decl, arena).serialize();
-        // TODO: Save results together with arena when the single-pass output sink is connected.
-        (void)results;
+        const auto arena = std::make_shared<google::protobuf::Arena>();
+        for (const auto results = RecordDeclWrapper(decl, arena).serialize(); const auto& record_result : results) {
+            if (auto* p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&record_result)) {
+                serialize(*p_record, arena);
+            }
+            else if (const auto* variables = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&record_result)) {
+                for (const auto* variable : *variables) {
+                    serialize(variable, arena);
+                }
+            }
+            else if (auto* p_enum = std::get_if<ParserTypes::TLEnumDeclaration*>(&record_result)) {
+                serialize(*p_enum, arena);
+            }
+        }
     }
     catch (const std::exception& e) {
         UEM_ERROR("{}", e.what());
@@ -235,6 +257,10 @@ void UEMeta::DeclDb::addDeclarationAsVisited(clang::Decl* decl) {
     visited_decls.insert(decl);
 }
 
+void UEMeta::DeclDb::awaitPendingSerializations() {
+    serialization_pool.wait();
+}
+
 bool isDeclInFunctionOrMethod(const clang::Decl* decl) {
     if (!decl) return false;
 
@@ -254,4 +280,90 @@ bool isDeclInSystemOrStdHeader(const clang::Decl *decl) {
     const auto& sm = decl->getASTContext().getSourceManager();
     const auto loc = sm.getSpellingLoc(decl->getLocation());
     return sm.isInSystemHeader(loc) || sm.isInSystemMacro(loc);
+}
+
+template<UEMeta::TopLevelDecl T>
+static std::filesystem::path getSerializationPath(const T* msg) {
+    thread_local const auto& cfg = UEMeta::Config::GetConfig();
+    thread_local const auto& out_dir = cfg.OutputDirectory().UnderlyingPath();
+    thread_local const auto is_json = cfg.Format() == UEMeta::Config::SerializationFormat::json;
+    thread_local const std::string_view type = is_json ? "json" : "bin";
+
+    std::filesystem::path out_file_path;
+    const ParserTypes::DeclarationMetadata& metadata = msg->metadata();
+    if (cfg.PrefersFullNameInFileName()) {
+        auto name = std::string_view{metadata.qualified_name()}
+            | std::views::split(std::string_view{"::"})
+            | std::views::join_with(std::string_view{"::"})
+            | std::ranges::to<std::string>();
+        out_file_path = out_dir / fmtquill::format("{}-{}.{}{}",
+            name,
+            metadata.occurrence_index().versions(0).value(),
+            UEMeta::TOP_LEVEL_EXT<T>,
+            type);
+    }
+    else {
+        out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}",
+            metadata.decl_id().a(), metadata.decl_id().b(),
+            metadata.occurrence_index().versions(0).value(),
+            UEMeta::TOP_LEVEL_EXT<T>,
+            type);
+    }
+
+    return out_file_path;
+}
+
+template<UEMeta::TopLevelDecl T>
+void serialize(const T* msg, const std::shared_ptr<google::protobuf::Arena>& arena) {
+    if (!msg) throw std::invalid_argument("Failed to serialize because msg is null!");
+    if (!arena) throw std::invalid_argument("Failed to serialize because arena is null!");
+
+    static const auto& cfg = UEMeta::Config::GetConfig();
+    static const auto is_json = cfg.Format() == UEMeta::Config::SerializationFormat::json;
+    static const auto open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
+    static constexpr google::protobuf::json::PrintOptions json_options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
+
+    // Each write keeps the arena alive with thread-safe ownership across async tasks.
+    auto serialize_fn = [msg, arena] {
+        auto out_file_path = getSerializationPath(msg);
+        std::ofstream out_file(out_file_path, open_mode);
+        if (!out_file) {
+            throw std::runtime_error("Failed to open file for writing!");
+        }
+
+        if (is_json) {
+            thread_local std::string buffer{};
+            buffer.clear();
+            if (google::protobuf::util::MessageToJsonString(*msg, &buffer, json_options).ok()) {
+                out_file << buffer;
+            }
+            else {
+                UEM_ERROR("Failed to write to file: {}", out_file_path.string());
+            }
+        }
+        else if (!msg->SerializeToOstream(&out_file)) {
+            UEM_ERROR("Failed to write to file: {}", out_file_path.string());
+        }
+
+        out_file.close();
+        (void)arena; // ensure the compiler doesn't do any weird optimizations with arena
+    };
+
+    if (cfg.SyncSerialization()) {
+        serialize_fn();
+    }
+
+    else {
+        UEMeta::DeclDb::serialization_pool.detach_task([serialize_fn = std::move(serialize_fn)] {
+            try {
+                serialize_fn();
+            }
+            catch (const std::exception& e) {
+                UEM_ERROR("Failed to serialize declaration: {}", e.what());
+            }
+            catch (...) {
+                UEM_ERROR("Failed to serialize declaration with unknown exception!");
+            }
+        });
+    }
 }

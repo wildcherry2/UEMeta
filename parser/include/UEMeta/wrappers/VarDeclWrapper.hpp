@@ -4,7 +4,7 @@
 namespace UEMeta {
     class VarDeclWrapper final : public DeclWrapper<clang::VarDecl> {
     public:
-        explicit VarDeclWrapper(const clang::VarDecl* decl, const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+        explicit VarDeclWrapper(const clang::VarDecl* decl, const std::shared_ptr<google::protobuf::Arena>& arena)
             : DeclWrapper(decl, arena) {}
         [[nodiscard]] ParserTypes::TLGlobalVariableDeclaration* serialize() const;
 

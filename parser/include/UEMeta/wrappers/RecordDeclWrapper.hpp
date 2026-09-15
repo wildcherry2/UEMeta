@@ -16,7 +16,7 @@ namespace UEMeta {
      * Ownership follows TopLevel.proto: named nested types have separate identities; an
      * unnamed type declared with a field belongs inside that field's TypeRefOrAnon; members
      * of anonymous storage with no source declarator are raised into the containing record.
-     * A file-scope anonymous union instead produces a VariableGroup of global variables.
+     * A file-scope anonymous union instead produces a vector of global variables.
      *
      * The AST is borrowed and must remain alive during serialization and subsequent DeclDb
      * use. The protobuf arena owns messages as a group with a shared allocation lifetime.
@@ -27,17 +27,17 @@ namespace UEMeta {
      */
     class RecordDeclWrapper final : public DeclWrapper<clang::RecordDecl> {
     public:
-        // Anonymous global unions need a group result to preserve is_global_union.
+        // Anonymous global unions produce variables marked with is_anon_union_value.
         using SerializeResult = std::variant<ParserTypes::TLRecordDeclaration*,
                                              ParserTypes::TLEnumDeclaration*,
-                                             ParserTypes::VariableGroup*>;
+                                             std::vector<ParserTypes::TLGlobalVariableDeclaration*>>;
 
         explicit RecordDeclWrapper(const clang::RecordDecl* decl,
-                                   const boost::local_shared_ptr<google::protobuf::Arena>& arena)
+                                   const std::shared_ptr<google::protobuf::Arena>& arena)
             : DeclWrapper(decl, arena) {}
 
         /**
-         * Returns one record for an ordinary or field-owned definition, or one VariableGroup
+         * Returns one record for an ordinary or field-owned definition, or a vector of variables
          * for a file-scope anonymous union. Callers must handle forward declarations first.
          * The enum alternative is part of the result vocabulary, not currently emitted here.
          * Nested semantically anonymous records must go through their owner's extraction
@@ -89,8 +89,9 @@ namespace UEMeta {
                               clang::AccessSpecifier access) const;
         void putInitializer(const clang::Expr* initializer, ParserTypes::VersionedString* p_msg) const;
 
-        // A global anonymous union owns a single group, including recursively injected fields.
-        [[nodiscard]] ParserTypes::VariableGroup* serializeGlobalUnion() const;
-        void extractGlobalUnionFields(const clang::RecordDecl* record, ParserTypes::VariableGroup* p_msg) const;
+        // Collect a global anonymous union's variables, including recursively injected fields.
+        [[nodiscard]] std::vector<ParserTypes::TLGlobalVariableDeclaration*> serializeGlobalUnion() const;
+        void extractGlobalUnionFields(const clang::RecordDecl* record,
+                                      std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const;
     };
 }

@@ -26,6 +26,21 @@ namespace UEMeta {
         || std::same_as<clang::CXXMethodDecl, T>;
 
     template<typename T>
+    concept TopLevelDecl = std::same_as<ParserTypes::TLEnumDeclaration, T>
+        || std::same_as<ParserTypes::TLRecordDeclaration, T>
+        || std::same_as<ParserTypes::TLGlobalVariableDeclaration, T>
+        || std::same_as<ParserTypes::TLFreeFunctionDeclaration, T>;
+
+
+    template<TopLevelDecl T>
+    inline constexpr std::string_view TOP_LEVEL_EXT;
+
+    template<> inline constexpr std::string_view TOP_LEVEL_EXT<ParserTypes::TLEnumDeclaration> = "enum";
+    template<> inline constexpr std::string_view TOP_LEVEL_EXT<ParserTypes::TLRecordDeclaration> = "record";
+    template<> inline constexpr std::string_view TOP_LEVEL_EXT<ParserTypes::TLGlobalVariableDeclaration> = "var";
+    template<> inline constexpr std::string_view TOP_LEVEL_EXT<ParserTypes::TLFreeFunctionDeclaration> = "function";
+
+    template<typename T>
     concept TagDeclDerived = std::derived_from<T, clang::TagDecl>;
 
     template<typename T>
