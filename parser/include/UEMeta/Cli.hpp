@@ -64,16 +64,6 @@ namespace UEMeta {
         [[nodiscard]] bool PrefersFullNameInFileName() const;
 
         /**
-         * @brief Returns true when the user wants implicit (compiler-generated) template specializations serialized.
-         */
-        [[nodiscard]] bool ProcessImplicitSpecializations() const;
-
-        /**
-         * @brief Returns true when the user wants to dump everything to a single JSON.
-         */
-        [[nodiscard]] bool DumpToJson() const;
-
-        /**
          * @brief Returns true when the user wants synchronous serialization.
          */
         [[nodiscard]] bool SyncSerialization() const;
@@ -115,11 +105,10 @@ namespace UEMeta {
 
         std::string ToString() const {
             return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
-                                          "process_implicit_specializations={}\ndump_to_json={}\nsync_serialization={}\nstrip_commands={}\n"
+                                          "sync_serialization={}\nstrip_commands={}\n"
                                           "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\nclang_path={}\n"
                                           "log={}\noutput_directory={}", compile_commands, prefer_clang,
-                                          prefer_full_name_in_file_name, process_implicit_specializations,
-                                          dump_to_json, sync_serialization, strip_commands, additional_clang_args,
+                                          prefer_full_name_in_file_name, sync_serialization, strip_commands, additional_clang_args,
                                           builtin_subpaths, format_string_map.at(format), clang_path.string(),
                                           log.string(), output_directory.string());
         }
@@ -175,10 +164,8 @@ namespace UEMeta {
         static std::string LoadCompileCommandsString(const std::string& in);
 
         bool prefer_clang{};
-        bool dump_to_json{};
         bool sync_serialization{};
         bool prefer_full_name_in_file_name{};
-        bool process_implicit_specializations{};
         SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};

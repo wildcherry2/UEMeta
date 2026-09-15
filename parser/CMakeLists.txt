@@ -741,7 +741,6 @@ if(UEMETA_ENABLE_TESTING)
         "        --output [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===]\n"
         "        --format binary\n"
         "        --builtin-subpaths InlinedBuiltinTypes.hpp\n"
-        "        --process-implicit-specializations\n"
         "    RESULT_VARIABLE UEMETA_TEST_PARSER_RESULT\n"
         ")\n"
         "if(NOT UEMETA_TEST_PARSER_RESULT EQUAL 0)\n"
@@ -835,11 +834,13 @@ if(UEMETA_ENABLE_TESTING)
 endif()
 
 set(UEMETA_PLAYGROUND_SOURCE "${PROJECT_SOURCE_DIR}/playground/pg.cpp")
+set(UEMETA_PLAYGROUND_OUTPUT_DIR "${PARSER_BUNDLE_DIR}/playground")
 set(UEMETA_PLAYGROUND_COMPILE_COMMANDS "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/playground_compile_commands.json")
 set(UEMETA_PLAYGROUND_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/RunPlayground.cmake")
 
 file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON)
 file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_SOURCE}" UEMETA_PLAYGROUND_SOURCE_JSON)
+file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_OUTPUT_DIR}" UEMETA_PLAYGROUND_OUTPUT_DIR_JSON)
 file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_COMPILE_COMMANDS}" UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON)
 
 string(CONCAT UEMETA_PLAYGROUND_COMPILE_COMMANDS_CONTENT
@@ -862,11 +863,13 @@ file(GENERATE
     CONTENT "${UEMETA_PLAYGROUND_COMPILE_COMMANDS_CONTENT}"
 )
 string(CONCAT UEMETA_PLAYGROUND_LAUNCHER_CONTENT
+    "file(MAKE_DIRECTORY [===[${UEMETA_PLAYGROUND_OUTPUT_DIR_JSON}]===])\n"
     "execute_process(\n"
     "    COMMAND \"$<TARGET_FILE:parser>\"\n"
     "        --compile-commands [===[${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}]===]\n"
     "        --clang-path [===[${PARSER_BUNDLE_CLANG_DIR}/clang-cl${CMAKE_EXECUTABLE_SUFFIX}]===]\n"
-    "        --dump\n"
+    "        --output [===[${UEMETA_PLAYGROUND_OUTPUT_DIR_JSON}]===]\n"
+    "        --format json\n"
     "    RESULT_VARIABLE UEMETA_PLAYGROUND_RESULT\n"
     ")\n"
     "if(NOT UEMETA_PLAYGROUND_RESULT EQUAL 0)\n"

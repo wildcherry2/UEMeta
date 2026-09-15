@@ -49,19 +49,12 @@ constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', t
                              "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
                              "\n\tGood for debugging.";
 
-constexpr auto DUMP_HELP = "Overrides all output settings and dumps all output to a JSON file, either in the same directory"
-                           "as the log file (if given) or the same directory as the program.";
-
 constexpr auto SYNC_HELP = "When passed, a declaration is saved to a file before moving on to the next file. "
                           "This can alleviate memory usage issues, but incurs a performance/time-to-finish penalty.";
 
 constexpr auto PREFER_FULL_NAME_HELP = "By default, the hash of the fully qualified name of a declaration is inserted into"
                                        " the serialized file name. Specifying this make the fully qualified name of the"
                                        " declaration appear in the file name, instead of its hash.";
-
-constexpr auto PROCESS_IMPLICIT_SPEC_HELP = "By default, we don't process compiler-generated template specializations."
-                                            " This means things like `std::vector<int>` won't serialize. However, std::vector<T>"
-                                            " would still serialize.";
 
 constexpr auto BUILTIN_SUBPATHS_HELP = "List of substrings that are contained within paths to builtin files. Builtin files"
                                        " are not serialized, since they're considered available in the environment and"
@@ -135,16 +128,6 @@ bool UEMeta::Config::PrefersClang() const {
 bool UEMeta::Config::PrefersFullNameInFileName() const {
     AssertInitialized();
     return prefer_full_name_in_file_name;
-}
-
-bool UEMeta::Config::ProcessImplicitSpecializations() const {
-    AssertInitialized();
-    return process_implicit_specializations;
-}
-
-bool UEMeta::Config::DumpToJson() const {
-    AssertInitialized();
-    return dump_to_json;
 }
 
 bool UEMeta::Config::SyncSerialization() const {
@@ -235,10 +218,6 @@ int UEMeta::Config::Initialize(int argc, char **argv) {
     app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
         ->default_val(false);
     app.add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)
-        ->default_val(false);
-    app.add_flag("--process-implicit-specializations", cfg.process_implicit_specializations, PROCESS_IMPLICIT_SPEC_HELP)
-        ->default_val(false);
-    app.add_flag("--dump", cfg.dump_to_json, DUMP_HELP)
         ->default_val(false);
     app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)
         ->default_val(false);

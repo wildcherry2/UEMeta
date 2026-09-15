@@ -31,13 +31,6 @@ static bool isImplicitSpec(const T* decl) {
     return decl->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation;
 }
 
-template<UEMeta::TemplateSpecializableDeclType T>
-static bool failsImplicitSpecOption(const T* decl) {
-    if (!decl) return false;
-    if (UEMeta::Config::GetConfig().ProcessImplicitSpecializations()) return false;
-    return isImplicitSpec(decl);
-}
-
 void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) {
     if (!decl) throw std::runtime_error("Can't addDeclIdentity with null Decl pointer!");
     decl_to_identity_map.insert({decl, hash});
@@ -145,6 +138,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
         if (visited_decls.contains(decl)) return;
         visited_decls.insert(decl);
         if (isDeclInSystemOrStdHeader(decl)) return;
+        if (isImplicitSpec(decl)) return;
         // if this enum is completely anonymous and attached to a declarator (like a VarDecl or FieldDecl), we'll get it later
         if (isTagAnonymousAndEmbedded(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
@@ -172,7 +166,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
         if (isDeclInSystemOrStdHeader(decl->getTemplateInstantiationPattern())) return;
         if (decl->isLocalVarDeclOrParm()) return;
         if (decl->isCXXClassMember()) return;
-        if (failsImplicitSpecOption(decl)) return;
+        if (isImplicitSpec(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
         // Extern variables remain ordinary variable metadata, not forward occurrences.
@@ -190,11 +184,10 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
         if (decl->isImplicit() || isDeclInSystemOrStdHeader(decl) || isDeclInFunctionOrMethod(decl)) return;
         if (isTagAnonymousAndEmbedded(decl)) return;
 
-        // Honor instantiation filtering while preserving explicit and partial specializations.
-        // todo remove and deny by default when implicit option is taken out
+        // Implicit instantiations never produce top-level metadata.
         if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
             if (isDeclInSystemOrStdHeader(cxx->getTemplateInstantiationPattern())) return;
-            if (failsImplicitSpecOption(cxx)) return;
+            if (isImplicitSpec(cxx)) return;
         }
 
         // Semantically anonymous member storage is extracted by its nearest owning record.
@@ -224,7 +217,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
         if (isDeclInSystemOrStdHeader(decl)) return;
         if (isDeclInSystemOrStdHeader(decl->getTemplateInstantiationPattern())) return;
         if (decl->isCXXClassMember()) return;
-        if (failsImplicitSpecOption(decl)) return;
+        if (isImplicitSpec(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
         // Defer prototypes to a known definition, preserving declarations whose bodies are outside this AST.
