@@ -31,7 +31,7 @@ static bool failsImplicitSpecOption(const T* decl) {
     return isImplicitSpec(decl);
 }
 
-void UEMeta::DeclDb::addDeclIdentity(clang::Decl* decl, const Hash& hash) {
+void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) {
     if (!decl) throw std::runtime_error("Can't addDeclIdentity with null Decl pointer!");
     decl_to_identity_map.insert({decl, hash});
     identity_to_decl_map.insert({hash, decl});

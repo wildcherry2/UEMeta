@@ -19,6 +19,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
             const std::string fqn = computeFQN();
             const Hash decl_id = computeDeclId(fqn);
             putMetadata(out_msg->mutable_metadata(), true, fqn, decl_id);
+            DeclDb::addDeclIdentity(decl, decl_id);
         }
         {
             const auto underlying_type = underlying.getAsString();

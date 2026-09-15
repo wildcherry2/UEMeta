@@ -95,7 +95,6 @@ public:
         if (const auto* initializer = decl->getInClassInitializer()) {
             owner.putInitializer(initializer, p_msg->mutable_default_value());
         }
-        //todo register variable with DeclDb
         return p_msg;
     }
 

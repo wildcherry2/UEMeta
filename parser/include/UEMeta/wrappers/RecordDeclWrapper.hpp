@@ -22,8 +22,8 @@ namespace UEMeta {
      * use. The protobuf arena owns messages as a group with a shared allocation lifetime.
      * All returned protobuf pointers belong to the supplied arena: keep that arena
      * alive while using them, and do not delete the messages individually. Embedded types
-     * and methods share it. Independently named nested types use separate arenas; their
-     * persistence is still a TODO in handleRecord/handleEnum.
+     * and methods share it. Independently named nested types use separate arenas and are
+     * serialized immediately.
      */
     class RecordDeclWrapper final : public DeclWrapper<clang::RecordDecl> {
     public:

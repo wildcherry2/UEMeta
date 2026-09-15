@@ -13,7 +13,7 @@ namespace UEMeta {
         using QueryResult = std::variant<Hash, uint64_t, bool, llvm::StringRef, std::monostate>;
 
         // DeclWrappers call this to bind a themselves to a Hash globally
-        static void addDeclIdentity(clang::Decl* decl, const Hash& hash);
+        static void addDeclIdentity(const clang::Decl* decl, const Hash& hash);
 
         // returns Hash if the decl is mapped to a full declaration with that identity Hash,
         // string if it's from a system or std:: header,
