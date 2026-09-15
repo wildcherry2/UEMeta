@@ -44,7 +44,7 @@ namespace UEMeta {
     concept TagDeclDerived = std::derived_from<T, clang::TagDecl>;
 
     template<typename T>
-    concept TemplateSpecializableDeclType = WrapableDecl<T> && requires(T* a)
+    concept TemplateSpecializableDeclType = (WrapableDecl<T> || std::same_as<clang::CXXRecordDecl, T>) && requires(const T* a)
     {
         {a->getTemplateSpecializationKind()} -> std::same_as<clang::TemplateSpecializationKind>;
     };

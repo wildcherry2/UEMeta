@@ -12,7 +12,7 @@
 
 llvm::DenseMap<const clang::Decl*, const UEMeta::Hash> UEMeta::DeclDb::decl_to_identity_map;
 absl::flat_hash_map<const UEMeta::Hash, const clang::Decl*> UEMeta::DeclDb::identity_to_decl_map;
-llvm::DenseMap<const clang::Decl*, llvm::SmallVector<std::variant<uint64_t, clang::Decl*>>>
+llvm::DenseMap<const clang::Decl*, llvm::SmallVector<uint64_t>>
     UEMeta::DeclDb::decl_to_forward_decl_occurrence_map;
 llvm::DenseSet<const clang::Decl*> UEMeta::DeclDb::visited_decls;
 
@@ -34,7 +34,7 @@ static bool isImplicitSpec(const T* decl) {
 template<UEMeta::TemplateSpecializableDeclType T>
 static bool failsImplicitSpecOption(const T* decl) {
     if (!decl) return false;
-    if (UEMeta::Config::GetConfig().ProcessImplicitSpecializations()) return true;
+    if (UEMeta::Config::GetConfig().ProcessImplicitSpecializations()) return false;
     return isImplicitSpec(decl);
 }
 
@@ -48,6 +48,10 @@ void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) 
 UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryDeclIdentity(const clang::Decl* decl) {
     try {
         if (!decl) return false;
+        // Function-template references can name an earlier redeclaration, while the maps use the definition.
+        if (const auto* function = llvm::dyn_cast<clang::FunctionDecl>(decl)) {
+            if (const auto* definition = function->getDefinition()) decl = definition;
+        }
         if (const auto decl_hash_it = decl_to_identity_map.find(decl); decl_hash_it != decl_to_identity_map.end()) {
             return decl_hash_it->second;
         }
@@ -60,11 +64,7 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryDeclIdentity(const clang::Decl*
         }
 
         if (const auto fwd_hash_it = decl_to_forward_decl_occurrence_map.find(decl); fwd_hash_it != decl_to_forward_decl_occurrence_map.end()) {
-            std::variant<uint64_t, clang::Decl*>& last = fwd_hash_it->second.back();
-            // this should theoretically always be the case, since if it's a Decl, it's in the decl_to_identity_map and this never happens
-            if (uint64_t* as_fwd = std::get_if<uint64_t>(&last)) {
-                return *as_fwd;
-            }
+            return fwd_hash_it->second.back();
         }
 
         return false;
@@ -150,12 +150,9 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
         if (isDeclInFunctionOrMethod(decl)) return;
 
         if (!decl->isThisDeclarationADefinition()) {
-            auto* def = decl->getDefinition();
-            if (!def) {
-                //todo log or something since this is an undefined enum
-                return;
+            if (auto* definition = decl->getDefinition()) {
+                addForwardDeclaration(definition);
             }
-            addForwardDeclaration(def);
             return;
         }
 
@@ -178,6 +175,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
         if (failsImplicitSpecOption(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
+        // Extern variables remain ordinary variable metadata, not forward occurrences.
         const auto arena = std::make_shared<google::protobuf::Arena>();
         VarDeclWrapper(decl, arena).toFile();
     } catch (std::exception& e) {
@@ -187,7 +185,6 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl *decl) {
 
 void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
     try {
-        // Records already consumed by an enclosing wrapper must not be serialized again by the visitor.
         if (!decl || visited_decls.contains(decl)) return;
         visited_decls.insert(decl);
         if (decl->isImplicit() || isDeclInSystemOrStdHeader(decl) || isDeclInFunctionOrMethod(decl)) return;
@@ -197,15 +194,13 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
         // todo remove and deny by default when implicit option is taken out
         if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
             if (isDeclInSystemOrStdHeader(cxx->getTemplateInstantiationPattern())) return;
-            if (!Config::GetConfig().ProcessImplicitSpecializations()
-                && cxx->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation) return;
+            if (failsImplicitSpecOption(cxx)) return;
         }
 
         // Semantically anonymous member storage is extracted by its nearest owning record.
         if (decl->isAnonymousStructOrUnion()
             && decl->getDeclContext()->getNonTransparentContext()->isRecord()) return;
 
-        // Record the forward occurrence without consuming the eventual definition's visit.
         if (!decl->isThisDeclarationADefinition()) {
             if (auto* definition = decl->getDefinition()) {
                 addForwardDeclaration(definition);
@@ -232,6 +227,14 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
         if (failsImplicitSpecOption(decl)) return;
         if (isDeclInFunctionOrMethod(decl)) return;
 
+        // Defer prototypes to a known definition, preserving declarations whose bodies are outside this AST.
+        if (!decl->isThisDeclarationADefinition()) {
+            if (auto* definition = decl->getDefinition()) {
+                addForwardDeclaration(definition);
+                return;
+            }
+        }
+
         const auto arena = std::make_shared<google::protobuf::Arena>();
         FunctionDeclWrapper(decl, arena).toFile();
     } catch (std::exception& e) {
@@ -239,15 +242,18 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
     }
 }
 
-void UEMeta::DeclDb::addForwardDeclaration(clang::TagDecl* forDecl) {
-    if (!forDecl || !forDecl->isThisDeclarationADefinition()) {
-        throw std::invalid_argument("Failed to addForwardDeclaration because the declaration is not a definition!");
+void UEMeta::DeclDb::addForwardDeclaration(clang::Decl* forDecl) {
+    const auto* tag = llvm::dyn_cast_or_null<clang::TagDecl>(forDecl);
+    const auto* function = llvm::dyn_cast_or_null<clang::FunctionDecl>(forDecl);
+    if (!(tag && tag->isThisDeclarationADefinition())
+        && !(function && function->isThisDeclarationADefinition())) {
+        throw std::invalid_argument("Failed to addForwardDeclaration because the declaration is not a record, enum or function definition!");
     }
     if (const auto other_decls = decl_to_forward_decl_occurrence_map.find(forDecl); other_decls != decl_to_forward_decl_occurrence_map.end()) {
         other_decls->second.emplace_back(Detail::DeclWrapperStatics::allocateDeclOccurrence());
     }
     else {
-        decl_to_forward_decl_occurrence_map.insert({forDecl, {std::variant<uint64_t, clang::Decl*>{Detail::DeclWrapperStatics::allocateDeclOccurrence()}}});
+        decl_to_forward_decl_occurrence_map.insert({forDecl, {Detail::DeclWrapperStatics::allocateDeclOccurrence()}});
     }
 }
 

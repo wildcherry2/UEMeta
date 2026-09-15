@@ -21,7 +21,8 @@ namespace UEMeta {
         // uint64_t if the decl otherwise has a forward declaration, then this is the occurrence index of the latest forward declaration,
         // or false if it's not mapped to anything
         // monostate is returned on exception
-        // note that this means forward declarations after the defining declaration are ignored
+        // Function redeclarations resolve to their definition when available.
+        // A registered definition's identity takes precedence over its forward-declaration history.
         static QueryResult queryDeclIdentity(const clang::Decl* decl);
 
         static const clang::Decl* queryDecl(const Hash& hash);
@@ -51,10 +52,10 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::RecordDecl* decl);
         static void serializeIfNeeded(clang::FunctionDecl* decl);
 
-        // Adds a new forward declaration for the given declaration.
-        // Throws if forDecl is not a definition.
+        // Adds a forward occurrence keyed by the given record, enum or function definition.
+        // Throws if forDecl is null, another declaration kind, or not a definition.
         // Does not add forDecl to the visited decls list, nor does it require that forDecl has been encountered/serialized already.
-        static void addForwardDeclaration(clang::TagDecl* forDecl);
+        static void addForwardDeclaration(clang::Decl* forDecl);
 
         // Marks a top-level output candidate as visited, preventing duplicate serialization.
         // Wrappers use this for candidates they consume, such as nested records and enums;
@@ -73,10 +74,9 @@ namespace UEMeta {
 
         static absl::flat_hash_map<const Hash, const clang::Decl*> identity_to_decl_map;
 
-        // maps non-forward, non-alias declarations to a vector of forward declaration occurrence indices and a Decl
-        // note that the vector should only have one Decl*, and it should be the same as the key Decl*.
-        // this preserves the order of forward declarations and the actual declarations relative to each other
-        static llvm::DenseMap<const clang::Decl*, llvm::SmallVector<std::variant<uint64_t, clang::Decl*>>> decl_to_forward_decl_occurrence_map;
+        // Maps definition declarations to all forward-declaration occurrence indices in visitation order.
+        // Retain the full history for later consumers; identity lookup uses only the latest occurrence.
+        static llvm::DenseMap<const clang::Decl*, llvm::SmallVector<uint64_t>> decl_to_forward_decl_occurrence_map;
 
         // Declarations already considered by the top-level entry points or consumed by wrappers.
         // Visitation does not imply an identity: an embedded anonymous record has no standalone

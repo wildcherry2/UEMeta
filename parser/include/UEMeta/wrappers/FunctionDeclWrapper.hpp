@@ -21,11 +21,15 @@ namespace UEMeta {
         [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* toIntermediateRepresentation() const {
             const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(super::arena.get());
             const std::string fqn = computeFQN();
+            const Hash decl_id = computeDeclIdWithTemplateDetails(fqn, out_msg->mutable_common());
             super::putMetadata(
                 out_msg->mutable_metadata(),
                 true,
                 fqn,
-                computeDeclIdWithTemplateDetails(fqn, out_msg->mutable_common()));
+                decl_id);
+            if (!llvm::isa<clang::CXXMethodDecl>(super::decl)) {
+                DeclDb::addDeclIdentity(super::decl, decl_id);
+            }
             putFunctionCommon(out_msg->mutable_common());
             return out_msg;
         }
