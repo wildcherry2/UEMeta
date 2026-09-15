@@ -171,6 +171,9 @@ namespace UEMeta {
          */
         static int Initialize(int argc, char** argv);
 
+        /// @brief Reads a compile_commands.json file or returns inline JSON unchanged.
+        static std::string LoadCompileCommandsString(const std::string& in);
+
         bool prefer_clang{};
         bool dump_to_json{};
         bool sync_serialization{};

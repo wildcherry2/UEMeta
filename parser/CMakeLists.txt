@@ -522,7 +522,7 @@ source_group("Generated\\Protobuf" FILES
 )
 
 add_executable(parser
-        src/main.cpp src/ClangHandler.cpp
+        src/main.cpp src/MetaFrontendAction.cpp
         src/Cli.cpp
         src/MetaTool.cpp
         src/StablePath.cpp

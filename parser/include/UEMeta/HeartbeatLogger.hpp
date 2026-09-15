@@ -11,7 +11,7 @@ namespace UEMeta {
         void Start();
         virtual void SetStr(std::string str);
         void Stop();
-        virtual ~HeartbeatLogger() = default;
+        virtual ~HeartbeatLogger() { Stop(); }
 
     protected:
         virtual void Log();
@@ -26,7 +26,7 @@ namespace UEMeta {
     class CountingHeartbeatLogger : public HeartbeatLogger {
     public:
         explicit CountingHeartbeatLogger(const std::string& format_str, std::chrono::milliseconds wait = std::chrono::milliseconds(1500));
-        ~CountingHeartbeatLogger() override = default;
+        ~CountingHeartbeatLogger() override { Stop(); }
         void SetStr(std::string str) override;
         void Increment();
         void Decrement();

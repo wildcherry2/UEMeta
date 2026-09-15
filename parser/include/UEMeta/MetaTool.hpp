@@ -20,9 +20,9 @@ namespace UEMeta {
         /**
          * @brief Runs the Clang tool with UEMeta's AST frontend action.
          *
-         * @return Clang's run result, or 1 when visitor/callback exception guards recorded a failure.
+         * @return Clang's run result.
          */
-        int RunClangTool() noexcept;
+        int RunClangTool();
 
     private:
         /// @brief Removes configured Unreal build arguments before parsing.

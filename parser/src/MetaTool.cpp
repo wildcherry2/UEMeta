@@ -5,15 +5,12 @@
 #include <clang/Tooling/JSONCompilationDatabase.h>
 #include <llvm/Support/VirtualFileSystem.h>
 #include <algorithm>
-#include <atomic>
-#include <exception>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
-#include "UEMeta/ClangHandler.hpp"
+#include "UEMeta/MetaFrontendAction.hpp"
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/Internal/ClangHelpers.hpp"
 
 using namespace clang::tooling;
 
@@ -103,17 +100,7 @@ UEMeta::MetaTool::MetaTool()
     clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-w"));
 }
 
-/// @brief Runs Clang with ClangHandler and converts guarded exceptions into a nonzero result.
-int UEMeta::MetaTool::RunClangTool() noexcept {
-    GClangExceptionCaught.store(false, std::memory_order_relaxed);
-    try {
-        const auto result = clang_tool.run(newFrontendActionFactory<ClangHandler>().get());
-        return GClangExceptionCaught.load(std::memory_order_relaxed) ? 1 : result;
-    } catch (const std::exception& ex) {
-        LogClangException("ClangTool::run", ex);
-    } catch (...) {
-        LogClangUnknownException("ClangTool::run");
-    }
-
-    return 1;
+/// @brief Runs Clang with MetaFrontendAction.
+int UEMeta::MetaTool::RunClangTool() {
+    return clang_tool.run(newFrontendActionFactory<MetaFrontendAction>().get());
 }

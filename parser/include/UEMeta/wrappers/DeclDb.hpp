@@ -1,6 +1,7 @@
 #pragma once
 #include <variant>
 #include "Utility.hpp"
+#include "absl/container/flat_hash_map.h"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"
