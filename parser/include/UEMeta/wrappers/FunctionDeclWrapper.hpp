@@ -18,7 +18,7 @@ namespace UEMeta {
 
         using super = DeclWrapper<T>;
 
-        [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* serialize() const {
+        [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* toIntermediateRepresentation() const {
             const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(super::arena.get());
             const std::string fqn = computeFQN();
             super::putMetadata(
@@ -28,6 +28,11 @@ namespace UEMeta {
                 computeDeclIdWithTemplateDetails(fqn, out_msg->mutable_common()));
             putFunctionCommon(out_msg->mutable_common());
             return out_msg;
+        }
+
+        void toFile() const {
+            const ParserTypes::TLFreeFunctionDeclaration* ir = toIntermediateRepresentation();
+            Detail::DeclWrapperStatics::saveToFile(ir, super::arena);
         }
     protected:
         void putFunctionCommon(ParserTypes::FunctionCommon* p_msg) const {

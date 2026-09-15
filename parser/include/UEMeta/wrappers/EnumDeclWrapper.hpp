@@ -8,12 +8,14 @@
 namespace UEMeta {
     class EnumDeclWrapper final : public DeclWrapper<clang::EnumDecl> {
     public:
-        using SerializeResult = std::variant<std::vector<ParserTypes::TLGlobalVariableDeclaration*>,
+        using IntermediateRepresentation = std::variant<std::vector<ParserTypes::TLGlobalVariableDeclaration*>,
                                              ParserTypes::TLEnumDeclaration*>;
         explicit EnumDeclWrapper(const clang::EnumDecl *decl, const std::shared_ptr<google::protobuf::Arena>& arena)
             : DeclWrapper(decl, arena) {}
 
-        [[nodiscard]] SerializeResult serialize() const;
+        [[nodiscard]] IntermediateRepresentation toIntermediateRepresentation() const;
+        void toFile() const;
+
         // Append anonymous enumerators as static constexpr fields; access is resolved by the owning record.
         void serializeAsFields(ParserTypes::AccessSpecifier access, ParserTypes::TLRecordDeclaration* dest) const;
     protected:

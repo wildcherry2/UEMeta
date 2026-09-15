@@ -28,8 +28,7 @@ namespace UEMeta {
     class RecordDeclWrapper final : public DeclWrapper<clang::RecordDecl> {
     public:
         // Anonymous global unions produce variables marked with is_anon_union_value.
-        using SerializeResult = std::variant<ParserTypes::TLRecordDeclaration*,
-                                             ParserTypes::TLEnumDeclaration*,
+        using IntermediateRepresentation = std::variant<ParserTypes::TLRecordDeclaration*,
                                              std::vector<ParserTypes::TLGlobalVariableDeclaration*>>;
 
         explicit RecordDeclWrapper(const clang::RecordDecl* decl,
@@ -39,15 +38,15 @@ namespace UEMeta {
         /**
          * Returns one record for an ordinary or field-owned definition, or a vector of variables
          * for a file-scope anonymous union. Callers must handle forward declarations first.
-         * The enum alternative is part of the result vocabulary, not currently emitted here.
          * Nested semantically anonymous records must go through their owner's extraction
-         * path, not a standalone call to serialize().
+         * path, not a standalone call to toIntermediateRepresentation().
          *
          * This is a single-pass operation, not a pure/repeatable conversion: despite const,
          * it allocates messages and updates DeclDb's identities, forwards and visited set.
          * Callers are responsible for avoiding duplicate serialization of an occurrence.
          */
-        [[nodiscard]] std::vector<SerializeResult> serialize() const;
+        [[nodiscard]] IntermediateRepresentation toIntermediateRepresentation() const;
+        void toFile() const;
 
     private:
         // A union field needs global-variable metadata without becoming a VarDecl identity.

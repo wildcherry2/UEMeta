@@ -4,7 +4,7 @@
 #include "UEMeta/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/wrappers/RecordDeclWrapper.hpp"
 
-ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::serialize() const {
+ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediateSerialization() const {
     const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLGlobalVariableDeclaration>(arena.get());
     const std::string fqn = computeFQN();
 
@@ -29,6 +29,11 @@ ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::serialize() co
     }
 
     return out_msg;
+}
+
+void UEMeta::VarDeclWrapper::toFile() const {
+    const ParserTypes::TLGlobalVariableDeclaration* ir = toIntermediateSerialization();
+    saveToFile(ir, arena);
 }
 
 std::string UEMeta::VarDeclWrapper::computeFQN() const {
@@ -66,15 +71,14 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
             && tag->isEmbeddedInDeclarator() && !tag->isFreeStanding()) {
             if (auto* record = llvm::dyn_cast_or_null<clang::RecordDecl>(tag->getDefinition())) {
                 DeclDb::addDeclarationAsVisited(record);
-                const auto results = RecordDeclWrapper(record, arena).serialize();
-                if (results.size() != 1 || !std::holds_alternative<ParserTypes::TLRecordDeclaration*>(results.front())) {
-                    throw std::runtime_error("An embedded anonymous record did not produce a single record!");
-                }
-                type_ref_or_anon->set_allocated_anon_record(std::get<ParserTypes::TLRecordDeclaration*>(results.front()));
+                const auto result = RecordDeclWrapper(record, arena).toIntermediateRepresentation();
+                const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result);
+                if (!nested) throw std::runtime_error("An embedded anonymous record did not produce a record!");
+                type_ref_or_anon->set_allocated_anon_record(*nested);
             }
             else if (auto* enumeration = llvm::dyn_cast_or_null<clang::EnumDecl>(tag->getDefinition())) {
                 DeclDb::addDeclarationAsVisited(enumeration);
-                const auto result = EnumDeclWrapper(enumeration, arena).serialize();
+                const auto result = EnumDeclWrapper(enumeration, arena).toIntermediateRepresentation();
                 const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
                 if (!nested) throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
                 type_ref_or_anon->set_allocated_anon_enum(*nested);

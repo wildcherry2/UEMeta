@@ -20,7 +20,7 @@
  * destructors that override a virtual base destructor. Nested RecordDecl/EnumDecl nodes
  * describe types, not their eventual fields.
  * TemplateDecl can wrap the actual member node. Base classes are CXXBaseSpecifiers, not
- * Decls, so serialize() handles bases separately. Walking decls(), rather than separate
+ * Decls, so toIntermediateRepresentation() handles bases separately. Walking decls(), rather than separate
  * fields()/methods() lists, keeps the declarations together in their encountered order.
  *
  * "Anonymous" has two different meanings here (see the opening comments in TopLevel.proto):
@@ -105,13 +105,13 @@ private:
 
 // Establish the definition's identity, emit available layout, then consume bases and members.
 // Callers handle forward occurrences before entering this serialization path.
-std::vector<UEMeta::RecordDeclWrapper::SerializeResult> UEMeta::RecordDeclWrapper::serialize() const {
-    if (!decl) throw std::invalid_argument("Cannot serialize a null record declaration!");
+UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper::toIntermediateRepresentation() const {
+    if (!decl) throw std::invalid_argument("Cannot toIntermediateRepresentation a null record declaration!");
 
     // File-scope anonymous unions inject static variables into their enclosing namespace.
     if (decl->isUnion() && decl->isAnonymousStructOrUnion()
         && decl->getDeclContext()->getNonTransparentContext()->isFileContext()) {
-        return {serializeGlobalUnion()};
+        return serializeGlobalUnion();
     }
     if (decl->isAnonymousStructOrUnion()) {
         throw std::invalid_argument("Nested anonymous storage must be extracted by its owning record!");
@@ -148,7 +148,19 @@ std::vector<UEMeta::RecordDeclWrapper::SerializeResult> UEMeta::RecordDeclWrappe
         }
     }
     handleMembers(decl, p_msg, layout, uint64_t{0}, clang::AS_none);
-    return {p_msg};
+    return p_msg;
+}
+
+void UEMeta::RecordDeclWrapper::toFile() const {
+    IntermediateRepresentation ir = toIntermediateRepresentation();
+    if (auto** p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
+        saveToFile(*p_record, arena);
+    }
+    else if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
+        for (const auto* p_var : *vec) {
+            saveToFile(p_var, arena);
+        }
+    }
 }
 
 std::string UEMeta::RecordDeclWrapper::computeFQN() const {
@@ -410,7 +422,7 @@ bool UEMeta::RecordDeclWrapper::handleForwardDeclaration(clang::TagDecl* tag) co
     // A TagDecl is Clang's common base for record and enum declarations. "struct X;" and
     // "struct X { ... };" are different AST nodes for one type. getDefinition() can see the
     // latter even before this serialization walk reaches it: the parsed AST can already
-    // contain later source declarations. Only record the forward occurrence now; do not serialize ahead.
+    // contain later source declarations. Only record the forward occurrence now; do not toIntermediateRepresentation ahead.
     // DeclDb needs the definition pointer as its key, but visitation below applies to tag only.
     DeclDb::addDeclarationAsVisited(tag);
     if (tag->isThisDeclarationADefinition()) return false;
@@ -434,16 +446,11 @@ void UEMeta::RecordDeclWrapper::handleRecord(
     // Copying these hashes does not preserve the nested payloads: the saving TODO below must
     // eventually retain/consume each nested arena before this local owner is destroyed.
     const auto nested_arena = std::make_shared<google::protobuf::Arena>();
-    const auto results = RecordDeclWrapper(record, nested_arena).serialize();
-    for (const auto& result : results) {
-        if (const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result)) {
-            addNestedHash((*nested)->metadata(), p_msg);
-        }
-        else if (const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result)) {
-            addNestedHash((*nested)->metadata(), p_msg);
-        }
+    const auto result = RecordDeclWrapper(record, nested_arena).toIntermediateRepresentation();
+    if (const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result)) {
+        addNestedHash((*nested)->metadata(), p_msg);
     }
-    // TODO: Save the nested results together with nested_arena before releasing their arena here.
+    // TODO: Save the nested result together with nested_arena before releasing its arena here.
 }
 
 // Enum policy mirrors record ownership, but anonymous enum contents are constants rather
@@ -467,7 +474,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(
 
     // Delegate named enums to their wrapper and publish the returned identity for following members.
     const auto nested_arena = std::make_shared<google::protobuf::Arena>();
-    const auto result = EnumDeclWrapper(enumeration, nested_arena).serialize();
+    const auto result = EnumDeclWrapper(enumeration, nested_arena).toIntermediateRepresentation();
     const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
     if (!nested || !(*nested)->metadata().has_decl_id()) {
         throw std::runtime_error("A named nested enum did not produce an enum identity!");
@@ -509,7 +516,7 @@ void UEMeta::RecordDeclWrapper::addNestedHash(
 // when we do not select one of these embedded-message branches.
 void UEMeta::RecordDeclWrapper::putFieldType(
     clang::QualType type, ParserTypes::VersionedTypeRefOrAnon* p_msg) const {
-    if (type.isNull()) throw std::runtime_error("Cannot serialize a field without a type!");
+    if (type.isNull()) throw std::runtime_error("Cannot toIntermediateRepresentation a field without a type!");
 
     // Keep cvref/pointer/array spelling in TypeRef while fully resolving alias sugar.
     type = type.getCanonicalType();
@@ -532,16 +539,15 @@ void UEMeta::RecordDeclWrapper::putFieldType(
         && tag->isEmbeddedInDeclarator() && !tag->isFreeStanding()) {
         if (auto* record = llvm::dyn_cast_or_null<clang::RecordDecl>(tag->getDefinition())) {
             DeclDb::addDeclarationAsVisited(record);
-            const auto results = RecordDeclWrapper(record, arena).serialize();
-            if (results.size() != 1 || !std::holds_alternative<ParserTypes::TLRecordDeclaration*>(results.front())) {
-                throw std::runtime_error("An embedded anonymous record did not produce a single record!");
-            }
-            value->set_allocated_anon_record(std::get<ParserTypes::TLRecordDeclaration*>(results.front()));
+            const auto result = RecordDeclWrapper(record, arena).toIntermediateRepresentation();
+            const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result);
+            if (!nested) throw std::runtime_error("An embedded anonymous record did not produce a record!");
+            value->set_allocated_anon_record(*nested);
             return;
         }
         if (auto* enumeration = llvm::dyn_cast_or_null<clang::EnumDecl>(tag->getDefinition())) {
             DeclDb::addDeclarationAsVisited(enumeration);
-            const auto result = EnumDeclWrapper(enumeration, arena).serialize();
+            const auto result = EnumDeclWrapper(enumeration, arena).toIntermediateRepresentation();
             const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
             if (!nested) throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
             value->set_allocated_anon_enum(*nested);

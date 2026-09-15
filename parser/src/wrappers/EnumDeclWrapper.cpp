@@ -6,12 +6,12 @@
 #include "llvm/ADT/StringExtras.h"
 #include "UEMeta/wrappers/Utility.hpp"
 
-UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() const {
+UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toIntermediateRepresentation() const {
     clang::QualType underlying = decl->getIntegerType();
     if (underlying.isNull()) underlying = decl->getPromotionType();
     if (underlying.isNull()) throw std::runtime_error("Underlying type of enumerator is unknown!");
 
-    // if it has a stable identity or depends on a declarator, serialize with global thread-local message allocation
+    // if it has a stable identity or depends on a declarator, toIntermediateRepresentation with global thread-local message allocation
     // and return it
     if (computeHasIdentity() || decl->isEmbeddedInDeclarator()) {
         const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLEnumDeclaration>(arena.get());
@@ -80,6 +80,18 @@ UEMeta::EnumDeclWrapper::SerializeResult UEMeta::EnumDeclWrapper::serialize() co
         variables.push_back(p_variable);
     }
     return variables;
+}
+
+void UEMeta::EnumDeclWrapper::toFile() const {
+    IntermediateRepresentation ir = toIntermediateRepresentation();
+    if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
+        for (const auto* p_var : *vec) {
+            saveToFile(p_var, arena);
+        }
+    }
+    else if (auto** p_enum = std::get_if<ParserTypes::TLEnumDeclaration*>(&ir)) {
+        saveToFile(*p_enum, arena);
+    }
 }
 
 void UEMeta::EnumDeclWrapper::serializeAsFields(

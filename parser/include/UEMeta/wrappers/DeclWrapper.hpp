@@ -1,4 +1,5 @@
 #pragma once
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -12,10 +13,101 @@
 #include "clang/AST/QualTypeNames.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/AST/DeclTemplate.h"
+#include "google/protobuf/json/json.h"
+#include "BS_thread_pool.hpp"
+#include "google/protobuf/util/json_util.h"
 
 namespace UEMeta {
+    namespace Detail {
+        class DeclWrapperStatics {
+        public:
+            static uint64_t allocateDeclOccurrence();
+            static void awaitPendingSerializations();
+
+        protected:
+            template<TopLevelDecl PT>
+            static void saveToFile(const PT* msg, const std::shared_ptr<google::protobuf::Arena>& arena) {
+                if (!msg) throw std::invalid_argument("Failed to serialize because msg is null!");
+                if (!arena) throw std::invalid_argument("Failed to serialize because arena is null!");
+
+                static const auto& cfg = Config::GetConfig();
+                static const auto is_json = cfg.Format() == Config::SerializationFormat::json;
+                static const auto open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
+                static constexpr google::protobuf::json::PrintOptions json_options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
+                static const std::string_view type = is_json ? "json" : "bin";
+                static const auto& out_dir = cfg.OutputDirectory().UnderlyingPath();
+
+                auto serialize_fn = [msg, arena] {
+                    std::filesystem::path out_file_path;
+                    const ParserTypes::DeclarationMetadata& metadata = msg->metadata();
+                    if (cfg.PrefersFullNameInFileName()) {
+                        auto name = std::string_view{metadata.qualified_name()}
+                        | std::views::split(std::string_view{"::"})
+                        | std::views::join_with(std::string_view{"."})
+                        | std::ranges::to<std::string>();
+                        out_file_path = out_dir / fmtquill::format("{}-{}.{}{}",
+                            name,
+                            metadata.occurrence_index().versions(0).value(),
+                            UEMeta::TOP_LEVEL_EXT<PT>,
+                            type);
+                    }
+                    else {
+                        out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}",
+                            metadata.decl_id().a(), metadata.decl_id().b(),
+                            metadata.occurrence_index().versions(0).value(),
+                            UEMeta::TOP_LEVEL_EXT<PT>,
+                            type);
+                    }
+
+                    std::ofstream out_file(out_file_path, open_mode);
+                    if (!out_file) {
+                        throw std::runtime_error("Failed to open file for writing!");
+                    }
+
+                    if (is_json) {
+                        thread_local std::string buffer{};
+                        buffer.clear();
+                        if (google::protobuf::util::MessageToJsonString(*msg, &buffer, json_options).ok()) {
+                            out_file << buffer;
+                        }
+                        else {
+                            UEM_ERROR("Failed to write to file: {}", out_file_path.string());
+                        }
+                    }
+                    else if (!msg->SerializeToOstream(&out_file)) {
+                        UEM_ERROR("Failed to write to file: {}", out_file_path.string());
+                    }
+
+                    out_file.close();
+                    (void)arena; // ensure the compiler doesn't do any weird optimizations with arena
+                };
+
+                if (cfg.SyncSerialization()) {
+                    serialize_fn();
+                }
+
+                else {
+                    serialization_pool.detach_task([serialize_fn = std::move(serialize_fn)] {
+                        try {
+                            serialize_fn();
+                        }
+                        catch (const std::exception& e) {
+                            UEM_ERROR("Failed to toIntermediateRepresentation declaration: {}", e.what());
+                        }
+                        catch (...) {
+                            UEM_ERROR("Failed to toIntermediateRepresentation declaration with unknown exception!");
+                        }
+                    });
+                }
+            }
+
+        private:
+            static BS::thread_pool<> serialization_pool;
+        };
+    }
+
     template<WrapableDecl T>
-    class DeclWrapper {
+    class DeclWrapper : public Detail::DeclWrapperStatics {
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
         DeclWrapper(const T* decl, const std::shared_ptr<google::protobuf::Arena>& arena) : decl(decl), arena(arena) {}

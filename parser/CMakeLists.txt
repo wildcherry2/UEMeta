@@ -534,7 +534,8 @@ add_executable(parser
         src/wrappers/VarDeclWrapper.cpp
         src/wrappers/MethodDeclWrapper.cpp
         src/wrappers/RecordDeclWrapper.cpp
-        src/wrappers/DeclDb.cpp)
+        src/wrappers/DeclDb.cpp
+        src/wrappers/DeclWrapper.cpp)
 
 set_target_properties(parser PROPERTIES
     CXX_STANDARD 23

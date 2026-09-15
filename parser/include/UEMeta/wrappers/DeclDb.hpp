@@ -1,17 +1,11 @@
 #pragma once
 #include <variant>
-#include <memory>
-#include "BS_thread_pool.hpp"
 #include "Utility.hpp"
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/Decl.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
-
-
-template<UEMeta::TopLevelDecl T>
-void serialize(const T* msg, const std::shared_ptr<google::protobuf::Arena>& arena);
 
 namespace UEMeta {
     class DeclDb final {
@@ -87,10 +81,5 @@ namespace UEMeta {
         // hash, but must still be skipped when the outer visitor reaches its RecordDecl.
         // Class-member eligibility filters handle static fields/methods without wrapper-side entries.
         static llvm::DenseSet<clang::Decl*> visited_decls;
-
-        static BS::thread_pool<> serialization_pool;
-
-        template<TopLevelDecl T>
-        friend void ::serialize(const T* msg, const std::shared_ptr<google::protobuf::Arena>& arena);
     };
 }

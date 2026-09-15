@@ -132,6 +132,4 @@ namespace UEMeta {
             p_version->add_value(value);
         }
     }
-
-    static uint64_t allocateDeclOccurrence();
 }
