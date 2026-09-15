@@ -2,8 +2,8 @@
 #include <variant>
 #include "Utility.hpp"
 #include "absl/container/flat_hash_map.h"
-#include "clang/AST/DeclBase.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclBase.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -53,9 +53,9 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::FunctionDecl* decl);
 
         // Adds a forward occurrence keyed by the given record, enum or function definition.
-        // Throws if forDecl is null, another declaration kind, or not a definition.
-        // Does not add forDecl to the visited decls list, nor does it require that forDecl has been encountered/serialized already.
-        static void addForwardDeclaration(clang::Decl* forDecl);
+        // Throws if for_decl is null, another declaration kind, or not a definition.
+        // Does not add for_decl to the visited decls list, nor does it require that for_decl has been encountered/serialized already.
+        static void addForwardDeclaration(clang::Decl* for_decl);
 
         // Marks a top-level output candidate as visited, preventing duplicate serialization.
         // Wrappers use this for candidates they consume, such as nested records and enums;
@@ -65,6 +65,7 @@ namespace UEMeta {
         // Waits for all queued and running serialization tasks; call from the thread reading the AST.
         // Detached task failures are logged by the tasks themselves.
         static void awaitPendingSerializations();
+
     private:
         DeclDb() = default;
 
@@ -84,4 +85,4 @@ namespace UEMeta {
         // Class-member eligibility filters handle static fields/methods without wrapper-side entries.
         static llvm::DenseSet<const clang::Decl*> visited_decls;
     };
-}
+} // namespace UEMeta

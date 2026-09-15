@@ -22,15 +22,14 @@ namespace UEMeta {
          *
          * @return Clang's run result.
          */
-        int RunClangTool();
+        int runClangTool();
 
     private:
         /// @brief Removes configured Unreal build arguments before parsing.
-        static clang::tooling::CommandLineArguments StripUnneededUnrealBuildArgs(
-            const clang::tooling::CommandLineArguments& args);
+        static clang::tooling::CommandLineArguments stripUnneededUnrealBuildArgs(const clang::tooling::CommandLineArguments& args);
 
         /// @brief Loads, validates, and expands the filtered compile_commands.json content.
-        static std::unique_ptr<clang::tooling::CompilationDatabase> LoadCompileDatabase(const std::string& cc_json);
+        static std::unique_ptr<clang::tooling::CompilationDatabase> loadCompileDatabase(const std::string& cc_json);
 
         /**
          * @brief Declared before `clang_tool` so the database outlives the tool that references it.
@@ -42,4 +41,4 @@ namespace UEMeta {
          */
         clang::tooling::ClangTool clang_tool;
     };
-}
+} // namespace UEMeta

@@ -6,10 +6,10 @@
 namespace UEMeta::Testing::Types {
     class BaseRecord {
     public:
-        void func() {}
+        void         func() {}
         virtual void vfunc(int a, bool b) {}
 
-        int field = 0;
+        int   field = 0;
         Alpha bfield{};
         Stage stage = Stage::New;
 
@@ -17,7 +17,7 @@ namespace UEMeta::Testing::Types {
     };
 
     struct DerivedRecord : public BaseRecord {
-        void vfunc(int a, bool b) override {}
+        void        vfunc(int a, bool b) override {}
         virtual int vfunc2() const { return 4; }
 
         int nfield = 1;
@@ -46,8 +46,8 @@ namespace UEMeta::Testing::Types {
     };
 
     struct DiamondMethodCoverageRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
-        int LeftVirtual() override { return 4; }
-        int RightVirtual() override { return 5; }
+        int         LeftVirtual() override { return 4; }
+        int         RightVirtual() override { return 5; }
         virtual int OwnVirtual() { return 6; }
 
         int DirectField = 4;
@@ -55,49 +55,51 @@ namespace UEMeta::Testing::Types {
 
     class MethodCoverageRecord {
     public:
-        void PublicPlain() {}
-        void PublicConst() const {}
-        void PublicVolatile() volatile {}
-        void PublicConstVolatile() const volatile {}
+        void         PublicPlain() {}
+        void         PublicConst() const {}
+        void         PublicVolatile() volatile {}
+        void         PublicConstVolatile() const volatile {}
         virtual void PublicVirtual() {}
         virtual void PublicPureVirtual() = 0;
-        void PublicDeleted() = delete;
-        void PublicDeclaredOnly();
+        void         PublicDeleted()     = delete;
+        void         PublicDeclaredOnly();
 
     private:
-        void PrivatePlain() {}
+        void         PrivatePlain() {}
         virtual void PrivateVirtual() {}
     };
 
     class FieldCoverageRecord {
     public:
-        int PublicPlain;
+        int                PublicPlain;
         mutable const int* PublicMutablePointer = nullptr;
-        unsigned PublicBitField : 3;
-        unsigned PublicDefaultBitField : 5 = 7;
+        unsigned           PublicBitField : 3;
+        unsigned           PublicDefaultBitField : 5 = 7;
 
     private:
-        long PrivatePlain = 19;
+        long        PrivatePlain = 19;
         mutable int PrivateMutable;
-        short PrivateArray[2] = {};
+        short       PrivateArray[2] = {};
     };
 
     // Incomplete tags are TLForwardDeclaration targets, so every valid TLRecordDeclaration case below is a complete
     // tag definition. Each family spells out its primary, implicit, explicit, extern-instantiation, and explicit-
     // instantiation-definition forms without test-generation macros.
 
-    template <typename FirstType> class ClassOneParameterNoNestedNoBaseRecord {
+    template <typename FirstType>
+    class ClassOneParameterNoNestedNoBaseRecord {
     public:
         FirstType DependentField;
-        int FixedField;
+        int       FixedField;
     };
 
     static_assert(sizeof(ClassOneParameterNoNestedNoBaseRecord<char>) > 0);
 
-    template <> class ClassOneParameterNoNestedNoBaseRecord<short> {
+    template <>
+    class ClassOneParameterNoNestedNoBaseRecord<short> {
     public:
         short DependentField;
-        int FixedField;
+        int   FixedField;
     };
 
     static_assert(sizeof(ClassOneParameterNoNestedNoBaseRecord<short>) > 0);
@@ -106,11 +108,13 @@ namespace UEMeta::Testing::Types {
 
     template class ClassOneParameterNoNestedNoBaseRecord<long>;
 
-    template <typename FirstType> class ClassOneParameterNoNestedSingleBaseRecord : public BaseRecord {};
+    template <typename FirstType>
+    class ClassOneParameterNoNestedSingleBaseRecord : public BaseRecord {};
 
     static_assert(sizeof(ClassOneParameterNoNestedSingleBaseRecord<char>) > 0);
 
-    template <> class ClassOneParameterNoNestedSingleBaseRecord<short> : public BaseRecord {};
+    template <>
+    class ClassOneParameterNoNestedSingleBaseRecord<short> : public BaseRecord {};
 
     static_assert(sizeof(ClassOneParameterNoNestedSingleBaseRecord<short>) > 0);
 
@@ -119,14 +123,12 @@ namespace UEMeta::Testing::Types {
     template class ClassOneParameterNoNestedSingleBaseRecord<long>;
 
     template <typename FirstType>
-    class ClassOneParameterNoNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                        protected DiamondRightRecordBase {};
+    class ClassOneParameterNoNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(ClassOneParameterNoNestedDiamondBasesRecord<char>) > 0);
 
     template <>
-    class ClassOneParameterNoNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase,
-                                                               protected DiamondRightRecordBase {};
+    class ClassOneParameterNoNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(ClassOneParameterNoNestedDiamondBasesRecord<short>) > 0);
 
@@ -134,7 +136,8 @@ namespace UEMeta::Testing::Types {
 
     template class ClassOneParameterNoNestedDiamondBasesRecord<long>;
 
-    template <typename FirstType> class ClassOneParameterOneNestedNoBaseRecord {
+    template <typename FirstType>
+    class ClassOneParameterOneNestedNoBaseRecord {
     public:
         struct NestedDecl {};
     };
@@ -142,7 +145,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterOneNestedNoBaseRecord<char>) > 0);
     static_assert(sizeof(ClassOneParameterOneNestedNoBaseRecord<char>::NestedDecl) > 0);
 
-    template <> class ClassOneParameterOneNestedNoBaseRecord<short> {
+    template <>
+    class ClassOneParameterOneNestedNoBaseRecord<short> {
     public:
         struct NestedDecl {};
     };
@@ -158,7 +162,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterOneNestedNoBaseRecord<long>) > 0);
     static_assert(sizeof(ClassOneParameterOneNestedNoBaseRecord<long>::NestedDecl) > 0);
 
-    template <typename FirstType> class ClassOneParameterOneNestedSingleBaseRecord : public BaseRecord {
+    template <typename FirstType>
+    class ClassOneParameterOneNestedSingleBaseRecord : public BaseRecord {
     public:
         struct NestedDecl {};
     };
@@ -166,7 +171,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterOneNestedSingleBaseRecord<char>) > 0);
     static_assert(sizeof(ClassOneParameterOneNestedSingleBaseRecord<char>::NestedDecl) > 0);
 
-    template <> class ClassOneParameterOneNestedSingleBaseRecord<short> : public BaseRecord {
+    template <>
+    class ClassOneParameterOneNestedSingleBaseRecord<short> : public BaseRecord {
     public:
         struct NestedDecl {};
     };
@@ -183,8 +189,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterOneNestedSingleBaseRecord<long>::NestedDecl) > 0);
 
     template <typename FirstType>
-    class ClassOneParameterOneNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                         protected DiamondRightRecordBase {
+    class ClassOneParameterOneNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct NestedDecl {};
     };
@@ -193,8 +198,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterOneNestedDiamondBasesRecord<char>::NestedDecl) > 0);
 
     template <>
-    class ClassOneParameterOneNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase,
-                                                                protected DiamondRightRecordBase {
+    class ClassOneParameterOneNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct NestedDecl {};
     };
@@ -210,7 +214,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterOneNestedDiamondBasesRecord<long>) > 0);
     static_assert(sizeof(ClassOneParameterOneNestedDiamondBasesRecord<long>::NestedDecl) > 0);
 
-    template <typename FirstType> class ClassOneParameterDoublyNestedNoBaseRecord {
+    template <typename FirstType>
+    class ClassOneParameterDoublyNestedNoBaseRecord {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -221,7 +226,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterDoublyNestedNoBaseRecord<char>::IntermediateDecl) > 0);
     static_assert(sizeof(ClassOneParameterDoublyNestedNoBaseRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> class ClassOneParameterDoublyNestedNoBaseRecord<short> {
+    template <>
+    class ClassOneParameterDoublyNestedNoBaseRecord<short> {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -242,7 +248,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterDoublyNestedNoBaseRecord<long>::IntermediateDecl) > 0);
     static_assert(sizeof(ClassOneParameterDoublyNestedNoBaseRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType> class ClassOneParameterDoublyNestedSingleBaseRecord : public BaseRecord {
+    template <typename FirstType>
+    class ClassOneParameterDoublyNestedSingleBaseRecord : public BaseRecord {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -253,7 +260,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterDoublyNestedSingleBaseRecord<char>::IntermediateDecl) > 0);
     static_assert(sizeof(ClassOneParameterDoublyNestedSingleBaseRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> class ClassOneParameterDoublyNestedSingleBaseRecord<short> : public BaseRecord {
+    template <>
+    class ClassOneParameterDoublyNestedSingleBaseRecord<short> : public BaseRecord {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -275,8 +283,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterDoublyNestedSingleBaseRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
     template <typename FirstType>
-    class ClassOneParameterDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                            protected DiamondRightRecordBase {
+    class ClassOneParameterDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -288,8 +295,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterDoublyNestedDiamondBasesRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
     template <>
-    class ClassOneParameterDoublyNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase,
-                                                                   protected DiamondRightRecordBase {
+    class ClassOneParameterDoublyNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -310,11 +316,13 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassOneParameterDoublyNestedDiamondBasesRecord<long>::IntermediateDecl) > 0);
     static_assert(sizeof(ClassOneParameterDoublyNestedDiamondBasesRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType, typename SecondType> class ClassTwoParametersNoNestedNoBaseRecord {};
+    template <typename FirstType, typename SecondType>
+    class ClassTwoParametersNoNestedNoBaseRecord {};
 
     static_assert(sizeof(ClassTwoParametersNoNestedNoBaseRecord<char, short>) > 0);
 
-    template <> class ClassTwoParametersNoNestedNoBaseRecord<short, int> {};
+    template <>
+    class ClassTwoParametersNoNestedNoBaseRecord<short, int> {};
 
     static_assert(sizeof(ClassTwoParametersNoNestedNoBaseRecord<short, int>) > 0);
 
@@ -327,7 +335,8 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(ClassTwoParametersNoNestedSingleBaseRecord<char, short>) > 0);
 
-    template <> class ClassTwoParametersNoNestedSingleBaseRecord<short, int> : public BaseRecord {};
+    template <>
+    class ClassTwoParametersNoNestedSingleBaseRecord<short, int> : public BaseRecord {};
 
     static_assert(sizeof(ClassTwoParametersNoNestedSingleBaseRecord<short, int>) > 0);
 
@@ -336,14 +345,12 @@ namespace UEMeta::Testing::Types {
     template class ClassTwoParametersNoNestedSingleBaseRecord<long, long long>;
 
     template <typename FirstType, typename SecondType>
-    class ClassTwoParametersNoNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                         protected DiamondRightRecordBase {};
+    class ClassTwoParametersNoNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(ClassTwoParametersNoNestedDiamondBasesRecord<char, short>) > 0);
 
     template <>
-    class ClassTwoParametersNoNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase,
-                                                                     protected DiamondRightRecordBase {};
+    class ClassTwoParametersNoNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(ClassTwoParametersNoNestedDiamondBasesRecord<short, int>) > 0);
 
@@ -351,7 +358,8 @@ namespace UEMeta::Testing::Types {
 
     template class ClassTwoParametersNoNestedDiamondBasesRecord<long, long long>;
 
-    template <typename FirstType, typename SecondType> class ClassTwoParametersOneNestedNoBaseRecord {
+    template <typename FirstType, typename SecondType>
+    class ClassTwoParametersOneNestedNoBaseRecord {
     public:
         struct NestedDecl {};
     };
@@ -359,7 +367,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassTwoParametersOneNestedNoBaseRecord<char, short>) > 0);
     static_assert(sizeof(ClassTwoParametersOneNestedNoBaseRecord<char, short>::NestedDecl) > 0);
 
-    template <> class ClassTwoParametersOneNestedNoBaseRecord<short, int> {
+    template <>
+    class ClassTwoParametersOneNestedNoBaseRecord<short, int> {
     public:
         struct NestedDecl {};
     };
@@ -384,7 +393,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassTwoParametersOneNestedSingleBaseRecord<char, short>) > 0);
     static_assert(sizeof(ClassTwoParametersOneNestedSingleBaseRecord<char, short>::NestedDecl) > 0);
 
-    template <> class ClassTwoParametersOneNestedSingleBaseRecord<short, int> : public BaseRecord {
+    template <>
+    class ClassTwoParametersOneNestedSingleBaseRecord<short, int> : public BaseRecord {
     public:
         struct NestedDecl {};
     };
@@ -401,8 +411,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassTwoParametersOneNestedSingleBaseRecord<long, long long>::NestedDecl) > 0);
 
     template <typename FirstType, typename SecondType>
-    class ClassTwoParametersOneNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                          protected DiamondRightRecordBase {
+    class ClassTwoParametersOneNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct NestedDecl {};
     };
@@ -411,8 +420,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassTwoParametersOneNestedDiamondBasesRecord<char, short>::NestedDecl) > 0);
 
     template <>
-    class ClassTwoParametersOneNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase,
-                                                                      protected DiamondRightRecordBase {
+    class ClassTwoParametersOneNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct NestedDecl {};
     };
@@ -428,7 +436,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassTwoParametersOneNestedDiamondBasesRecord<long, long long>) > 0);
     static_assert(sizeof(ClassTwoParametersOneNestedDiamondBasesRecord<long, long long>::NestedDecl) > 0);
 
-    template <typename FirstType, typename SecondType> class ClassTwoParametersDoublyNestedNoBaseRecord {
+    template <typename FirstType, typename SecondType>
+    class ClassTwoParametersDoublyNestedNoBaseRecord {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -439,7 +448,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(ClassTwoParametersDoublyNestedNoBaseRecord<char, short>::IntermediateDecl) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedNoBaseRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> class ClassTwoParametersDoublyNestedNoBaseRecord<short, int> {
+    template <>
+    class ClassTwoParametersDoublyNestedNoBaseRecord<short, int> {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -458,8 +468,7 @@ namespace UEMeta::Testing::Types {
     template class ClassTwoParametersDoublyNestedNoBaseRecord<long, long long>;
     static_assert(sizeof(ClassTwoParametersDoublyNestedNoBaseRecord<long, long long>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(sizeof(ClassTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
     template <typename FirstType, typename SecondType>
     class ClassTwoParametersDoublyNestedSingleBaseRecord : public BaseRecord {
@@ -471,10 +480,10 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<char, short>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<char, short>::IntermediateDecl) > 0);
-    static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<char, short>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> class ClassTwoParametersDoublyNestedSingleBaseRecord<short, int> : public BaseRecord {
+    template <>
+    class ClassTwoParametersDoublyNestedSingleBaseRecord<short, int> : public BaseRecord {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -483,8 +492,7 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<short, int>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<short, int>::IntermediateDecl) > 0);
-    static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<short, int>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<short, int>::IntermediateDecl::AnotherDecl) > 0);
 
     extern template class ClassTwoParametersDoublyNestedSingleBaseRecord<int, long>;
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<int, long>) > 0);
@@ -494,12 +502,10 @@ namespace UEMeta::Testing::Types {
     template class ClassTwoParametersDoublyNestedSingleBaseRecord<long, long long>;
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<long, long long>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(
-        sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedSingleBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
     template <typename FirstType, typename SecondType>
-    class ClassTwoParametersDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                             protected DiamondRightRecordBase {
+    class ClassTwoParametersDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -508,12 +514,10 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<char, short>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<char, short>::IntermediateDecl) > 0);
-    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<char, short>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
     template <>
-    class ClassTwoParametersDoublyNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase,
-                                                                         protected DiamondRightRecordBase {
+    class ClassTwoParametersDoublyNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
     public:
         struct IntermediateDecl {
             struct AnotherDecl {};
@@ -522,26 +526,25 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<short, int>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<short, int>::IntermediateDecl) > 0);
-    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<short, int>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<short, int>::IntermediateDecl::AnotherDecl) > 0);
 
     extern template class ClassTwoParametersDoublyNestedDiamondBasesRecord<int, long>;
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<int, long>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<int, long>::IntermediateDecl) > 0);
-    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<int, long>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<int, long>::IntermediateDecl::AnotherDecl) > 0);
 
     template class ClassTwoParametersDoublyNestedDiamondBasesRecord<long, long long>;
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<long, long long>) > 0);
     static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(
-        sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
+    static_assert(sizeof(ClassTwoParametersDoublyNestedDiamondBasesRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType> struct StructOneParameterNoNestedNoBaseRecord {};
+    template <typename FirstType>
+    struct StructOneParameterNoNestedNoBaseRecord {};
 
     static_assert(sizeof(StructOneParameterNoNestedNoBaseRecord<char>) > 0);
 
-    template <> struct StructOneParameterNoNestedNoBaseRecord<short> {};
+    template <>
+    struct StructOneParameterNoNestedNoBaseRecord<short> {};
 
     static_assert(sizeof(StructOneParameterNoNestedNoBaseRecord<short>) > 0);
 
@@ -549,11 +552,13 @@ namespace UEMeta::Testing::Types {
 
     template struct StructOneParameterNoNestedNoBaseRecord<long>;
 
-    template <typename FirstType> struct StructOneParameterNoNestedSingleBaseRecord : public BaseRecord {};
+    template <typename FirstType>
+    struct StructOneParameterNoNestedSingleBaseRecord : public BaseRecord {};
 
     static_assert(sizeof(StructOneParameterNoNestedSingleBaseRecord<char>) > 0);
 
-    template <> struct StructOneParameterNoNestedSingleBaseRecord<short> : public BaseRecord {};
+    template <>
+    struct StructOneParameterNoNestedSingleBaseRecord<short> : public BaseRecord {};
 
     static_assert(sizeof(StructOneParameterNoNestedSingleBaseRecord<short>) > 0);
 
@@ -562,14 +567,12 @@ namespace UEMeta::Testing::Types {
     template struct StructOneParameterNoNestedSingleBaseRecord<long>;
 
     template <typename FirstType>
-    struct StructOneParameterNoNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                          protected DiamondRightRecordBase {};
+    struct StructOneParameterNoNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(StructOneParameterNoNestedDiamondBasesRecord<char>) > 0);
 
     template <>
-    struct StructOneParameterNoNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase,
-                                                                 protected DiamondRightRecordBase {};
+    struct StructOneParameterNoNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(StructOneParameterNoNestedDiamondBasesRecord<short>) > 0);
 
@@ -577,14 +580,16 @@ namespace UEMeta::Testing::Types {
 
     template struct StructOneParameterNoNestedDiamondBasesRecord<long>;
 
-    template <typename FirstType> struct StructOneParameterOneNestedNoBaseRecord {
+    template <typename FirstType>
+    struct StructOneParameterOneNestedNoBaseRecord {
         struct NestedDecl {};
     };
 
     static_assert(sizeof(StructOneParameterOneNestedNoBaseRecord<char>) > 0);
     static_assert(sizeof(StructOneParameterOneNestedNoBaseRecord<char>::NestedDecl) > 0);
 
-    template <> struct StructOneParameterOneNestedNoBaseRecord<short> {
+    template <>
+    struct StructOneParameterOneNestedNoBaseRecord<short> {
         struct NestedDecl {};
     };
 
@@ -599,14 +604,16 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterOneNestedNoBaseRecord<long>) > 0);
     static_assert(sizeof(StructOneParameterOneNestedNoBaseRecord<long>::NestedDecl) > 0);
 
-    template <typename FirstType> struct StructOneParameterOneNestedSingleBaseRecord : public BaseRecord {
+    template <typename FirstType>
+    struct StructOneParameterOneNestedSingleBaseRecord : public BaseRecord {
         struct NestedDecl {};
     };
 
     static_assert(sizeof(StructOneParameterOneNestedSingleBaseRecord<char>) > 0);
     static_assert(sizeof(StructOneParameterOneNestedSingleBaseRecord<char>::NestedDecl) > 0);
 
-    template <> struct StructOneParameterOneNestedSingleBaseRecord<short> : public BaseRecord {
+    template <>
+    struct StructOneParameterOneNestedSingleBaseRecord<short> : public BaseRecord {
         struct NestedDecl {};
     };
 
@@ -622,8 +629,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterOneNestedSingleBaseRecord<long>::NestedDecl) > 0);
 
     template <typename FirstType>
-    struct StructOneParameterOneNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                           protected DiamondRightRecordBase {
+    struct StructOneParameterOneNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct NestedDecl {};
     };
 
@@ -631,8 +637,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterOneNestedDiamondBasesRecord<char>::NestedDecl) > 0);
 
     template <>
-    struct StructOneParameterOneNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase,
-                                                                  protected DiamondRightRecordBase {
+    struct StructOneParameterOneNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct NestedDecl {};
     };
 
@@ -647,7 +652,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterOneNestedDiamondBasesRecord<long>) > 0);
     static_assert(sizeof(StructOneParameterOneNestedDiamondBasesRecord<long>::NestedDecl) > 0);
 
-    template <typename FirstType> struct StructOneParameterDoublyNestedNoBaseRecord {
+    template <typename FirstType>
+    struct StructOneParameterDoublyNestedNoBaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -657,7 +663,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterDoublyNestedNoBaseRecord<char>::IntermediateDecl) > 0);
     static_assert(sizeof(StructOneParameterDoublyNestedNoBaseRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> struct StructOneParameterDoublyNestedNoBaseRecord<short> {
+    template <>
+    struct StructOneParameterDoublyNestedNoBaseRecord<short> {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -677,7 +684,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterDoublyNestedNoBaseRecord<long>::IntermediateDecl) > 0);
     static_assert(sizeof(StructOneParameterDoublyNestedNoBaseRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType> struct StructOneParameterDoublyNestedSingleBaseRecord : public BaseRecord {
+    template <typename FirstType>
+    struct StructOneParameterDoublyNestedSingleBaseRecord : public BaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -687,7 +695,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterDoublyNestedSingleBaseRecord<char>::IntermediateDecl) > 0);
     static_assert(sizeof(StructOneParameterDoublyNestedSingleBaseRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> struct StructOneParameterDoublyNestedSingleBaseRecord<short> : public BaseRecord {
+    template <>
+    struct StructOneParameterDoublyNestedSingleBaseRecord<short> : public BaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -708,8 +717,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterDoublyNestedSingleBaseRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
     template <typename FirstType>
-    struct StructOneParameterDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                              protected DiamondRightRecordBase {
+    struct StructOneParameterDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -720,8 +728,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterDoublyNestedDiamondBasesRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
     template <>
-    struct StructOneParameterDoublyNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase,
-                                                                     protected DiamondRightRecordBase {
+    struct StructOneParameterDoublyNestedDiamondBasesRecord<short> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -741,11 +748,13 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructOneParameterDoublyNestedDiamondBasesRecord<long>::IntermediateDecl) > 0);
     static_assert(sizeof(StructOneParameterDoublyNestedDiamondBasesRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType, typename SecondType> struct StructTwoParametersNoNestedNoBaseRecord {};
+    template <typename FirstType, typename SecondType>
+    struct StructTwoParametersNoNestedNoBaseRecord {};
 
     static_assert(sizeof(StructTwoParametersNoNestedNoBaseRecord<char, short>) > 0);
 
-    template <> struct StructTwoParametersNoNestedNoBaseRecord<short, int> {};
+    template <>
+    struct StructTwoParametersNoNestedNoBaseRecord<short, int> {};
 
     static_assert(sizeof(StructTwoParametersNoNestedNoBaseRecord<short, int>) > 0);
 
@@ -758,7 +767,8 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(StructTwoParametersNoNestedSingleBaseRecord<char, short>) > 0);
 
-    template <> struct StructTwoParametersNoNestedSingleBaseRecord<short, int> : public BaseRecord {};
+    template <>
+    struct StructTwoParametersNoNestedSingleBaseRecord<short, int> : public BaseRecord {};
 
     static_assert(sizeof(StructTwoParametersNoNestedSingleBaseRecord<short, int>) > 0);
 
@@ -767,14 +777,12 @@ namespace UEMeta::Testing::Types {
     template struct StructTwoParametersNoNestedSingleBaseRecord<long, long long>;
 
     template <typename FirstType, typename SecondType>
-    struct StructTwoParametersNoNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                           protected DiamondRightRecordBase {};
+    struct StructTwoParametersNoNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(StructTwoParametersNoNestedDiamondBasesRecord<char, short>) > 0);
 
     template <>
-    struct StructTwoParametersNoNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase,
-                                                                       protected DiamondRightRecordBase {};
+    struct StructTwoParametersNoNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {};
 
     static_assert(sizeof(StructTwoParametersNoNestedDiamondBasesRecord<short, int>) > 0);
 
@@ -782,14 +790,16 @@ namespace UEMeta::Testing::Types {
 
     template struct StructTwoParametersNoNestedDiamondBasesRecord<long, long long>;
 
-    template <typename FirstType, typename SecondType> struct StructTwoParametersOneNestedNoBaseRecord {
+    template <typename FirstType, typename SecondType>
+    struct StructTwoParametersOneNestedNoBaseRecord {
         struct NestedDecl {};
     };
 
     static_assert(sizeof(StructTwoParametersOneNestedNoBaseRecord<char, short>) > 0);
     static_assert(sizeof(StructTwoParametersOneNestedNoBaseRecord<char, short>::NestedDecl) > 0);
 
-    template <> struct StructTwoParametersOneNestedNoBaseRecord<short, int> {
+    template <>
+    struct StructTwoParametersOneNestedNoBaseRecord<short, int> {
         struct NestedDecl {};
     };
 
@@ -812,7 +822,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructTwoParametersOneNestedSingleBaseRecord<char, short>) > 0);
     static_assert(sizeof(StructTwoParametersOneNestedSingleBaseRecord<char, short>::NestedDecl) > 0);
 
-    template <> struct StructTwoParametersOneNestedSingleBaseRecord<short, int> : public BaseRecord {
+    template <>
+    struct StructTwoParametersOneNestedSingleBaseRecord<short, int> : public BaseRecord {
         struct NestedDecl {};
     };
 
@@ -828,8 +839,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructTwoParametersOneNestedSingleBaseRecord<long, long long>::NestedDecl) > 0);
 
     template <typename FirstType, typename SecondType>
-    struct StructTwoParametersOneNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                            protected DiamondRightRecordBase {
+    struct StructTwoParametersOneNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct NestedDecl {};
     };
 
@@ -837,8 +847,7 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructTwoParametersOneNestedDiamondBasesRecord<char, short>::NestedDecl) > 0);
 
     template <>
-    struct StructTwoParametersOneNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase,
-                                                                        protected DiamondRightRecordBase {
+    struct StructTwoParametersOneNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct NestedDecl {};
     };
 
@@ -853,7 +862,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructTwoParametersOneNestedDiamondBasesRecord<long, long long>) > 0);
     static_assert(sizeof(StructTwoParametersOneNestedDiamondBasesRecord<long, long long>::NestedDecl) > 0);
 
-    template <typename FirstType, typename SecondType> struct StructTwoParametersDoublyNestedNoBaseRecord {
+    template <typename FirstType, typename SecondType>
+    struct StructTwoParametersDoublyNestedNoBaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -863,7 +873,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(StructTwoParametersDoublyNestedNoBaseRecord<char, short>::IntermediateDecl) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedNoBaseRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> struct StructTwoParametersDoublyNestedNoBaseRecord<short, int> {
+    template <>
+    struct StructTwoParametersDoublyNestedNoBaseRecord<short, int> {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -881,8 +892,7 @@ namespace UEMeta::Testing::Types {
     template struct StructTwoParametersDoublyNestedNoBaseRecord<long, long long>;
     static_assert(sizeof(StructTwoParametersDoublyNestedNoBaseRecord<long, long long>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(sizeof(StructTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
     template <typename FirstType, typename SecondType>
     struct StructTwoParametersDoublyNestedSingleBaseRecord : public BaseRecord {
@@ -893,10 +903,10 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<char, short>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<char, short>::IntermediateDecl) > 0);
-    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<char, short>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> struct StructTwoParametersDoublyNestedSingleBaseRecord<short, int> : public BaseRecord {
+    template <>
+    struct StructTwoParametersDoublyNestedSingleBaseRecord<short, int> : public BaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -904,24 +914,20 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<short, int>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<short, int>::IntermediateDecl) > 0);
-    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<short, int>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<short, int>::IntermediateDecl::AnotherDecl) > 0);
 
     extern template struct StructTwoParametersDoublyNestedSingleBaseRecord<int, long>;
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<int, long>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<int, long>::IntermediateDecl) > 0);
-    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<int, long>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<int, long>::IntermediateDecl::AnotherDecl) > 0);
 
     template struct StructTwoParametersDoublyNestedSingleBaseRecord<long, long long>;
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<long, long long>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(
-        sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedSingleBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
     template <typename FirstType, typename SecondType>
-    struct StructTwoParametersDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase,
-                                                               protected DiamondRightRecordBase {
+    struct StructTwoParametersDoublyNestedDiamondBasesRecord : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -929,12 +935,10 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<char, short>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<char, short>::IntermediateDecl) > 0);
-    static_assert(
-        sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
     template <>
-    struct StructTwoParametersDoublyNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase,
-                                                                           protected DiamondRightRecordBase {
+    struct StructTwoParametersDoublyNestedDiamondBasesRecord<short, int> : public DiamondLeftRecordBase, protected DiamondRightRecordBase {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -942,26 +946,25 @@ namespace UEMeta::Testing::Types {
 
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<short, int>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<short, int>::IntermediateDecl) > 0);
-    static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<short, int>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<short, int>::IntermediateDecl::AnotherDecl) > 0);
 
     extern template struct StructTwoParametersDoublyNestedDiamondBasesRecord<int, long>;
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<int, long>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<int, long>::IntermediateDecl) > 0);
-    static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<int, long>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<int, long>::IntermediateDecl::AnotherDecl) > 0);
 
     template struct StructTwoParametersDoublyNestedDiamondBasesRecord<long, long long>;
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<long, long long>) > 0);
     static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(
-        sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
+    static_assert(sizeof(StructTwoParametersDoublyNestedDiamondBasesRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType> union UnionOneParameterNoNestedNoBaseRecord {};
+    template <typename FirstType>
+    union UnionOneParameterNoNestedNoBaseRecord {};
 
     static_assert(sizeof(UnionOneParameterNoNestedNoBaseRecord<char>) > 0);
 
-    template <> union UnionOneParameterNoNestedNoBaseRecord<short> {};
+    template <>
+    union UnionOneParameterNoNestedNoBaseRecord<short> {};
 
     static_assert(sizeof(UnionOneParameterNoNestedNoBaseRecord<short>) > 0);
 
@@ -969,14 +972,16 @@ namespace UEMeta::Testing::Types {
 
     template union UnionOneParameterNoNestedNoBaseRecord<long>;
 
-    template <typename FirstType> union UnionOneParameterOneNestedNoBaseRecord {
+    template <typename FirstType>
+    union UnionOneParameterOneNestedNoBaseRecord {
         struct NestedDecl {};
     };
 
     static_assert(sizeof(UnionOneParameterOneNestedNoBaseRecord<char>) > 0);
     static_assert(sizeof(UnionOneParameterOneNestedNoBaseRecord<char>::NestedDecl) > 0);
 
-    template <> union UnionOneParameterOneNestedNoBaseRecord<short> {
+    template <>
+    union UnionOneParameterOneNestedNoBaseRecord<short> {
         struct NestedDecl {};
     };
 
@@ -991,7 +996,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(UnionOneParameterOneNestedNoBaseRecord<long>) > 0);
     static_assert(sizeof(UnionOneParameterOneNestedNoBaseRecord<long>::NestedDecl) > 0);
 
-    template <typename FirstType> union UnionOneParameterDoublyNestedNoBaseRecord {
+    template <typename FirstType>
+    union UnionOneParameterDoublyNestedNoBaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -1001,7 +1007,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(UnionOneParameterDoublyNestedNoBaseRecord<char>::IntermediateDecl) > 0);
     static_assert(sizeof(UnionOneParameterDoublyNestedNoBaseRecord<char>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> union UnionOneParameterDoublyNestedNoBaseRecord<short> {
+    template <>
+    union UnionOneParameterDoublyNestedNoBaseRecord<short> {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -1021,11 +1028,13 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(UnionOneParameterDoublyNestedNoBaseRecord<long>::IntermediateDecl) > 0);
     static_assert(sizeof(UnionOneParameterDoublyNestedNoBaseRecord<long>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <typename FirstType, typename SecondType> union UnionTwoParametersNoNestedNoBaseRecord {};
+    template <typename FirstType, typename SecondType>
+    union UnionTwoParametersNoNestedNoBaseRecord {};
 
     static_assert(sizeof(UnionTwoParametersNoNestedNoBaseRecord<char, short>) > 0);
 
-    template <> union UnionTwoParametersNoNestedNoBaseRecord<short, int> {};
+    template <>
+    union UnionTwoParametersNoNestedNoBaseRecord<short, int> {};
 
     static_assert(sizeof(UnionTwoParametersNoNestedNoBaseRecord<short, int>) > 0);
 
@@ -1033,14 +1042,16 @@ namespace UEMeta::Testing::Types {
 
     template union UnionTwoParametersNoNestedNoBaseRecord<long, long long>;
 
-    template <typename FirstType, typename SecondType> union UnionTwoParametersOneNestedNoBaseRecord {
+    template <typename FirstType, typename SecondType>
+    union UnionTwoParametersOneNestedNoBaseRecord {
         struct NestedDecl {};
     };
 
     static_assert(sizeof(UnionTwoParametersOneNestedNoBaseRecord<char, short>) > 0);
     static_assert(sizeof(UnionTwoParametersOneNestedNoBaseRecord<char, short>::NestedDecl) > 0);
 
-    template <> union UnionTwoParametersOneNestedNoBaseRecord<short, int> {
+    template <>
+    union UnionTwoParametersOneNestedNoBaseRecord<short, int> {
         struct NestedDecl {};
     };
 
@@ -1055,7 +1066,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(UnionTwoParametersOneNestedNoBaseRecord<long, long long>) > 0);
     static_assert(sizeof(UnionTwoParametersOneNestedNoBaseRecord<long, long long>::NestedDecl) > 0);
 
-    template <typename FirstType, typename SecondType> union UnionTwoParametersDoublyNestedNoBaseRecord {
+    template <typename FirstType, typename SecondType>
+    union UnionTwoParametersDoublyNestedNoBaseRecord {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -1065,7 +1077,8 @@ namespace UEMeta::Testing::Types {
     static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<char, short>::IntermediateDecl) > 0);
     static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<char, short>::IntermediateDecl::AnotherDecl) > 0);
 
-    template <> union UnionTwoParametersDoublyNestedNoBaseRecord<short, int> {
+    template <>
+    union UnionTwoParametersDoublyNestedNoBaseRecord<short, int> {
         struct IntermediateDecl {
             struct AnotherDecl {};
         };
@@ -1083,47 +1096,46 @@ namespace UEMeta::Testing::Types {
     template union UnionTwoParametersDoublyNestedNoBaseRecord<long, long long>;
     static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<long, long long>) > 0);
     static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl) > 0);
-    static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) >
-                  0);
+    static_assert(sizeof(UnionTwoParametersDoublyNestedNoBaseRecord<long, long long>::IntermediateDecl::AnotherDecl) > 0);
 
     struct TypeInfoTemplatedBaseRecord : ClassOneParameterNoNestedNoBaseRecord<char> {};
 
-    template<typename FirstType>
+    template <typename FirstType>
     class DependentVirtualLayoutRecord {
     public:
         virtual void Invoke() {}
-        FirstType Obj;
+        FirstType    Obj;
     };
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct DependentFieldAlignmentRecord {
         alignas(alignof(FirstType)) int Value;
     };
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct alignas(alignof(FirstType)) DependentRecordAlignmentRecord {
         int Value;
     };
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct DependentTemplateBaseRecord {};
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct DependentTemplateDerivedRecord : DependentTemplateBaseRecord<FirstType> {};
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct DependentTypeParameterBaseRecord : FirstType {};
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct DependentQualifiedBaseRecord : FirstType::BaseType {};
 
-    template<typename FirstType, typename SecondType>
+    template <typename FirstType, typename SecondType>
     struct DependentQualifiedTemplateBaseRecord : FirstType::template BaseType<SecondType> {};
 
-    template<typename FirstType>
+    template <typename FirstType>
     struct DependentExternalQualifiedBaseRecord : AliasTemplate<FirstType>::Base {};
 
-    template<typename... BaseTypes>
+    template <typename... BaseTypes>
     struct DependentPackBasesRecord : BaseTypes... {};
 
 } // namespace UEMeta::Testing::Types

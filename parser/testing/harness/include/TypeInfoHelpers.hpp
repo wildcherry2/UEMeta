@@ -12,15 +12,13 @@
 
 namespace UEMeta::Testing {
     struct ExpectedTypeInfo {
-        std::string_view type;
-        std::string_view underlying_type;
-        std::optional<bool> is_templated_type{false};
+        std::string_view                     type;
+        std::string_view                     underlying_type;
+        std::optional<bool>                  is_templated_type{false};
         std::optional<std::filesystem::path> source_path{};
     };
 
-    inline void ExpectTypeInfo(
-        const ParseResult::TypeInfo& type_info,
-        const ExpectedTypeInfo& expected) {
+    inline void ExpectTypeInfo(const ParseResult::TypeInfo& type_info, const ExpectedTypeInfo& expected) {
         EXPECT_EQ(VersionedValue(type_info.type()), expected.type);
         EXPECT_EQ(VersionedValue(type_info.underlying_type()), expected.underlying_type);
 
@@ -31,9 +29,8 @@ namespace UEMeta::Testing {
 
         EXPECT_EQ(type_info.has_source_path_hash(), expected.source_path.has_value());
         if (expected.source_path) {
-            const auto expected_source_path_hash =
-                std::hash<std::string>{}(expected.source_path->string());
+            const auto expected_source_path_hash = std::hash<std::string>{}(expected.source_path->string());
             EXPECT_EQ(VersionedValue(type_info.source_path_hash()), expected_source_path_hash);
         }
     }
-}
+} // namespace UEMeta::Testing

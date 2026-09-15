@@ -5,10 +5,8 @@
 namespace {
     namespace fs = std::filesystem;
 
-    fs::path TargetDirectory() {
-        return fs::path{UEMETA_TEST_TARGET_DIR};
-    }
-}
+    fs::path TargetDirectory() { return fs::path{UEMETA_TEST_TARGET_DIR}; }
+} // namespace
 
 TEST(TargetLayout, HasSingleTranslationUnitAndHeaders) {
     EXPECT_TRUE(fs::exists(fs::path{UEMETA_TEST_TARGET_SOURCE}));

@@ -58,13 +58,14 @@
  * its template details, determines its identity. Registering it before reading the members
  * allows self-references without a later repair pass.
  *
- * Schema helpers SetVersioned* and putTypeRef attach values to the current configured source
+ * Schema helpers setVersioned* and putTypeRef attach values to the current configured
+ * source
  * version. A missing optional layout value means "unknown", not zero. Record size/alignment
- * and base offsets use Clang's character units (bytes on the supported targets); field
- * offsets and widths use BITS. Source order must never be inferred from these offsets:
- * union members can share an offset, and zero-width bitfields still have a source position.
- * ABI-added slots (such as vptr/vbptr) and padding are not ordinary FieldDecls. Clang's
- * layout accounts for them, but this declaration walk does not emit separate Fields for them.
+ * and base offsets use Clang's character units
+ * (bytes on the supported targets); field
+ * offsets and widths use BITS. Source order must never be inferred from these offsets: union members can
+ * share an offset, and zero-width bitfields still have a source position. ABI-added slots (such as vptr/vbptr) and padding are not ordinary
+ * FieldDecls. Clang's layout accounts for them, but this declaration walk does not emit separate Fields for them.
  */
 
 // Adapt a FieldDecl to variable-shaped output without constructing a fake Clang VarDecl.
@@ -73,13 +74,12 @@
 // arena even when this leaf was reached through several anonymous storage records.
 class UEMeta::RecordDeclWrapper::GlobalUnionFieldWrapper final : public DeclWrapper<clang::FieldDecl> {
 public:
-    GlobalUnionFieldWrapper(const clang::FieldDecl* field, const RecordDeclWrapper& owner)
-        : DeclWrapper(field, owner.arena), owner(owner) {}
+    GlobalUnionFieldWrapper(const clang::FieldDecl* field, const RecordDeclWrapper& owner) : DeclWrapper(field, owner.arena), owner(owner) {}
 
     [[nodiscard]] ParserTypes::TLGlobalVariableDeclaration* serialize() const {
         // Use the outer union's declared context so anonymous storage never enters the FQN.
-        auto* p_msg = google::protobuf::Arena::Create<ParserTypes::TLGlobalVariableDeclaration>(arena.get());
-        std::string fqn;
+        auto*                    p_msg = google::protobuf::Arena::Create<ParserTypes::TLGlobalVariableDeclaration>(arena.get());
+        std::string              fqn;
         llvm::raw_string_ostream os{fqn};
         putContextFQN(os, owner.decl);
         decl->printName(os, decl->getASTContext().getPrintingPolicy());
@@ -89,8 +89,8 @@ public:
 
         // These values have static storage but are not constexpr merely because their type is const.
         p_msg->set_is_anon_union_value(true);
-        SetVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
-        SetVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
+        setVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
+        setVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
         owner.putFieldType(decl->getType(), p_msg->mutable_type_ref());
         if (const auto* initializer = decl->getInClassInitializer()) {
             owner.putInitializer(initializer, p_msg->mutable_default_value());
@@ -105,11 +105,11 @@ private:
 // Establish the definition's identity, emit available layout, then consume bases and members.
 // Callers handle forward occurrences before entering this serialization path.
 UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper::toIntermediateRepresentation() const {
-    if (!decl) throw std::invalid_argument("Cannot toIntermediateRepresentation a null record declaration!");
+    if (!decl)
+        throw std::invalid_argument("Cannot toIntermediateRepresentation a null record declaration!");
 
     // File-scope anonymous unions inject static variables into their enclosing namespace.
-    if (decl->isUnion() && decl->isAnonymousStructOrUnion()
-        && decl->getDeclContext()->getNonTransparentContext()->isFileContext()) {
+    if (decl->isUnion() && decl->isAnonymousStructOrUnion() && decl->getDeclContext()->getNonTransparentContext()->isFileContext()) {
         return serializeGlobalUnion();
     }
     if (decl->isAnonymousStructOrUnion()) {
@@ -119,11 +119,11 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
     // Register named identities before member serialization so self-references resolve in this pass.
     // hasNameForLinkage(), unlike a nonempty source name, includes typedef-named anonymous
     // records. An embedded unnamed type gets normal contents but no standalone FQN/decl_id.
-    auto* p_msg = google::protobuf::Arena::Create<ParserTypes::TLRecordDeclaration>(arena.get());
+    auto*      p_msg        = google::protobuf::Arena::Create<ParserTypes::TLRecordDeclaration>(arena.get());
     const bool has_identity = decl->hasNameForLinkage();
     if (has_identity) {
-        const std::string fqn = computeFQN();
-        const Hash identity = computeDeclIdWithTemplateDetails(fqn, p_msg);
+        const std::string fqn      = computeFQN();
+        const Hash        identity = computeDeclIdWithTemplateDetails(fqn, p_msg);
         putMetadata(p_msg->mutable_metadata(), true, fqn, identity);
         DeclDb::addDeclIdentity(const_cast<clang::RecordDecl*>(decl), identity);
     }
@@ -132,12 +132,13 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
     }
 
     // Layout is optional for dependent records; kind and members are always retained.
-    p_msg->set_kind(decl->isClass() ? ParserTypes::RECORD_KIND_CLASS
-        : decl->isStruct() ? ParserTypes::RECORD_KIND_STRUCT : ParserTypes::RECORD_KIND_UNION);
+    p_msg->set_kind(decl->isClass()    ? ParserTypes::RECORD_KIND_CLASS
+                    : decl->isStruct() ? ParserTypes::RECORD_KIND_STRUCT
+                                       : ParserTypes::RECORD_KIND_UNION);
     const auto* layout = getLayout(decl);
     if (layout) {
-        SetVersioned(p_msg->mutable_size_bytes(), layout->getSize().getQuantity());
-        SetVersioned(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
+        setVersioned(p_msg->mutable_size_bytes(), layout->getSize().getQuantity());
+        setVersioned(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
     }
 
     // Clang stores bases outside decls(), so only base specifiers require their own loop.
@@ -150,9 +151,7 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
     return p_msg;
 }
 
-void UEMeta::RecordDeclWrapper::toFile() const {
-    return toFile(toIntermediateRepresentation(), arena);
-}
+void UEMeta::RecordDeclWrapper::toFile() const { return toFile(toIntermediateRepresentation(), arena); }
 
 void UEMeta::RecordDeclWrapper::toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     if (auto** p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
@@ -171,24 +170,24 @@ std::string UEMeta::RecordDeclWrapper::computeFQN() const {
     return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
 }
 
-UEMeta::Hash UEMeta::RecordDeclWrapper::computeDeclIdWithTemplateDetails(
-    std::string_view fqn, ParserTypes::TLRecordDeclaration* p_msg) const {
+UEMeta::Hash UEMeta::RecordDeclWrapper::computeDeclIdWithTemplateDetails(std::string_view fqn, ParserTypes::TLRecordDeclaration* p_msg) const {
     // Record identity combines the FQN with the same template fragments used by the other wrappers.
     boost::hash2::xxh3_128 hasher;
     boost::hash2::hash_append(hasher, boost::hash2::little_endian_flavor{}, fqn);
     const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl);
-    if (!cxx) return Hash{hasher};
+    if (!cxx)
+        return Hash{hasher};
 
     // For template<class T> struct Box, Box is the primary template and T is a parameter.
     // Box<int> supplies an argument; template<class T> struct Box<T*> is a partial
     // specialization, with both a remaining parameter list and specialized arguments.
-    const auto* primary = cxx->getDescribedClassTemplate();
+    const auto* primary        = cxx->getDescribedClassTemplate();
     const auto* specialization = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(cxx);
-    const auto* partial = llvm::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(cxx);
-    const auto* parameters = primary ? primary->getTemplateParameters()
-        : partial ? partial->getTemplateParameters() : nullptr;
-    const auto* arguments = specialization ? &specialization->getTemplateArgs() : nullptr;
-    if (!parameters && !arguments) return Hash{hasher};
+    const auto* partial        = llvm::dyn_cast<clang::ClassTemplatePartialSpecializationDecl>(cxx);
+    const auto* parameters     = primary ? primary->getTemplateParameters() : partial ? partial->getTemplateParameters() : nullptr;
+    const auto* arguments      = specialization ? &specialization->getTemplateArgs() : nullptr;
+    if (!parameters && !arguments)
+        return Hash{hasher};
 
     // Query the templated record definition, never the ClassTemplateDecl or a dependent QualType.
     // DeclDb keys identities by the serialized declaration node. An instantiation can refer
@@ -232,13 +231,15 @@ const clang::ASTRecordLayout* UEMeta::RecordDeclWrapper::getLayout(const clang::
     return &getASTContext().getASTRecordLayout(record);
 }
 
-ParserTypes::AccessSpecifier UEMeta::RecordDeclWrapper::getAccess(
-    clang::AccessSpecifier access, const clang::RecordDecl* record) const {
+ParserTypes::AccessSpecifier UEMeta::RecordDeclWrapper::getAccess(clang::AccessSpecifier access, const clang::RecordDecl* record) const {
     // Clang supplies explicit/default C++ access; C records need the public fallback.
     switch (access) {
-        case clang::AS_public: return ParserTypes::ACCESS_SPECIFIER_PUBLIC;
-        case clang::AS_protected: return ParserTypes::ACCESS_SPECIFIER_PROTECTED;
-        case clang::AS_private: return ParserTypes::ACCESS_SPECIFIER_PRIVATE;
+        case clang::AS_public:
+            return ParserTypes::ACCESS_SPECIFIER_PUBLIC;
+        case clang::AS_protected:
+            return ParserTypes::ACCESS_SPECIFIER_PROTECTED;
+        case clang::AS_private:
+            return ParserTypes::ACCESS_SPECIFIER_PRIVATE;
         case clang::AS_none:
             return record->isClass() ? ParserTypes::ACCESS_SPECIFIER_PRIVATE : ParserTypes::ACCESS_SPECIFIER_PUBLIC;
     }
@@ -267,10 +268,9 @@ ParserTypes::AccessSpecifier UEMeta::RecordDeclWrapper::getAccess(
  * storage to descend into here: putFieldType gives its type a separate wrapper and output.
  * inherited_access carries the outer anonymous storage's visibility to the raised fields.
  */
-void UEMeta::RecordDeclWrapper::handleMembers(
-    const clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg,
-    const clang::ASTRecordLayout* layout, std::optional<uint64_t> record_offset_bits,
-    clang::AccessSpecifier inherited_access) const {
+void UEMeta::RecordDeclWrapper::handleMembers(const clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg,
+                                              const clang::ASTRecordLayout* layout, std::optional<uint64_t> record_offset_bits,
+                                              clang::AccessSpecifier inherited_access) const {
     for (clang::Decl* member : record->decls()) {
         // Keep every storage field, including compiler-generated fields and unnamed bitfields.
         // isImplicit() describes a declaration's origin, not whether it contributes to layout.
@@ -304,7 +304,8 @@ void UEMeta::RecordDeclWrapper::handleMembers(
         // Non-static fields cannot be templates, so no further FieldDecl cast is needed.
         if (auto* member_template = llvm::dyn_cast<clang::TemplateDecl>(member)) {
             // Compiler-generated template wrappers remain outside the source-member walk.
-            if (member_template->isImplicit()) continue;
+            if (member_template->isImplicit())
+                continue;
             if (!llvm::isa<clang::ClassTemplateDecl, clang::FunctionTemplateDecl, clang::VarTemplateDecl>(member_template)) {
                 continue;
             }
@@ -322,11 +323,13 @@ void UEMeta::RecordDeclWrapper::handleMembers(
 
         // Fields and virtual methods have already been handled. Remaining implicit nodes,
         // such as IndirectFieldDecl lookup aliases and injected class names, are not output.
-        if (member->isImplicit()) continue;
+        if (member->isImplicit())
+            continue;
 
         // Dispatch remaining members; nested type handlers track their record/enum visits.
         if (auto* field = llvm::dyn_cast<clang::VarDecl>(member)) {
-            if (field->isStaticDataMember()) handleStaticField(field, p_msg->add_fields());
+            if (field->isStaticDataMember())
+                handleStaticField(field, p_msg->add_fields());
         }
         else if (auto* nested_record = llvm::dyn_cast<clang::RecordDecl>(member)) {
             handleRecord(nested_record, p_msg);
@@ -342,30 +345,29 @@ void UEMeta::RecordDeclWrapper::handleMembers(
 // absolute_offset_bits is already relative to p_msg's owning record, NOT necessarily
 // field->getParent(). layout supplies local layout availability; do not add another offset
 // here. An engaged optional containing 0 is a known offset, distinct from no layout.
-void UEMeta::RecordDeclWrapper::handleField(
-    const clang::FieldDecl* field, ParserTypes::Field* p_msg, const clang::ASTRecordLayout* layout,
-    std::optional<uint64_t> absolute_offset_bits, clang::AccessSpecifier inherited_access) const {
+void UEMeta::RecordDeclWrapper::handleField(const clang::FieldDecl* field, ParserTypes::Field* p_msg, const clang::ASTRecordLayout* layout,
+                                            std::optional<uint64_t> absolute_offset_bits, clang::AccessSpecifier inherited_access) const {
     // Preserve field source metadata and translate anonymous storage access to the owning record.
     const auto access = inherited_access != clang::AS_none ? inherited_access : field->getAccess();
     putFieldMetadata(field, p_msg, access);
     putFieldType(field->getType(), p_msg->mutable_type_ref());
-    SetVersionedBool(p_msg->mutable_is_mutable(), field->isMutable());
-    SetVersionedBool(p_msg->mutable_is_bitfield(), field->isBitField());
-    SetVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
-    SetVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
+    setVersionedBool(p_msg->mutable_is_mutable(), field->isMutable());
+    setVersionedBool(p_msg->mutable_is_bitfield(), field->isBitField());
+    setVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
+    setVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
 
     // Bit widths can be known even when the enclosing record's layout remains dependent.
     if (field->isBitField()) {
         if (!field->getBitWidth()->isValueDependent()) {
-            SetVersioned(p_msg->mutable_bit_width(), field->getBitWidthValue());
+            setVersioned(p_msg->mutable_bit_width(), field->getBitWidthValue());
         }
     }
     else if (layout && !field->getType()->isIncompleteType()) {
-        SetVersioned(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
+        setVersioned(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
     }
     // The walk supplies the offset in the receiving record, whether the field is direct or raised.
     if (absolute_offset_bits) {
-        SetVersioned(p_msg->mutable_offset_bits(), *absolute_offset_bits);
+        setVersioned(p_msg->mutable_offset_bits(), *absolute_offset_bits);
     }
 
     // In-class initializers are source expressions, including dependent expressions.
@@ -378,45 +380,43 @@ void UEMeta::RecordDeclWrapper::handleStaticField(clang::VarDecl* field, ParserT
     // Static data members stay in fields; the top-level variable path excludes class members.
     putFieldMetadata(field, p_msg, field->getAccess());
     putFieldType(field->getType(), p_msg->mutable_type_ref());
-    SetVersionedBool(p_msg->mutable_is_mutable(), false);
-    SetVersionedBool(p_msg->mutable_is_bitfield(), false);
-    SetVersioned(p_msg->mutable_storage_class(), field->getTLSKind() != clang::VarDecl::TLS_None
-        ? ParserTypes::VAR_STORAGE_CLASS_THREAD_LOCAL : ParserTypes::VAR_STORAGE_CLASS_STATIC);
-    SetVersioned(p_msg->mutable_constant_evaluation_kind(), field->isConstexpr()
-        ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE);
+    setVersionedBool(p_msg->mutable_is_mutable(), false);
+    setVersionedBool(p_msg->mutable_is_bitfield(), false);
+    setVersioned(p_msg->mutable_storage_class(), field->getTLSKind() != clang::VarDecl::TLS_None ? ParserTypes::VAR_STORAGE_CLASS_THREAD_LOCAL
+                                                                                                 : ParserTypes::VAR_STORAGE_CLASS_STATIC);
+    setVersioned(p_msg->mutable_constant_evaluation_kind(),
+                 field->isConstexpr() ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE);
 
     // A static member has a type size but no offset within an instance of its owning record.
     if (!field->getType()->isDependentType() && !field->getType()->isIncompleteType()) {
-        SetVersioned(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
+        setVersioned(p_msg->mutable_bit_width(), getASTContext().getTypeSize(field->getType()));
     }
     if (const auto* initializer = field->getInit()) {
         putInitializer(initializer, p_msg->mutable_default_value());
     }
 }
 
-void UEMeta::RecordDeclWrapper::handleMethod(
-    clang::CXXMethodDecl* method, ParserTypes::TLRecordDeclaration* p_msg,
-    const clang::ASTRecordLayout* layout) const {
+void UEMeta::RecordDeclWrapper::handleMethod(clang::CXXMethodDecl* method, ParserTypes::TLRecordDeclaration* p_msg,
+                                             const clang::ASTRecordLayout* layout) const {
     // Member functions share the record arena and are not candidates for free-function output.
     p_msg->mutable_methods()->AddAllocated(MethodDeclWrapper(method, arena).serialize(layout != nullptr));
 }
 
-void UEMeta::RecordDeclWrapper::handleBase(
-    const clang::CXXBaseSpecifier& base, ParserTypes::BaseSpecifier* p_msg,
-    const clang::ASTRecordLayout* layout) const {
+void UEMeta::RecordDeclWrapper::handleBase(const clang::CXXBaseSpecifier& base, ParserTypes::BaseSpecifier* p_msg,
+                                           const clang::ASTRecordLayout* layout) const {
     // A base is a specifier rather than a Decl; its type resolves through the same query rules as fields.
     const clang::QualType type = base.getType().getCanonicalType();
-    std::string name = clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
-    if (base.isPackExpansion()) name += "...";
+    std::string           name = clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
+    if (base.isPackExpansion())
+        name += "...";
     putTypeRef(name, DeclDb::queryType(type), p_msg->mutable_type_ref());
-    SetVersioned(p_msg->mutable_access(), getAccess(base.getAccessSpecifier(), decl));
-    SetVersionedBool(p_msg->mutable_is_virtual(), base.isVirtual());
+    setVersioned(p_msg->mutable_access(), getAccess(base.getAccessSpecifier(), decl));
+    setVersionedBool(p_msg->mutable_is_virtual(), base.isVirtual());
 
     // Layout offsets use the actual base specialization, even when its identity refers to a template pattern.
     if (const auto* base_record = type->getAsCXXRecordDecl(); layout && base_record) {
-        const auto offset = base.isVirtual() ? layout->getVBaseClassOffset(base_record)
-                                             : layout->getBaseClassOffset(base_record);
-        SetVersioned(p_msg->mutable_offset(), offset.getQuantity());
+        const auto offset = base.isVirtual() ? layout->getVBaseClassOffset(base_record) : layout->getBaseClassOffset(base_record);
+        setVersioned(p_msg->mutable_offset(), offset.getQuantity());
     }
 }
 
@@ -427,26 +427,28 @@ bool UEMeta::RecordDeclWrapper::handleForwardDeclaration(clang::TagDecl* tag) co
     // contain later source declarations. Only record the forward occurrence now; do not toIntermediateRepresentation ahead.
     // DeclDb needs the definition pointer as its key, but visitation below applies to tag only.
     DeclDb::addDeclarationAsVisited(tag);
-    if (tag->isThisDeclarationADefinition()) return false;
+    if (tag->isThisDeclarationADefinition())
+        return false;
     if (auto* definition = tag->getDefinition()) {
         DeclDb::addForwardDeclaration(definition);
     }
     return true;
 }
 
-void UEMeta::RecordDeclWrapper::handleRecord(
-    clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg) const {
-    if (handleForwardDeclaration(record)) return;
+void UEMeta::RecordDeclWrapper::handleRecord(clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg) const {
+    if (handleForwardDeclaration(record))
+        return;
 
     // Seeing the type definition is not the same as seeing its storage. For an unnamed
     // record, defer output until the following FieldDecl identifies the case: a named
     // declarator embeds the type; implicit anonymous storage triggers recursive member extraction.
-    if (!record->hasNameForLinkage()) return;
+    if (!record->hasNameForLinkage())
+        return;
 
     // Named nested declarations get independent arenas and contribute only their own IDs to this record.
     // nested_hashes contains direct children, not a recursive list of all their descendants.
     const auto nested_arena = std::make_shared<google::protobuf::Arena>();
-    auto result = RecordDeclWrapper(record, nested_arena).toIntermediateRepresentation();
+    auto       result       = RecordDeclWrapper(record, nested_arena).toIntermediateRepresentation();
     if (const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result)) {
         addNestedHash((*nested)->metadata(), p_msg);
     }
@@ -457,14 +459,14 @@ void UEMeta::RecordDeclWrapper::handleRecord(
 // than storage. Embedded unnamed enums stay with their declarator; freestanding unnamed
 // enums contribute constexpr static Fields at this source position. Named enums are
 // delegated to EnumDeclWrapper and linked through nested_hashes, not flattened here.
-void UEMeta::RecordDeclWrapper::handleEnum(
-    clang::EnumDecl* enumeration, ParserTypes::TLRecordDeclaration* p_msg,
-    clang::AccessSpecifier inherited_access) const {
-    if (handleForwardDeclaration(enumeration)) return;
+void UEMeta::RecordDeclWrapper::handleEnum(clang::EnumDecl* enumeration, ParserTypes::TLRecordDeclaration* p_msg,
+                                           clang::AccessSpecifier inherited_access) const {
+    if (handleForwardDeclaration(enumeration))
+        return;
 
     // A syntactically anonymous enum with a declarator belongs to that declarator's TypeRefOrAnon.
-    if (!enumeration->hasNameForLinkage() && enumeration->isEmbeddedInDeclarator()
-        && !enumeration->isFreeStanding()) return;
+    if (!enumeration->hasNameForLinkage() && enumeration->isEmbeddedInDeclarator() && !enumeration->isFreeStanding())
+        return;
     if (!enumeration->hasNameForLinkage()) {
         // Semantically anonymous enumerators become static constexpr fields of the nearest owning record.
         const auto access = inherited_access != clang::AS_none ? inherited_access : enumeration->getAccess();
@@ -473,9 +475,9 @@ void UEMeta::RecordDeclWrapper::handleEnum(
     }
 
     // Delegate named enums to their wrapper and publish the returned identity for following members.
-    const auto nested_arena = std::make_shared<google::protobuf::Arena>();
-    auto result = EnumDeclWrapper(enumeration, nested_arena).toIntermediateRepresentation();
-    const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
+    const auto  nested_arena = std::make_shared<google::protobuf::Arena>();
+    auto        result       = EnumDeclWrapper(enumeration, nested_arena).toIntermediateRepresentation();
+    const auto* nested       = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
     if (!nested || !(*nested)->metadata().has_decl_id()) {
         throw std::runtime_error("A named nested enum did not produce an enum identity!");
     }
@@ -487,13 +489,13 @@ void UEMeta::RecordDeclWrapper::handleEnum(
     EnumDeclWrapper::toFile(std::move(result), nested_arena);
 }
 
-void UEMeta::RecordDeclWrapper::addNestedHash(
-    const ParserTypes::DeclarationMetadata& metadata, ParserTypes::TLRecordDeclaration* p_msg) const {
+void UEMeta::RecordDeclWrapper::addNestedHash(const ParserTypes::DeclarationMetadata& metadata, ParserTypes::TLRecordDeclaration* p_msg) const {
     // Allocate a version only when a named nested declaration actually contributes an identity.
-    if (!metadata.has_decl_id()) return;
+    if (!metadata.has_decl_id())
+        return;
     auto* hashes = p_msg->mutable_nested_hashes();
     if (hashes->versions_size() == 0) {
-        hashes->add_versions()->add_source_versions(Config::GetConfig().Version());
+        hashes->add_versions()->add_source_versions(Config::getConfig().getVersion());
     }
     hashes->mutable_versions(0)->add_value()->CopyFrom(metadata.decl_id());
 }
@@ -514,69 +516,72 @@ void UEMeta::RecordDeclWrapper::addNestedHash(
 // referencing a standalone identity. It uses the same arena as the field. Peeling the
 // declarator layers below detects that case; the full-spelling TypeRef path is only used
 // when we do not select one of these embedded-message branches.
-void UEMeta::RecordDeclWrapper::putFieldType(
-    clang::QualType type, ParserTypes::VersionedTypeRefOrAnon* p_msg) const {
-    if (type.isNull()) throw std::runtime_error("Cannot toIntermediateRepresentation a field without a type!");
+void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::VersionedTypeRefOrAnon* p_msg) const {
+    if (type.isNull())
+        throw std::runtime_error("Cannot toIntermediateRepresentation a field without a type!");
 
     // Keep cvref/pointer/array spelling in TypeRef while fully resolving alias sugar.
-    type = type.getCanonicalType();
+    type             = type.getCanonicalType();
     const auto query = DeclDb::queryType(type);
     if (std::holds_alternative<std::monostate>(query)) {
         throw std::runtime_error("DeclDb failed to query a record member type!");
     }
     auto* version = p_msg->add_versions();
-    version->add_source_versions(Config::GetConfig().Version());
+    version->add_source_versions(Config::getConfig().getVersion());
     auto* value = version->mutable_value();
 
     // Anonymous embedded types belong to their field even when a dependent-type query returns true.
     clang::QualType underlying = type;
     while (true) {
-        if (underlying->isPointerType() || underlying->isReferenceType()) underlying = underlying->getPointeeType();
-        else if (const auto* array = getASTContext().getAsArrayType(underlying)) underlying = array->getElementType();
-        else break;
+        if (underlying->isPointerType() || underlying->isReferenceType())
+            underlying = underlying->getPointeeType();
+        else if (const auto* array = getASTContext().getAsArrayType(underlying))
+            underlying = array->getElementType();
+        else
+            break;
     }
-    if (auto* tag = underlying->getAsTagDecl(); tag && !tag->hasNameForLinkage()
-        && tag->isEmbeddedInDeclarator() && !tag->isFreeStanding()) {
+    if (auto* tag = underlying->getAsTagDecl(); tag && !tag->hasNameForLinkage() && tag->isEmbeddedInDeclarator() && !tag->isFreeStanding()) {
         if (auto* record = llvm::dyn_cast_or_null<clang::RecordDecl>(tag->getDefinition())) {
             DeclDb::addDeclarationAsVisited(record);
-            const auto result = RecordDeclWrapper(record, arena).toIntermediateRepresentation();
+            const auto  result = RecordDeclWrapper(record, arena).toIntermediateRepresentation();
             const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result);
-            if (!nested) throw std::runtime_error("An embedded anonymous record did not produce a record!");
+            if (!nested)
+                throw std::runtime_error("An embedded anonymous record did not produce a record!");
             value->set_allocated_anon_record(*nested);
             return;
         }
         if (auto* enumeration = llvm::dyn_cast_or_null<clang::EnumDecl>(tag->getDefinition())) {
             DeclDb::addDeclarationAsVisited(enumeration);
-            const auto result = EnumDeclWrapper(enumeration, arena).toIntermediateRepresentation();
+            const auto  result = EnumDeclWrapper(enumeration, arena).toIntermediateRepresentation();
             const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
-            if (!nested) throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
+            if (!nested)
+                throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
             value->set_allocated_anon_enum(*nested);
             return;
         }
     }
 
     // Every remaining query alternative is preserved: hash, forward occurrence, header, builtin or unknown.
-    putTypeRef(clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true),
-               query, value->mutable_type_ref());
+    putTypeRef(clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true), query,
+               value->mutable_type_ref());
 }
 
-void UEMeta::RecordDeclWrapper::putFieldMetadata(
-    const clang::NamedDecl* field, ParserTypes::Field* p_msg, clang::AccessSpecifier access) const {
+void UEMeta::RecordDeclWrapper::putFieldMetadata(const clang::NamedDecl* field, ParserTypes::Field* p_msg, clang::AccessSpecifier access) const {
     // Unnamed bitfields leave the optional name absent; all fields retain documentation and owning-scope access.
-    if (field->getDeclName()) p_msg->set_name(field->getNameAsString());
-    SetVersioned(p_msg->mutable_access(), getAccess(access, decl));
+    if (field->getDeclName())
+        p_msg->set_name(field->getNameAsString());
+    setVersioned(p_msg->mutable_access(), getAccess(access, decl));
     if (const auto* comment = getASTContext().getRawCommentForAnyRedecl(field)) {
-        SetVersionedString(p_msg->mutable_documentation(), comment->getRawText(getASTContext().getSourceManager()));
+        setVersionedString(p_msg->mutable_documentation(), comment->getRawText(getASTContext().getSourceManager()));
     }
 }
 
-void UEMeta::RecordDeclWrapper::putInitializer(
-    const clang::Expr* initializer, ParserTypes::VersionedString* p_msg) const {
+void UEMeta::RecordDeclWrapper::putInitializer(const clang::Expr* initializer, ParserTypes::VersionedString* p_msg) const {
     // Match VarDeclWrapper's source-level initializer serialization.
-    std::string out;
+    std::string              out;
     llvm::raw_string_ostream os{out};
     initializer->printPretty(os, nullptr, getASTContext().getPrintingPolicy());
-    SetVersionedString(p_msg, out);
+    setVersionedString(p_msg, out);
 }
 
 std::vector<ParserTypes::TLGlobalVariableDeclaration*> UEMeta::RecordDeclWrapper::serializeGlobalUnion() const {
@@ -589,8 +594,8 @@ std::vector<ParserTypes::TLGlobalVariableDeclaration*> UEMeta::RecordDeclWrapper
 // not a Fields list. Recursing over real storage fields suffices; repeated injection nodes
 // are skipped, and unnamed bitfields cannot become independently named global variables.
 // No anonymous-storage offsets are needed because TLGlobalVariableDeclaration has none.
-void UEMeta::RecordDeclWrapper::extractGlobalUnionFields(
-    const clang::RecordDecl* record, std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const {
+void UEMeta::RecordDeclWrapper::extractGlobalUnionFields(const clang::RecordDecl*                                record,
+                                                         std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const {
     for (clang::Decl* member : record->decls()) {
         // Anonymous storage recursively injects values; unnamed bitfields are padding, not variables.
         if (auto* field = llvm::dyn_cast<clang::FieldDecl>(member)) {

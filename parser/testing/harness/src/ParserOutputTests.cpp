@@ -6,9 +6,7 @@
 namespace {
     namespace fs = std::filesystem;
 
-    fs::path OutputDirectory() {
-        return fs::path{UEMETA_TEST_OUTPUT_DIR};
-    }
+    fs::path OutputDirectory() { return fs::path{UEMETA_TEST_OUTPUT_DIR}; }
 
     bool HasBinaryParserOutput(const fs::path& directory) {
         for (const auto& entry : fs::directory_iterator{directory}) {
@@ -24,7 +22,7 @@ namespace {
 
         return false;
     }
-}
+} // namespace
 
 TEST(ParserOutput, RunsParserWithTestingOutputDirectory) {
     ASSERT_TRUE(fs::exists(OutputDirectory()));

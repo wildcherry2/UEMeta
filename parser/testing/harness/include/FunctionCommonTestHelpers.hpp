@@ -20,33 +20,24 @@ namespace UEMeta::Testing {
     };
 
     struct ExpectedFunctionTemplateDetails {
-        ParseResult::TemplateSpecializationKind specialization_kind;
-        std::string_view primary_template_qualified_name;
+        ParseResult::TemplateSpecializationKind          specialization_kind;
+        std::string_view                                 primary_template_qualified_name;
         std::initializer_list<ExpectedTemplateParameter> parameters;
-        std::string_view arguments;
+        std::string_view                                 arguments;
     };
 
-    inline void ExpectFunctionCommon(
-        const ParseResult::FunctionCommon& common,
-        const std::string_view expected_name,
-        const std::string_view expected_qualified_name,
-        const std::filesystem::path& expected_file_path,
-        const ParseResult::FunctionKind expected_kind,
-        const std::string_view expected_as_string,
-        const std::optional<ExpectedTypeInfo>& expected_return_type,
-        const std::optional<ParseResult::FunctionStorageClass> expected_storage_class,
-        const std::optional<ParseResult::ConstantEvaluationKind> expected_consteval_kind,
-        const std::optional<bool> expected_is_explicit,
-        const std::optional<std::string_view> expected_inline_definition,
-        const std::optional<ExpectedFunctionTemplateDetails>& expected_template_details,
-        const std::initializer_list<ExpectedFunctionParameter> expected_parameters,
-        const std::optional<ParseResult::FunctionDefinitionKind> expected_definition_kind) {
+    inline void ExpectFunctionCommon(const ParseResult::FunctionCommon& common, const std::string_view expected_name,
+                                     const std::string_view expected_qualified_name, const std::filesystem::path& expected_file_path,
+                                     const ParseResult::FunctionKind expected_kind, const std::string_view expected_as_string,
+                                     const std::optional<ExpectedTypeInfo>&                   expected_return_type,
+                                     const std::optional<ParseResult::FunctionStorageClass>   expected_storage_class,
+                                     const std::optional<ParseResult::ConstantEvaluationKind> expected_consteval_kind,
+                                     const std::optional<bool> expected_is_explicit, const std::optional<std::string_view> expected_inline_definition,
+                                     const std::optional<ExpectedFunctionTemplateDetails>&    expected_template_details,
+                                     const std::initializer_list<ExpectedFunctionParameter>   expected_parameters,
+                                     const std::optional<ParseResult::FunctionDefinitionKind> expected_definition_kind) {
         ASSERT_TRUE(common.has_identifier());
-        ExpectIdentifier(
-            common.identifier(),
-            expected_name,
-            expected_qualified_name,
-            expected_file_path);
+        ExpectIdentifier(common.identifier(), expected_name, expected_qualified_name, expected_file_path);
 
         EXPECT_EQ(common.kind(), expected_kind);
         EXPECT_EQ(VersionedValue(common.as_string()), expected_as_string);
@@ -78,13 +69,9 @@ namespace UEMeta::Testing {
 
         EXPECT_EQ(common.has_template_details(), expected_template_details.has_value());
         if (common.has_template_details() && expected_template_details) {
-            ExpectTemplateDetails(
-                common.template_details(),
-                expected_template_details->specialization_kind,
-                expected_template_details->primary_template_qualified_name,
-                expected_file_path,
-                expected_template_details->parameters,
-                expected_template_details->arguments);
+            ExpectTemplateDetails(common.template_details(), expected_template_details->specialization_kind,
+                                  expected_template_details->primary_template_qualified_name, expected_file_path,
+                                  expected_template_details->parameters, expected_template_details->arguments);
         }
 
         ASSERT_EQ(common.parameters_size(), expected_parameters.size());
@@ -94,11 +81,7 @@ namespace UEMeta::Testing {
             const auto& parameter = common.parameters(static_cast<int>(parameter_index));
 
             ASSERT_TRUE(parameter.has_identifier());
-            ExpectIdentifier(
-                parameter.identifier(),
-                expected_parameter.name,
-                expected_parameter.qualified_name,
-                expected_file_path);
+            ExpectIdentifier(parameter.identifier(), expected_parameter.name, expected_parameter.qualified_name, expected_file_path);
             ASSERT_TRUE(parameter.has_type_info());
             ExpectTypeInfo(parameter.type_info(), expected_parameter.type_info);
             EXPECT_EQ(VersionedValue(parameter.default_value()), expected_parameter.default_value);
@@ -112,4 +95,4 @@ namespace UEMeta::Testing {
             EXPECT_EQ(common.definition_kind(), *expected_definition_kind);
         }
     }
-}
+} // namespace UEMeta::Testing

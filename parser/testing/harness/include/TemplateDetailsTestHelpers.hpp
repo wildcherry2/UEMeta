@@ -12,28 +12,22 @@
 
 namespace UEMeta::Testing {
     struct ExpectedTemplateParameter {
-        std::string_view name;
-        std::string_view qualified_name;
-        ParseResult::TemplateParameterKind kind;
-        std::string_view as_string;
-        std::optional<std::string_view> type{};
-        std::optional<bool> is_parameter_pack{};
-        std::optional<std::string_view> default_value{};
-        std::optional<ExpectedTypeInfo> default_type{};
+        std::string_view                       name;
+        std::string_view                       qualified_name;
+        ParseResult::TemplateParameterKind     kind;
+        std::string_view                       as_string;
+        std::optional<std::string_view>        type{};
+        std::optional<bool>                    is_parameter_pack{};
+        std::optional<std::string_view>        default_value{};
+        std::optional<ExpectedTypeInfo>        default_type{};
         std::vector<ExpectedTemplateParameter> parameters{};
     };
 
     namespace Detail {
-        inline void ExpectTemplateParameter(
-            const ParseResult::TemplateParameter& parameter,
-            const ExpectedTemplateParameter& expected,
-            const std::filesystem::path& expected_file_path) {
+        inline void ExpectTemplateParameter(const ParseResult::TemplateParameter& parameter, const ExpectedTemplateParameter& expected,
+                                            const std::filesystem::path& expected_file_path) {
             ASSERT_TRUE(parameter.has_identifier());
-            ExpectIdentifier(
-                parameter.identifier(),
-                expected.name,
-                expected.qualified_name,
-                expected_file_path);
+            ExpectIdentifier(parameter.identifier(), expected.name, expected.qualified_name, expected_file_path);
 
             EXPECT_EQ(parameter.kind(), expected.kind);
             EXPECT_EQ(VersionedValue(parameter.as_string()), expected.as_string);
@@ -60,10 +54,7 @@ namespace UEMeta::Testing {
 
             ASSERT_EQ(parameter.parameters_size(), expected.parameters.size());
             for (std::size_t index = 0; index < expected.parameters.size(); ++index) {
-                ExpectTemplateParameter(
-                    parameter.parameters(static_cast<int>(index)),
-                    expected.parameters[index],
-                    expected_file_path);
+                ExpectTemplateParameter(parameter.parameters(static_cast<int>(index)), expected.parameters[index], expected_file_path);
             }
         }
 
@@ -77,15 +68,12 @@ namespace UEMeta::Testing {
             }
             return result;
         }
-    }
+    } // namespace Detail
 
-    inline void ExpectTemplateDetails(
-        const ParseResult::TemplateDetails& details,
-        const ParseResult::TemplateSpecializationKind expected_specialization_kind,
-        const std::string_view expected_primary_template_qualified_name,
-        const std::filesystem::path& expected_file_path,
-        const std::initializer_list<ExpectedTemplateParameter> expected_parameters,
-        const std::string_view expected_arguments) {
+    inline void
+    ExpectTemplateDetails(const ParseResult::TemplateDetails& details, const ParseResult::TemplateSpecializationKind expected_specialization_kind,
+                          const std::string_view expected_primary_template_qualified_name, const std::filesystem::path& expected_file_path,
+                          const std::initializer_list<ExpectedTemplateParameter> expected_parameters, const std::string_view expected_arguments) {
         EXPECT_TRUE(details.has_specialization_kind());
         EXPECT_EQ(details.specialization_kind(), expected_specialization_kind);
         EXPECT_TRUE(details.has_primary_template_qualified_name());
@@ -95,10 +83,7 @@ namespace UEMeta::Testing {
         ASSERT_EQ(details.parameters_size(), expected_parameters.size());
         int index = 0;
         for (const auto& expected_parameter : expected_parameters) {
-            Detail::ExpectTemplateParameter(
-                details.parameters(index++),
-                expected_parameter,
-                expected_file_path);
+            Detail::ExpectTemplateParameter(details.parameters(index++), expected_parameter, expected_file_path);
         }
     }
-}
+} // namespace UEMeta::Testing

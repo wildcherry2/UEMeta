@@ -17,28 +17,29 @@
 namespace {
     class Consumer : public clang::ASTConsumer {
     public:
-        Consumer(UEMeta::MetaFrontendAction& owner, std::string tu_name)
-            : owner(owner), tu_name(std::move(tu_name)), parse_logger(fmtquill::format("Parsing TU {}...", this->tu_name)) {}
+        Consumer(UEMeta::MetaFrontendAction& owner, std::string tu_name) :
+            owner(owner), tu_name(std::move(tu_name)), parse_logger(fmtquill::format("Parsing TU {}...", this->tu_name)) {}
 
         void Initialize(clang::ASTContext& context) override {
             UEM_INFO("Starting TU '{}' parsing (this may take a moment)!", tu_name);
-            auto policy = context.getPrintingPolicy();
+            auto policy               = context.getPrintingPolicy();
             policy.FullyQualifiedName = true;
             context.setPrintingPolicy(policy);
-            parse_logger.Start();
+            parse_logger.start();
         }
 
         void HandleTranslationUnit(clang::ASTContext& context) override {
-            parse_logger.Stop();
+            parse_logger.stop();
             UEM_INFO("TU '{}' parsed!", tu_name);
             UEM_INFO("Starting AST traversal...");
             UEMeta::HeartbeatLogger traverse_logger("Traversing AST...");
-            traverse_logger.Start();
+            traverse_logger.start();
             const bool traversed = owner.TraverseDecl(context.getTranslationUnitDecl());
-            traverse_logger.Stop();
+            traverse_logger.stop();
             if (traversed) {
                 UEM_INFO("Finished traversing AST!");
-            } else {
+            }
+            else {
                 UEM_ERROR("(clang) AST traversal aborted.");
             }
 
@@ -47,10 +48,10 @@ namespace {
 
     private:
         UEMeta::MetaFrontendAction& owner;
-        std::string tu_name;
-        UEMeta::HeartbeatLogger parse_logger;
+        std::string                 tu_name;
+        UEMeta::HeartbeatLogger     parse_logger;
     };
-}
+} // namespace
 
 bool UEMeta::MetaFrontendAction::shouldVisitTemplateInstantiations() const { return true; } // NOLINT(*-convert-member-functions-to-static)
 
@@ -78,10 +79,9 @@ bool UEMeta::MetaFrontendAction::VisitVarDecl(clang::VarDecl* decl) {
     return true;
 }
 
-std::unique_ptr<clang::ASTConsumer> UEMeta::MetaFrontendAction::CreateASTConsumer(
-    clang::CompilerInstance& compiler, llvm::StringRef file) {
+std::unique_ptr<clang::ASTConsumer> UEMeta::MetaFrontendAction::CreateASTConsumer(clang::CompilerInstance& compiler, llvm::StringRef file) {
     compiler.getLangOpts().CommentOpts.ParseAllComments = true;
-    const auto input_name = file.str();
-    const auto file_name = std::filesystem::path(input_name).filename().string();
+    const auto input_name                               = file.str();
+    const auto file_name                                = std::filesystem::path(input_name).filename().string();
     return std::make_unique<Consumer>(*this, file_name.empty() ? input_name : file_name);
 }

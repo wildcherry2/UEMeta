@@ -28,12 +28,9 @@ namespace UEMeta {
     class RecordDeclWrapper final : public DeclWrapper<clang::RecordDecl> {
     public:
         // Anonymous global unions produce variables marked with is_anon_union_value.
-        using IntermediateRepresentation = std::variant<ParserTypes::TLRecordDeclaration*,
-                                             std::vector<ParserTypes::TLGlobalVariableDeclaration*>>;
+        using IntermediateRepresentation = std::variant<ParserTypes::TLRecordDeclaration*, std::vector<ParserTypes::TLGlobalVariableDeclaration*>>;
 
-        explicit RecordDeclWrapper(const clang::RecordDecl* decl,
-                                   const std::shared_ptr<google::protobuf::Arena>& arena)
-            : DeclWrapper(decl, arena) {}
+        explicit RecordDeclWrapper(const clang::RecordDecl* decl, const std::shared_ptr<google::protobuf::Arena>& arena) : DeclWrapper(decl, arena) {}
 
         /**
          * Returns one record for an ordinary or field-owned definition, or a vector of variables
@@ -46,51 +43,42 @@ namespace UEMeta {
          * Callers are responsible for avoiding duplicate serialization of an occurrence.
          */
         [[nodiscard]] IntermediateRepresentation toIntermediateRepresentation() const;
-        void toFile() const;
-		static void toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena);
+        void                                     toFile() const;
+        static void                              toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena);
+
     private:
         // A union field needs global-variable metadata without becoming a VarDecl identity.
         class GlobalUnionFieldWrapper;
 
         [[nodiscard]] std::string computeFQN() const;
-        [[nodiscard]] Hash computeDeclIdWithTemplateDetails(std::string_view fqn,
-                                                            ParserTypes::TLRecordDeclaration* p_msg) const;
+        [[nodiscard]] Hash        computeDeclIdWithTemplateDetails(std::string_view fqn, ParserTypes::TLRecordDeclaration* p_msg) const;
         [[nodiscard]] const clang::ASTRecordLayout* getLayout(const clang::RecordDecl* record) const;
-        [[nodiscard]] ParserTypes::AccessSpecifier getAccess(clang::AccessSpecifier access,
-                                                           const clang::RecordDecl* record) const;
+        [[nodiscard]] ParserTypes::AccessSpecifier  getAccess(clang::AccessSpecifier access, const clang::RecordDecl* record) const;
 
         // Recurse into anonymous storage in declaration order; p_msg stays the receiving record.
         // layout belongs to record, whose origin in p_msg is record_offset_bits (zero at the root).
-        void handleMembers(const clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg,
-                           const clang::ASTRecordLayout* layout, std::optional<uint64_t> record_offset_bits,
-                           clang::AccessSpecifier inherited_access) const;
-        void handleField(const clang::FieldDecl* field, ParserTypes::Field* p_msg,
-                         const clang::ASTRecordLayout* layout, std::optional<uint64_t> absolute_offset_bits,
-                         clang::AccessSpecifier inherited_access) const;
+        void handleMembers(const clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg, const clang::ASTRecordLayout* layout,
+                           std::optional<uint64_t> record_offset_bits, clang::AccessSpecifier inherited_access) const;
+        void handleField(const clang::FieldDecl* field, ParserTypes::Field* p_msg, const clang::ASTRecordLayout* layout,
+                         std::optional<uint64_t> absolute_offset_bits, clang::AccessSpecifier inherited_access) const;
         void handleStaticField(clang::VarDecl* field, ParserTypes::Field* p_msg) const;
-        void handleMethod(clang::CXXMethodDecl* method, ParserTypes::TLRecordDeclaration* p_msg,
-                          const clang::ASTRecordLayout* layout) const;
-        void handleBase(const clang::CXXBaseSpecifier& base, ParserTypes::BaseSpecifier* p_msg,
-                        const clang::ASTRecordLayout* layout) const;
+        void handleMethod(clang::CXXMethodDecl* method, ParserTypes::TLRecordDeclaration* p_msg, const clang::ASTRecordLayout* layout) const;
+        void handleBase(const clang::CXXBaseSpecifier& base, ParserTypes::BaseSpecifier* p_msg, const clang::ASTRecordLayout* layout) const;
         void handleRecord(clang::RecordDecl* record, ParserTypes::TLRecordDeclaration* p_msg) const;
-        void handleEnum(clang::EnumDecl* enumeration, ParserTypes::TLRecordDeclaration* p_msg,
-                        clang::AccessSpecifier inherited_access) const;
+        void handleEnum(clang::EnumDecl* enumeration, ParserTypes::TLRecordDeclaration* p_msg, clang::AccessSpecifier inherited_access) const;
 
         // Visitation and identity are separate: only independently named definitions get hashes.
         // Returns true when this is a forward occurrence and no definition payload should be emitted.
         [[nodiscard]] bool handleForwardDeclaration(clang::TagDecl* tag) const;
-        void addNestedHash(const ParserTypes::DeclarationMetadata& metadata,
-                           ParserTypes::TLRecordDeclaration* p_msg) const;
+        void               addNestedHash(const ParserTypes::DeclarationMetadata& metadata, ParserTypes::TLRecordDeclaration* p_msg) const;
 
         // Use an ordinary reference (full desugared spelling + underlying identity), or embed an unnamed type.
         void putFieldType(clang::QualType type, ParserTypes::VersionedTypeRefOrAnon* p_msg) const;
-        void putFieldMetadata(const clang::NamedDecl* field, ParserTypes::Field* p_msg,
-                              clang::AccessSpecifier access) const;
+        void putFieldMetadata(const clang::NamedDecl* field, ParserTypes::Field* p_msg, clang::AccessSpecifier access) const;
         void putInitializer(const clang::Expr* initializer, ParserTypes::VersionedString* p_msg) const;
 
         // Collect a global anonymous union's variables, including recursively injected fields.
         [[nodiscard]] std::vector<ParserTypes::TLGlobalVariableDeclaration*> serializeGlobalUnion() const;
-        void extractGlobalUnionFields(const clang::RecordDecl* record,
-                                      std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const;
+        void extractGlobalUnionFields(const clang::RecordDecl* record, std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const;
     };
-}
+} // namespace UEMeta

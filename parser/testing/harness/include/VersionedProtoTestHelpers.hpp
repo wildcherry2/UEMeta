@@ -9,9 +9,7 @@
 namespace ParseResult = ParserTypes;
 
 namespace UEMeta::Testing {
-    inline std::string ExpectedSourceVersion() {
-        return std::filesystem::path{UEMETA_TEST_OUTPUT_DIR}.filename().string();
-    }
+    inline std::string ExpectedSourceVersion() { return std::filesystem::path{UEMETA_TEST_OUTPUT_DIR}.filename().string(); }
 
     template <typename VersionedMessage>
     decltype(auto) VersionedValue(const VersionedMessage& message) {
@@ -31,4 +29,4 @@ namespace UEMeta::Testing {
         EXPECT_EQ(message.false_versions(0), ExpectedSourceVersion());
         return false;
     }
-}
+} // namespace UEMeta::Testing

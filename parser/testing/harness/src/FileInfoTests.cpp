@@ -18,9 +18,7 @@ namespace {
 
     using ParseResult::TLFileData;
 
-    fs::path SourcePath(const std::string_view filename) {
-        return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / filename;
-    }
+    fs::path SourcePath(const std::string_view filename) { return fs::path{UEMETA_TEST_TARGET_INCLUDE_DIR} / filename; }
 
     const std::unordered_map<std::string, TLFileData>& FileInfos() {
         static const auto file_infos = [] {
@@ -32,13 +30,13 @@ namespace {
                 }
 
                 std::ifstream input{entry.path(), std::ios::binary};
-                TLFileData file_info;
+                TLFileData    file_info;
                 if (!input || !file_info.ParseFromIstream(&input)) {
                     ADD_FAILURE() << "Failed to parse file-info output " << entry.path();
                     continue;
                 }
 
-                const auto path = file_info.path();
+                const auto path     = file_info.path();
                 const auto inserted = result.emplace(path, std::move(file_info)).second;
                 if (!inserted) {
                     ADD_FAILURE() << "Multiple file-info outputs use path " << path;
@@ -53,7 +51,7 @@ namespace {
 
     const TLFileData& FileInfoFor(const fs::path& source_path) {
         const auto& file_infos = FileInfos();
-        const auto found = file_infos.find(source_path.string());
+        const auto  found      = file_infos.find(source_path.string());
         EXPECT_NE(found, file_infos.end()) << "No file-info output for " << source_path;
         if (found == file_infos.end()) {
             static const TLFileData missing;
@@ -64,7 +62,7 @@ namespace {
     }
 
     struct DeclarationIdentity {
-        std::string file_path;
+        std::string   file_path;
         std::uint64_t qualified_name_hash;
         std::uint32_t occurrence_index;
     };
@@ -77,7 +75,7 @@ namespace {
 
     template <typename DeclarationType>
     std::optional<DeclarationIdentity> ReadDeclarationIdentity(const fs::path& path) {
-        std::ifstream input{path, std::ios::binary};
+        std::ifstream   input{path, std::ios::binary};
         DeclarationType declaration;
         if (!input || !declaration.ParseFromIstream(&input)) {
             ADD_FAILURE() << "Failed to parse declaration output " << path;
@@ -90,10 +88,8 @@ namespace {
         }
 
         const auto& identifier = declaration.metadata().identifier();
-        return DeclarationIdentity{
-            UEMeta::Testing::VersionedValue(identifier.file_path()),
-            identifier.qualified_name_hash(),
-            UEMeta::Testing::VersionedValue(declaration.metadata().occurrence_index())};
+        return DeclarationIdentity{UEMeta::Testing::VersionedValue(identifier.file_path()), identifier.qualified_name_hash(),
+                                   UEMeta::Testing::VersionedValue(declaration.metadata().occurrence_index())};
     }
 
     std::optional<DeclarationIdentity> ReadDeclarationIdentity(const fs::path& path) {
@@ -136,9 +132,7 @@ namespace {
 
                 auto& hashes = result[identity->file_path];
                 hashes.occurrence_indices.push_back(identity->occurrence_index);
-                auto& destination = entry.path().extension() == ".fwdeclbin"
-                    ? hashes.forward_declared
-                    : hashes.defined;
+                auto& destination = entry.path().extension() == ".fwdeclbin" ? hashes.forward_declared : hashes.defined;
                 destination.push_back(identity->qualified_name_hash);
             }
 
@@ -150,7 +144,7 @@ namespace {
 
     const FileDeclarationHashes& DeclarationHashesFor(const fs::path& source_path) {
         const auto& declaration_hashes = DeclarationHashesByPath();
-        const auto found = declaration_hashes.find(source_path.string());
+        const auto  found              = declaration_hashes.find(source_path.string());
         EXPECT_NE(found, declaration_hashes.end()) << "No declaration output for " << source_path;
         if (found == declaration_hashes.end()) {
             static const FileDeclarationHashes missing;
@@ -160,19 +154,17 @@ namespace {
         return found->second;
     }
 
-    void ExpectHashes(
-        const google::protobuf::RepeatedField<std::uint64_t>& actual,
-        std::vector<std::uint64_t> expected_hashes) {
+    void ExpectHashes(const google::protobuf::RepeatedField<std::uint64_t>& actual, std::vector<std::uint64_t> expected_hashes) {
         std::vector<std::uint64_t> actual_hashes{actual.begin(), actual.end()};
         std::ranges::sort(actual_hashes);
         std::ranges::sort(expected_hashes);
         EXPECT_EQ(actual_hashes, expected_hashes);
     }
-}
+} // namespace
 
 TEST(FileInfoTests, AliasTypes) {
-    const auto source_path = SourcePath("AliasTypes.hpp");
-    const auto& file_info = FileInfoFor(source_path);
+    const auto  source_path        = SourcePath("AliasTypes.hpp");
+    const auto& file_info          = FileInfoFor(source_path);
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_EQ(file_info.path(), source_path.string());
@@ -180,14 +172,12 @@ TEST(FileInfoTests, AliasTypes) {
     ASSERT_EQ(declaration_hashes.defined.size(), 14);
     ASSERT_EQ(declaration_hashes.forward_declared.size(), 1);
     ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
-    ExpectHashes(
-        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
-        declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()), declaration_hashes.forward_declared);
 }
 
 TEST(FileInfoTests, EnumTypes) {
-    const auto source_path = SourcePath("EnumTypes.hpp");
-    const auto& file_info = FileInfoFor(source_path);
+    const auto  source_path        = SourcePath("EnumTypes.hpp");
+    const auto& file_info          = FileInfoFor(source_path);
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_EQ(file_info.path(), source_path.string());
@@ -195,14 +185,12 @@ TEST(FileInfoTests, EnumTypes) {
     ASSERT_EQ(declaration_hashes.defined.size(), 26);
     ASSERT_TRUE(declaration_hashes.forward_declared.empty());
     ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
-    ExpectHashes(
-        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
-        declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()), declaration_hashes.forward_declared);
 }
 
 TEST(FileInfoTests, ForwardDeclarationTypes) {
-    const auto source_path = SourcePath("ForwardDeclarationTypes.hpp");
-    const auto& file_info = FileInfoFor(source_path);
+    const auto  source_path        = SourcePath("ForwardDeclarationTypes.hpp");
+    const auto& file_info          = FileInfoFor(source_path);
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_EQ(file_info.path(), source_path.string());
@@ -210,16 +198,14 @@ TEST(FileInfoTests, ForwardDeclarationTypes) {
     ASSERT_EQ(declaration_hashes.defined.size(), 12);
     ASSERT_EQ(declaration_hashes.forward_declared.size(), 11);
     ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
-    ExpectHashes(
-        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
-        declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()), declaration_hashes.forward_declared);
 }
 
 TEST(FileInfoTests, AbsorbsInlinedHeaderData) {
-    const auto source_path = SourcePath("InlinedHeaderTypes.hpp");
-    const auto inlined_path = SourcePath("InlinedDependencyTypes.hpp");
-    const auto builtin_path = SourcePath("InlinedBuiltinTypes.hpp");
-    const auto& file_info = FileInfoFor(source_path);
+    const auto  source_path        = SourcePath("InlinedHeaderTypes.hpp");
+    const auto  inlined_path       = SourcePath("InlinedDependencyTypes.hpp");
+    const auto  builtin_path       = SourcePath("InlinedBuiltinTypes.hpp");
+    const auto& file_info          = FileInfoFor(source_path);
     const auto& declaration_hashes = DeclarationHashesFor(source_path);
 
     EXPECT_FALSE(FileInfos().contains(inlined_path.string()));
@@ -230,9 +216,7 @@ TEST(FileInfoTests, AbsorbsInlinedHeaderData) {
     ASSERT_EQ(declaration_hashes.defined.size(), 3);
     ASSERT_TRUE(declaration_hashes.forward_declared.empty());
     ExpectHashes(UEMeta::Testing::VersionedValue(file_info.defined_type_hashes()), declaration_hashes.defined);
-    ExpectHashes(
-        UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()),
-        declaration_hashes.forward_declared);
+    ExpectHashes(UEMeta::Testing::VersionedValue(file_info.forward_declaration_hashes()), declaration_hashes.forward_declared);
 
     auto occurrence_indices = declaration_hashes.occurrence_indices;
     std::ranges::sort(occurrence_indices);

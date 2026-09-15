@@ -4,8 +4,8 @@
 #include "FreeFunctionTypes.hpp"
 #include "FunctionTypes.hpp"
 #include "GlobalVariableTypes.cpp"
-#include "RecordTypes.hpp"
 #include "InlinedHeaderTypes.hpp"
+#include "RecordTypes.hpp"
 
 namespace UEMeta::Testing::Types {
     int TouchAll() {
@@ -14,4 +14,4 @@ namespace UEMeta::Testing::Types {
         record.sfunc('x');
         return FreeFunction(record) + GlobalConstant;
     }
-}
+} // namespace UEMeta::Testing::Types

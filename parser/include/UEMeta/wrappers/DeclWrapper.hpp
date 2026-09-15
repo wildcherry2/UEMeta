@@ -4,17 +4,17 @@
 #include <string>
 #include <string_view>
 
+#include "BS_thread_pool.hpp"
 #include "DeclDb.hpp"
-#include "Utility.hpp"
 #include "TopLevel.pb.h"
-#include "clang/AST/Decl.h"
+#include "Utility.hpp"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/QualTypeNames.h"
 #include "clang/Basic/SourceManager.h"
-#include "clang/AST/DeclTemplate.h"
 #include "google/protobuf/json/json.h"
-#include "BS_thread_pool.hpp"
 #include "google/protobuf/util/json_util.h"
 
 namespace UEMeta {
@@ -22,41 +22,36 @@ namespace UEMeta {
         class DeclWrapperStatics {
         public:
             static uint64_t allocateDeclOccurrence();
-            static void awaitPendingSerializations();
+            static void     awaitPendingSerializations();
 
         protected:
-            template<TopLevelDecl PT>
+            template <TopLevelDecl PT>
             static void saveToFile(const PT* msg, const std::shared_ptr<google::protobuf::Arena>& arena) {
-                if (!msg) throw std::invalid_argument("Failed to serialize because msg is null!");
-                if (!arena) throw std::invalid_argument("Failed to serialize because arena is null!");
+                if (!msg)
+                    throw std::invalid_argument("Failed to serialize because msg is null!");
+                if (!arena)
+                    throw std::invalid_argument("Failed to serialize because arena is null!");
 
-                static const auto& cfg = Config::GetConfig();
-                static const auto is_json = cfg.Format() == Config::SerializationFormat::json;
-                static const auto open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
-                static constexpr google::protobuf::json::PrintOptions json_options {.add_whitespace = true, .always_print_fields_with_no_presence = true };
-                static const std::string_view type = is_json ? "json" : "bin";
-                static const auto& out_dir = cfg.OutputDirectory().UnderlyingPath();
+                static const auto&                                    cfg       = Config::getConfig();
+                static const auto                                     is_json   = cfg.getFormat() == Config::SerializationFormat::Json;
+                static const auto                                     open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
+                static constexpr google::protobuf::json::PrintOptions json_options{.add_whitespace                       = true,
+                                                                                   .always_print_fields_with_no_presence = true};
+                static const std::string_view                         type    = is_json ? "json" : "bin";
+                static const auto&                                    out_dir = cfg.getOutputDirectory().getUnderlyingPath();
 
                 auto serialize_fn = [msg, arena] {
-                    std::filesystem::path out_file_path;
+                    std::filesystem::path                   out_file_path;
                     const ParserTypes::DeclarationMetadata& metadata = msg->metadata();
-                    if (cfg.PrefersFullNameInFileName()) {
-                        auto name = std::string_view{metadata.qualified_name()}
-                        | std::views::split(std::string_view{"::"})
-                        | std::views::join_with(std::string_view{"."})
-                        | std::ranges::to<std::string>();
-                        out_file_path = out_dir / fmtquill::format("{}-{}.{}{}",
-                            name,
-                            metadata.occurrence_index().versions(0).value(),
-                            UEMeta::TOP_LEVEL_EXT<PT>,
-                            type);
+                    if (cfg.prefersFullNameInFileName()) {
+                        auto name = std::string_view{metadata.qualified_name()} | std::views::split(std::string_view{"::"}) |
+                                    std::views::join_with(std::string_view{"."}) | std::ranges::to<std::string>();
+                        out_file_path = out_dir / fmtquill::format("{}-{}.{}{}", name, metadata.occurrence_index().versions(0).value(),
+                                                                   UEMeta::TOP_LEVEL_EXT<PT>, type);
                     }
                     else {
-                        out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}",
-                            metadata.decl_id().a(), metadata.decl_id().b(),
-                            metadata.occurrence_index().versions(0).value(),
-                            UEMeta::TOP_LEVEL_EXT<PT>,
-                            type);
+                        out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(),
+                                                                   metadata.occurrence_index().versions(0).value(), UEMeta::TOP_LEVEL_EXT<PT>, type);
                     }
 
                     std::ofstream out_file(out_file_path, open_mode);
@@ -82,7 +77,7 @@ namespace UEMeta {
                     (void)arena; // ensure the compiler doesn't do any weird optimizations with arena
                 };
 
-                if (cfg.SyncSerialization()) {
+                if (cfg.syncSerialization()) {
                     serialize_fn();
                 }
 
@@ -104,22 +99,23 @@ namespace UEMeta {
         private:
             static BS::thread_pool<> serialization_pool;
         };
-    }
+    } // namespace Detail
 
-    template<WrapableDecl T>
+    template <WrapableDecl T>
     class DeclWrapper : public Detail::DeclWrapperStatics {
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
         DeclWrapper(const T* decl, const std::shared_ptr<google::protobuf::Arena>& arena) : decl(decl), arena(arena) {}
 
-        void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "", const Hash& decl_id = {}) const {
+        void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "",
+                         const Hash& decl_id = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();
-            SetVersionedString(metadata->mutable_file_path(), source_manager.getFilename(source_manager.getExpansionLoc(decl->getLocation())));
+            setVersionedString(metadata->mutable_file_path(), source_manager.getFilename(source_manager.getExpansionLoc(decl->getLocation())));
             if (const clang::RawComment* comment = getASTContext().getRawCommentForAnyRedecl(decl)) {
-                SetVersionedString(metadata->mutable_documentation(), comment->getRawText(source_manager));
+                setVersionedString(metadata->mutable_documentation(), comment->getRawText(source_manager));
             }
 
-            SetVersioned(metadata->mutable_occurrence_index(), allocateDeclOccurrence());
+            setVersioned(metadata->mutable_occurrence_index(), allocateDeclOccurrence());
 
             if (has_identity) {
                 if (fqn.empty() || fqn == "::") {
@@ -144,21 +140,19 @@ namespace UEMeta {
             if (!this_decl_as_decl_context) {
                 throw std::runtime_error("DeclContext not found!");
             }
-            const clang::Decl* decl_context = clang::Decl::castFromDeclContext(this_decl_as_decl_context->getNonTransparentContext());
-            const clang::NestedNameSpecifier scope_nns = clang::TypeName::getFullyQualifiedDeclaredContext(
-                decl->getASTContext(), decl_context, true);
+            const clang::Decl*               decl_context = clang::Decl::castFromDeclContext(this_decl_as_decl_context->getNonTransparentContext());
+            const clang::NestedNameSpecifier scope_nns = clang::TypeName::getFullyQualifiedDeclaredContext(decl->getASTContext(), decl_context, true);
             if (!scope_nns) {
                 throw std::runtime_error("Failed to get scope of anonymous enumerators!");
             }
             scope_nns.print(out_stream, decl->getASTContext().getPrintingPolicy());
         }
 
-        void putTemplateDetails(const clang::TemplateParameterList* declared_params,
-                                ParserTypes::TemplateDetails* p_msg,
-                                const clang::TemplateArgumentList* specialization_args = nullptr,
-                                const DeclDb::QueryResult& primary_template_id = {false},
-                                std::vector<AnyString>* id_out_ptr = nullptr) const { // potential optimization: bool template param to prevent AppendOut calls
-            const auto AppendOut = [&](const AnyString& str) -> const AnyString& {
+        void putTemplateDetails(
+            const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails* p_msg,
+            const clang::TemplateArgumentList* specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false},
+            std::vector<AnyString>* id_out_ptr = nullptr) const { // potential optimization: bool template param to prevent append_out calls
+            const auto append_out = [&](const AnyString& str) -> const AnyString& {
                 if (id_out_ptr) {
                     id_out_ptr->push_back(str);
                 }
@@ -171,41 +165,38 @@ namespace UEMeta {
 
             p_msg->set_specialization_kind(getTemplateSpecializationKind());
             const bool* unresolved_primary = get_if<bool>(&primary_template_id);
-            if ((!unresolved_primary || *unresolved_primary)
-                && !std::get_if<std::monostate>(&primary_template_id)) {
-                putTypeRef(decl->getDeclName().isIdentifier() ? decl->getName().str() : decl->getNameAsString(), primary_template_id, p_msg->mutable_primary_template_decl_id());
+            if ((!unresolved_primary || *unresolved_primary) && !std::get_if<std::monostate>(&primary_template_id)) {
+                putTypeRef(decl->getDeclName().isIdentifier() ? decl->getName().str() : decl->getNameAsString(), primary_template_id,
+                           p_msg->mutable_primary_template_decl_id());
             }
 
-            const auto putGenericTypeRef = [](const std::string& type_name, ParserTypes::TypeRef* p_type) {
+            const auto put_generic_type_ref = [](const std::string& type_name, ParserTypes::TypeRef* p_type) {
                 if (!type_name.empty()) {
-                    SetVersionedString(p_type->mutable_type_name(), type_name);
+                    setVersionedString(p_type->mutable_type_name(), type_name);
                 }
                 p_type->set_is_builtin_or_template(true);
             };
 
             // recursively parses template params through any nested params
-            const auto putParams = [&AppendOut, &putGenericTypeRef, id_out_ptr, this](
-                this auto self,
-                const clang::TemplateParameterList* params,
-                auto* p_details_or_param) {
-                if (params->empty()) return;
-                AppendOut(std::string_view{"<"});
+            const auto put_params = [&append_out, &put_generic_type_ref, id_out_ptr, this](this auto self, const clang::TemplateParameterList* params,
+                                                                                           auto* p_details_or_param) {
+                if (params->empty())
+                    return;
+                append_out(std::string_view{"<"});
 
                 for (const clang::NamedDecl* param : *params) {
                     ParserTypes::TemplateParameter* p_param = p_details_or_param->add_parameters();
-                    const std::string param_name = param->getDeclName().isIdentifier()
-                        ? param->getName().str()
-                        : param->getNameAsString();
+                    const std::string param_name            = param->getDeclName().isIdentifier() ? param->getName().str() : param->getNameAsString();
 
                     if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
                         p_param->set_kind(type_param->hasTypeConstraint() || type_param->wasDeclaredWithTypename()
                                               ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME
                                               : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS);
-                        putGenericTypeRef(param_name, p_param->mutable_type());
-                        AppendOut(std::string_view{"typename"});
+                        put_generic_type_ref(param_name, p_param->mutable_type());
+                        append_out(std::string_view{"typename"});
                         if (type_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
-                            AppendOut(std::string_view{"..."});
+                            append_out(std::string_view{"..."});
                         }
                         if (type_param->hasDefaultArgument()) {
                             putDefaultType(type_param->getDefaultArgument().getArgument(), p_param->mutable_default_type());
@@ -214,59 +205,53 @@ namespace UEMeta {
                     else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
                         p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_NON_TYPE);
                         if (!param_name.empty()) {
-                            SetVersionedString(p_param->mutable_name(), param_name);
+                            setVersionedString(p_param->mutable_name(), param_name);
                         }
                         putType(non_type_param->getType(), p_param->mutable_type(), id_out_ptr);
                         if (non_type_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
-                            AppendOut(std::string_view{"..."});
+                            append_out(std::string_view{"..."});
                         }
                         if (non_type_param->hasDefaultArgument()) {
-                            std::string out;
-                            llvm::raw_string_ostream os {out};
-                            non_type_param->getDefaultArgument().getArgument().print(
-                                decl->getASTContext().getPrintingPolicy(), os, true);
-                            SetVersionedString(p_param->mutable_value(), out);
+                            std::string              out;
+                            llvm::raw_string_ostream os{out};
+                            non_type_param->getDefaultArgument().getArgument().print(decl->getASTContext().getPrintingPolicy(), os, true);
+                            setVersionedString(p_param->mutable_value(), out);
                         }
                     }
                     else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
-                        p_param->set_kind(template_param->wasDeclaredWithTypename()
-                                              ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
-                                              : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
-                        putGenericTypeRef(param_name, p_param->mutable_type());
-                        AppendOut(std::string_view{"typename"});
+                        p_param->set_kind(template_param->wasDeclaredWithTypename() ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
+                                                                                    : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
+                        put_generic_type_ref(param_name, p_param->mutable_type());
+                        append_out(std::string_view{"typename"});
                         if (template_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
-                            AppendOut(std::string_view{"..."});
+                            append_out(std::string_view{"..."});
                         }
                         if (template_param->hasDefaultArgument()) {
-                            putDefaultType(
-                                template_param->getDefaultArgument().getArgument(),
-                                p_param->mutable_default_type());
+                            putDefaultType(template_param->getDefaultArgument().getArgument(), p_param->mutable_default_type());
                         }
                         self(template_param->getTemplateParameters(), p_param);
                     }
                 }
-                AppendOut(std::string_view{">"});
+                append_out(std::string_view{">"});
             };
 
             if (declared_params) {
-                putParams(declared_params, p_msg);
+                put_params(declared_params, p_msg);
             }
 
             // handle specializations
             if (specialization_args) {
-                const auto printArgument = [this](const clang::TemplateArgument& argument) {
-                    std::string out;
+                const auto print_argument = [this](const clang::TemplateArgument& argument) {
+                    std::string              out;
                     llvm::raw_string_ostream os{out};
                     argument.print(decl->getASTContext().getPrintingPolicy(), os, true);
                     return out;
                 };
 
-                const auto getCarriedGeneric = [](const clang::TemplateArgument& argument) -> const clang::NamedDecl* {
-                    const clang::TemplateArgument pattern = argument.isPackExpansion()
-                        ? argument.getPackExpansionPattern()
-                        : argument;
+                const auto get_carried_generic = [](const clang::TemplateArgument& argument) -> const clang::NamedDecl* {
+                    const clang::TemplateArgument pattern = argument.isPackExpansion() ? argument.getPackExpansionPattern() : argument;
 
                     switch (pattern.getKind()) {
                         case clang::TemplateArgument::Type: {
@@ -292,35 +277,23 @@ namespace UEMeta {
                     }
                 };
 
-                enum class SpecializationArgumentKind {
-                    Generic,
-                    ConcreteType,
-                    ConcreteTemplate,
-                    ConcreteValue
-                };
+                enum class SpecializationArgumentKind { Generic, ConcreteType, ConcreteTemplate, ConcreteValue };
 
-                const auto classifySpecializationArgument = [&getCarriedGeneric](const clang::TemplateArgument& argument) {
-                    if (getCarriedGeneric(argument)) return SpecializationArgumentKind::Generic;
+                const auto classify_specialization_argument = [&get_carried_generic](const clang::TemplateArgument& argument) {
+                    if (get_carried_generic(argument))
+                        return SpecializationArgumentKind::Generic;
                     if (argument.getKind() == clang::TemplateArgument::Type) {
-                        return argument.isDependent()
-                            ? SpecializationArgumentKind::Generic
-                            : SpecializationArgumentKind::ConcreteType;
+                        return argument.isDependent() ? SpecializationArgumentKind::Generic : SpecializationArgumentKind::ConcreteType;
                     }
-                    if (argument.getKind() == clang::TemplateArgument::Template
-                        || argument.getKind() == clang::TemplateArgument::TemplateExpansion) {
-                        return argument.isDependent()
-                            ? SpecializationArgumentKind::Generic
-                            : SpecializationArgumentKind::ConcreteTemplate;
+                    if (argument.getKind() == clang::TemplateArgument::Template || argument.getKind() == clang::TemplateArgument::TemplateExpansion) {
+                        return argument.isDependent() ? SpecializationArgumentKind::Generic : SpecializationArgumentKind::ConcreteTemplate;
                     }
                     return SpecializationArgumentKind::ConcreteValue;
                 };
 
-                const auto putSpecializationArgument =
-                    [&AppendOut, &classifySpecializationArgument, &getCarriedGeneric, &printArgument,
-                     &putGenericTypeRef, id_out_ptr, this](
-                        this auto self,
-                        const clang::TemplateArgument& argument,
-                        auto add_parameter) -> void {
+                const auto put_specialization_argument = [&append_out, &classify_specialization_argument, &get_carried_generic, &print_argument,
+                                                          &put_generic_type_ref, id_out_ptr,
+                                                          this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
                     if (argument.getKind() == clang::TemplateArgument::Null) {
                         throw std::runtime_error("Encountered a null template specialization argument!");
                     }
@@ -332,14 +305,13 @@ namespace UEMeta {
                         return;
                     }
 
-                    ParserTypes::TemplateParameter* p_param = add_parameter();
-                    const SpecializationArgumentKind argument_kind = classifySpecializationArgument(argument);
+                    ParserTypes::TemplateParameter*  p_param       = add_parameter();
+                    const SpecializationArgumentKind argument_kind = classify_specialization_argument(argument);
                     if (argument_kind == SpecializationArgumentKind::Generic) {
-                        const clang::NamedDecl* generic = getCarriedGeneric(argument);
-                        if (!generic
-                            && argument.getKind() != clang::TemplateArgument::Type
-                            && argument.getKind() != clang::TemplateArgument::Template
-                            && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
+                        const clang::NamedDecl* generic = get_carried_generic(argument);
+                        if (!generic && argument.getKind() != clang::TemplateArgument::Type &&
+                            argument.getKind() != clang::TemplateArgument::Template &&
+                            argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
                             throw std::runtime_error("Failed to resolve a carried-over generic argument!");
                         }
 
@@ -350,34 +322,32 @@ namespace UEMeta {
                         }
 
                         if (argument.getKind() == clang::TemplateArgument::Type) {
-                            const clang::TemplateArgument pattern = argument.isPackExpansion()
-                                ? argument.getPackExpansionPattern()
-                                : argument;
+                            const clang::TemplateArgument pattern = argument.isPackExpansion() ? argument.getPackExpansionPattern() : argument;
                             if (generic && !pattern.getAsType().hasQualifiers()) {
-                                putGenericTypeRef(generic->getNameAsString(), p_param->mutable_type());
+                                put_generic_type_ref(generic->getNameAsString(), p_param->mutable_type());
                             }
                             else {
                                 const std::string generic_type_name = clang::TypeName::getFullyQualifiedName(
                                     pattern.getAsType(), getASTContext(), getASTContext().getPrintingPolicy(), true);
-                                putGenericTypeRef(generic_type_name, p_param->mutable_type());
+                                put_generic_type_ref(generic_type_name, p_param->mutable_type());
                             }
-                            AppendOut(std::string_view{"typename"});
-                            if (is_parameter_pack) AppendOut(std::string_view{"..."});
+                            append_out(std::string_view{"typename"});
+                            if (is_parameter_pack)
+                                append_out(std::string_view{"..."});
                             return;
                         }
 
                         if (generic) {
-                            putGenericTypeRef(generic->getNameAsString(), p_param->mutable_type());
+                            put_generic_type_ref(generic->getNameAsString(), p_param->mutable_type());
                         }
                         else {
-                            const clang::TemplateArgument pattern = argument.isPackExpansion()
-                                ? argument.getPackExpansionPattern()
-                                : argument;
-                            const std::string generic_template_name = printArgument(pattern);
-                            putGenericTypeRef(generic_template_name, p_param->mutable_type());
+                            const clang::TemplateArgument pattern = argument.isPackExpansion() ? argument.getPackExpansionPattern() : argument;
+                            const std::string             generic_template_name = print_argument(pattern);
+                            put_generic_type_ref(generic_template_name, p_param->mutable_type());
                         }
-                        AppendOut(std::string_view{"typename"});
-                        if (is_parameter_pack) AppendOut(std::string_view{"..."});
+                        append_out(std::string_view{"typename"});
+                        if (is_parameter_pack)
+                            append_out(std::string_view{"..."});
                         return;
                     }
 
@@ -387,11 +357,10 @@ namespace UEMeta {
                         if (is_parameter_pack) {
                             p_param->set_is_parameter_pack(true);
                         }
-                        const clang::TemplateArgument pattern = is_parameter_pack
-                            ? argument.getPackExpansionPattern()
-                            : argument;
+                        const clang::TemplateArgument pattern = is_parameter_pack ? argument.getPackExpansionPattern() : argument;
                         putType(pattern.getAsType(), p_param->mutable_type(), id_out_ptr);
-                        if (is_parameter_pack) AppendOut(std::string_view{"..."});
+                        if (is_parameter_pack)
+                            append_out(std::string_view{"..."});
                         return;
                     }
 
@@ -402,7 +371,8 @@ namespace UEMeta {
                             p_param->set_is_parameter_pack(true);
                         }
                         putTemplateRef(argument, p_param->mutable_type(), id_out_ptr);
-                        if (is_parameter_pack) AppendOut(std::string_view{"..."});
+                        if (is_parameter_pack)
+                            append_out(std::string_view{"..."});
                         return;
                     }
 
@@ -411,24 +381,22 @@ namespace UEMeta {
                     if (is_parameter_pack) {
                         p_param->set_is_parameter_pack(true);
                     }
-                    std::string concrete_value = printArgument(argument);
-                    SetVersionedString(p_param->mutable_value(), concrete_value);
+                    std::string concrete_value = print_argument(argument);
+                    setVersionedString(p_param->mutable_value(), concrete_value);
                     if (is_parameter_pack) {
-                        AppendOut(printArgument(argument.getPackExpansionPattern()));
-                        AppendOut(std::string_view{"..."});
+                        append_out(print_argument(argument.getPackExpansionPattern()));
+                        append_out(std::string_view{"..."});
                     }
                     else {
-                        AppendOut(concrete_value);
+                        append_out(concrete_value);
                     }
                 };
 
-                AppendOut(std::string_view{"<"});
+                append_out(std::string_view{"<"});
                 for (const clang::TemplateArgument& argument : specialization_args->asArray()) {
-                    putSpecializationArgument(argument, [p_msg] {
-                        return p_msg->add_specialized_parameters();
-                    });
+                    put_specialization_argument(argument, [p_msg] { return p_msg->add_specialized_parameters(); });
                 }
-                AppendOut(std::string_view{">"});
+                append_out(std::string_view{">"});
             }
         }
 
@@ -438,7 +406,7 @@ namespace UEMeta {
                 throw std::runtime_error("DeclDb query returned std::monostate!");
             }
 
-            SetVersionedString(p_ref->mutable_type_name(), type_name);
+            setVersionedString(p_ref->mutable_type_name(), type_name);
             if (const Hash* hash_ptr = get_if<Hash>(&result)) {
                 hash_ptr->putProtoHash(p_ref->mutable_decl_id());
             }
@@ -455,8 +423,9 @@ namespace UEMeta {
 
         [[nodiscard]] clang::ASTContext& getASTContext() const { return decl->getASTContext(); }
 
-        const T* decl;
+        const T*                                 decl;
         std::shared_ptr<google::protobuf::Arena> arena;
+
     private:
         [[nodiscard]] ParserTypes::TemplateSpecializationKind getTemplateSpecializationKind() const {
             // Record wrappers accept C records too, so recover C++ template information dynamically.
@@ -486,24 +455,21 @@ namespace UEMeta {
             }
         }
 
-        void putTemplateRef(const clang::TemplateArgument& argument,
-                            ParserTypes::TypeRef* p_ref,
+        void putTemplateRef(const clang::TemplateArgument& argument, ParserTypes::TypeRef* p_ref,
                             std::vector<AnyString>* id_out_ptr = nullptr) const {
-            if (argument.getKind() != clang::TemplateArgument::Template
-                && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
+            if (argument.getKind() != clang::TemplateArgument::Template && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
                 throw std::invalid_argument("Template argument is not a template name!");
             }
 
-            const clang::TemplateName template_name = argument.getAsTemplateOrTemplatePattern();
+            const clang::TemplateName  template_name = argument.getAsTemplateOrTemplatePattern();
             const clang::TemplateDecl* template_decl = template_name.getAsTemplateDecl();
-            std::string fqn;
+            std::string                fqn;
             if (template_decl) {
                 {
                     llvm::raw_string_ostream os{fqn};
                     template_decl->printQualifiedName(os, getASTContext().getPrintingPolicy());
                 }
-                if (!llvm::isa<clang::TemplateTemplateParmDecl>(template_decl)
-                    && !fqn.starts_with("::")) {
+                if (!llvm::isa<clang::TemplateTemplateParmDecl>(template_decl) && !fqn.starts_with("::")) {
                     fqn.insert(0, "::");
                 }
             }
@@ -512,30 +478,31 @@ namespace UEMeta {
                 template_name.print(os, getASTContext().getPrintingPolicy());
             }
 
-            if (id_out_ptr) id_out_ptr->emplace_back(fqn);
+            if (id_out_ptr)
+                id_out_ptr->emplace_back(fqn);
             const DeclDb::QueryResult result = argument.isDependent()
-                ? DeclDb::QueryResult{true}
-                : DeclDb::queryDeclIdentity(template_decl ? template_decl->getTemplatedDecl() : nullptr);
+                                                   ? DeclDb::QueryResult{true}
+                                                   : DeclDb::queryDeclIdentity(template_decl ? template_decl->getTemplatedDecl() : nullptr);
             putTypeRef(fqn, result, p_ref);
         }
 
-        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
+        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def,
+                            std::vector<AnyString>* id_out_ptr = nullptr) const {
             ParserTypes::VersionedTypeRef_VersionItem* p_version = p_def->add_versions();
-            p_version->add_source_versions(Config::GetConfig().Version());
+            p_version->add_source_versions(Config::getConfig().getVersion());
             ParserTypes::TypeRef* p_type_ref = p_version->mutable_value();
 
             if (def.getKind() == clang::TemplateArgument::Type) {
                 return putType(def.getAsType(), p_type_ref, id_out_ptr);
             }
-            if (def.getKind() == clang::TemplateArgument::Template
-                || def.getKind() == clang::TemplateArgument::TemplateExpansion) {
+            if (def.getKind() == clang::TemplateArgument::Template || def.getKind() == clang::TemplateArgument::TemplateExpansion) {
                 return putTemplateRef(def, p_type_ref, id_out_ptr);
             }
 
-            std::string out;
-            llvm::raw_string_ostream os {out};
+            std::string              out;
+            llvm::raw_string_ostream os{out};
             def.print(decl->getASTContext().getPrintingPolicy(), os, true);
-            SetVersionedString(p_type_ref->mutable_type_name(), out);
+            setVersionedString(p_type_ref->mutable_type_name(), out);
             p_type_ref->set_is_builtin_or_template(true);
         }
 
@@ -554,4 +521,4 @@ namespace UEMeta {
             putTypeRef(fqn, result, p_def);
         }
     };
-}
+} // namespace UEMeta
