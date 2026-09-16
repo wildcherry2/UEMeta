@@ -93,9 +93,11 @@ UEMeta::MetaTool::MetaTool() :
             UEM_WARN("Selected compile command has no arguments.");
             return adjusted;
         }
-        adjusted.front() = Config::getConfig().getClangPath().string();
+        const auto& cfg = Config::getConfig();
+        // The driver name selects argument syntax inside LibTooling; it is not executed.
+        adjusted.front() = cfg.prefersClang() ? "clang" : "clang-cl";
         auto out         = stripUnneededUnrealBuildArgs(adjusted);
-        out.insert_range(out.end(), Config::getConfig().getAdditionalClangArgs());
+        out.insert_range(out.end(), cfg.getAdditionalClangArgs());
         return out;
     });
     clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-fparse-all-comments"));

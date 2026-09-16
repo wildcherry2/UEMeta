@@ -614,7 +614,6 @@ target_link_libraries(uemeta-parser-core PUBLIC
 )
 
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
-set(PARSER_BUNDLE_CLANG_DIR "${PARSER_BUNDLE_DIR}/Clang")
 set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
 target_compile_definitions(uemeta-parser-core PUBLIC
     QUILL_DISABLE_FUNCTION_NAME
@@ -626,21 +625,14 @@ set_property(DIRECTORY APPEND PROPERTY
     ADDITIONAL_CLEAN_FILES "${PARSER_BUNDLE_DIR}"
 )
 
-if(NOT IS_DIRECTORY "${PARSER_LLVM_BIN_DIR}")
-    message(FATAL_ERROR "Expected LLVM/Clang binary directory at ${PARSER_LLVM_BIN_DIR}")
-endif()
-
+# LibTooling runs in-process; package only the parser executable.
 add_custom_command(TARGET parser POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory
         "${PARSER_BUNDLE_DIR}"
-        "${PARSER_BUNDLE_CLANG_DIR}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "$<TARGET_FILE:parser>"
         "${PARSER_BUNDLE_DIR}/$<TARGET_FILE_NAME:parser>"
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory
-        "${PARSER_LLVM_BIN_DIR}"
-        "${PARSER_BUNDLE_CLANG_DIR}"
-    COMMENT "Bundling parser executable and LLVM/Clang binaries"
+    COMMENT "Bundling parser executable"
     VERBATIM
 )
 
@@ -710,7 +702,6 @@ string(CONCAT UEMETA_PLAYGROUND_LAUNCHER_CONTENT
     "execute_process(\n"
     "    COMMAND \"$<TARGET_FILE:parser>\"\n"
     "        --compile-commands [===[${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}]===]\n"
-    "        --clang-path [===[${PARSER_BUNDLE_CLANG_DIR}/clang-cl${CMAKE_EXECUTABLE_SUFFIX}]===]\n"
     "        --output [===[${UEMETA_PLAYGROUND_OUTPUT_DIR_JSON}]===]\n"
     "        --format json\n"
     "    RESULT_VARIABLE UEMETA_PLAYGROUND_RESULT\n"

@@ -15,12 +15,8 @@
 constexpr auto COMPILE_COMMANDS_HELP = "Path to compile_commands.json, or a JSON string representing the "
                                        "compile_commands.json.";
 
-constexpr auto PREFER_CLANG_HELP = "Use clang/clang.exe over or clang-cl/clang-cl.exe.\n"
-                                   "If this is true, compile_commands must pass clang-compatible commands rather than "
-                                   "MSVC-style commands.";
-
-constexpr auto CLANG_PATH_HELP = "Set the path to clang[-cl].exe to use instead of the bundled binaries.\n"
-                                 "If this is set, then prefer_clang will be ignored.";
+constexpr auto PREFER_CLANG_HELP = "Use clang-style arguments with the in-process Clang driver.\n"
+                                   "By default, compile_commands uses clang-cl's MSVC-style arguments.";
 
 constexpr auto STRIP_COMMANDS_HELP = "List of compile commands to ignore/strip from compile_commands.\n"
                                      "PCH related arguments are stripped out by necessity.\n"
@@ -30,9 +26,9 @@ constexpr auto STRIP_COMMANDS_HELP = "List of compile commands to ignore/strip f
                                      "Argument stripping happens before additional_clang_args are appended.";
 
 constexpr auto ADDITIONAL_CLANG_ARGS_HELP = "List of additional clang args to force into the command list passed to the "
-                                            "resolved clang executable.\n"
-                                            "/clang:-mwaitpkg and /clang:-fno-access-control are forced to ignore common "
-                                            "issues with parsing.";
+                                            "in-process Clang driver.\n"
+                                            "-mwaitpkg and -fno-access-control are always added, with /clang: prefixes "
+                                            "in clang-cl mode.";
 
 constexpr auto LOG_HELP = "Path to log file.\nIf empty, no logs will be saved.\nIf given, it should be relative to the "
                           "directory of parser.exe, or absolute.";
@@ -60,28 +56,6 @@ constexpr auto BUILTIN_SUBPATHS_HELP = "List of substrings that are contained wi
                                        " are not serialized, since they're considered available in the environment and"
                                        " consistent across all versions.";
 
-#if defined(_WIN32) || defined(WIN32)
-/**
- * @brief Default bundled clang-cl executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH UEMeta::StablePath::currentProgramDirectory() / "Clang" / "clang-cl.exe"
-
-/**
- * @brief Default bundled clang executable path on Windows.
- */
-#define UEM_DEFAULT_CLANG_PATH UEMeta::StablePath::currentProgramDirectory() / "Clang" / "clang.exe"
-#else
-/**
- * @brief Default bundled clang-cl executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_CL_PATH UEMeta::StablePath::currentProgramDirectory() / "Clang" / "clang-cl"
-
-/**
- * @brief Default bundled clang executable path on non-Windows platforms.
- */
-#define UEM_DEFAULT_CLANG_PATH UEMeta::StablePath::currentProgramDirectory() / "Clang" / "clang"
-#endif
-
 /**
  * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
  */
@@ -99,12 +73,6 @@ constexpr auto BUILTIN_SUBPATHS_HELP = "List of substrings that are contained wi
 const std::string& UEMeta::Config::getCompileCommands() const {
     assertInitialized();
     return compile_commands;
-}
-
-/// @brief Returns the configured Clang executable path.
-const UEMeta::StablePath& UEMeta::Config::getClangPath() const {
-    assertInitialized();
-    return clang_path;
 }
 
 /// @brief Returns arguments appended to the filtered compile command before invoking Clang.
@@ -223,7 +191,6 @@ int UEMeta::Config::initialize(int argc, char** argv) {
     app.add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
     app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
     app.add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)->required()->transform(Config::loadCompileCommandsString);
-    app.add_option("--clang-path", cfg.clang_path, CLANG_PATH_HELP)->check(CLI::ExistingFile);
     app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
     app.add_option("--clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
     app.add_option("-l,--log", cfg.log, LOG_HELP);
@@ -235,10 +202,6 @@ int UEMeta::Config::initialize(int argc, char** argv) {
 
     if (const auto result = try_cli_parse())
         return result;
-
-    if (cfg.clang_path.getUnderlyingPath().empty()) {
-        cfg.clang_path = cfg.prefer_clang ? UEM_DEFAULT_CLANG_PATH : UEM_DEFAULT_CLANG_CL_PATH;
-    }
 
     cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
     cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);

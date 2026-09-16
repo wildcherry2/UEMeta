@@ -34,11 +34,6 @@ namespace UEMeta {
         [[nodiscard]] const std::string& getCompileCommands() const;
 
         /**
-         * @brief Returns the clang or clang-cl executable path.
-         */
-        [[nodiscard]] const StablePath& getClangPath() const;
-
-        /**
          * @brief Returns compiler arguments appended after compile command filtering.
          */
         [[nodiscard]] const std::unordered_set<std::string>& getAdditionalClangArgs() const;
@@ -49,7 +44,7 @@ namespace UEMeta {
         [[nodiscard]] const std::unordered_set<std::string>& getStripArgs() const;
 
         /**
-         * @brief Returns true when the user prefers `clang` over `clang-cl`.
+         * @brief Selects clang's GNU-style arguments when true, or clang-cl's MSVC-style arguments when false.
          */
         [[nodiscard]] bool prefersClang() const;
 
@@ -99,10 +94,10 @@ namespace UEMeta {
         std::string toString() const {
             return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
                                     "sync_serialization={}\nstrip_commands={}\n"
-                                    "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\nclang_path={}\n"
+                                    "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\n"
                                     "log={}\noutput_directory={}",
                                     compile_commands, prefer_clang, prefer_full_name_in_file_name, sync_serialization, strip_commands,
-                                    additional_clang_args, builtin_subpaths, format_string_map.at(format), clang_path.string(), log.string(),
+                                    additional_clang_args, builtin_subpaths, format_string_map.at(format), log.string(),
                                     output_directory.string());
         }
 
@@ -163,7 +158,6 @@ namespace UEMeta {
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};
         std::unordered_set<std::string> builtin_subpaths{};
-        StablePath                      clang_path{};
         StablePath                      log{};
         StablePath                      output_directory{};
         std::string                     compile_commands{};
