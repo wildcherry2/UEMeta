@@ -92,7 +92,7 @@ namespace {
         ASSERT_EQ(enums.size(), 3u);
         const std::vector<ParserTypes::EnumScope> scopes{ParserTypes::ENUM_SCOPE_UNSCOPED, ParserTypes::ENUM_SCOPE_CLASS,
                                                          ParserTypes::ENUM_SCOPE_STRUCT};
-        const std::vector<std::string>            types{"unsigned int", "int", "unsigned short"};
+        const std::vector<std::string>            types{"int", "int", "unsigned short"};
         const std::vector<std::string>            names{"::Plain", "::Class", "::Struct"};
         const std::vector<int>                    counts{2, 0, 1};
         for (std::size_t index = 0; index < enums.size(); ++index) {
