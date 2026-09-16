@@ -66,6 +66,8 @@ namespace UEMeta {
         // Detached task failures are logged by the tasks themselves.
         static void awaitPendingSerializations();
 
+        // Serializes known forward declarations to a ForwardDeclarationList and saves it.
+        static void serializeForwardDeclarations();
     private:
         DeclDb() = default;
 

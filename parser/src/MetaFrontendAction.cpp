@@ -43,6 +43,7 @@ namespace {
                 UEM_ERROR("(clang) AST traversal aborted.");
             }
 
+            UEMeta::DeclDb::serializeForwardDeclarations();
             UEMeta::DeclDb::awaitPendingSerializations();
         }
 

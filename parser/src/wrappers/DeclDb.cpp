@@ -117,8 +117,8 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(clang::QualType type, clan
                     target = pattern->getDefinitionOrSelf();
                 }
                 else if (const auto* specialization = llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record);
-                         specialization && !llvm::isa<clang::ClassTemplatePartialSpecializationDecl>(specialization) &&
-                         specialization->getSpecializationKind() != clang::TSK_ExplicitSpecialization) {
+                    specialization && !llvm::isa<clang::ClassTemplatePartialSpecializationDecl>(specialization) &&
+                    specialization->getSpecializationKind() != clang::TSK_ExplicitSpecialization) {
                     // A use such as Box<int>* can exist before Clang selects an instantiation
                     // pattern. Do not guess a primary/partial or query the generated placeholder.
                     return false;
@@ -314,6 +314,56 @@ void UEMeta::DeclDb::addDeclarationAsVisited(clang::Decl* decl) {
 }
 
 void UEMeta::DeclDb::awaitPendingSerializations() { return Detail::DeclWrapperStatics::awaitPendingSerializations(); }
+
+void UEMeta::DeclDb::serializeForwardDeclarations() {
+    google::protobuf::Arena arena;
+    auto*                   p_msg = google::protobuf::Arena::Create<ParserTypes::ForwardDeclarationList>(&arena);
+    for (auto& decl_list_pair : decl_to_forward_decl_occurrence_map) {
+        if (auto hash = decl_to_identity_map.find(decl_list_pair.first); hash != decl_to_identity_map.end()) {
+            auto* p_list = p_msg->add_forward_declarations();
+            hash->second.putProtoHash(p_list->mutable_type_id());
+            for (const unsigned long long occ_index : decl_list_pair.second) {
+                p_list->add_occurrence_indices(occ_index);
+            }
+        }
+        else {
+            std::string              buffer;
+            llvm::raw_string_ostream os(buffer);
+            decl_list_pair.first->print(os);
+            UEM_WARN("Failed to find definition hash for decl {}, but it was forward declared!", buffer);
+        }
+    }
+
+    const auto&                                    cfg       = Config::getConfig();
+    const auto                                     is_json   = cfg.getFormat() == Config::SerializationFormat::Json;
+    const auto                                     open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
+    constexpr google::protobuf::json::PrintOptions json_options{
+        .add_whitespace                       = true,
+        .always_print_fields_with_no_presence = true
+    };
+    const auto&   out_path = cfg.getOutputDirectory().getUnderlyingPath() / (is_json ? "fwd.decljson" : "fwd.declbin");
+    // todo can move this part and below to its own function shared with DeclWrapperStatics
+    std::ofstream out_file(out_path, open_mode);
+    if (!out_file) {
+        throw std::runtime_error("Failed to open file for writing!");
+    }
+
+    if (is_json) {
+        thread_local std::string buffer{};
+        buffer.clear();
+        if (google::protobuf::util::MessageToJsonString(*p_msg, &buffer, json_options).ok()) {
+            out_file << buffer;
+        }
+        else {
+            UEM_ERROR("Failed to write to file: {}", out_path.string());
+        }
+    }
+    else if (!p_msg->SerializeToOstream(&out_file)) {
+        UEM_ERROR("Failed to write to file: {}", out_path.string());
+    }
+
+    out_file.close();
+}
 
 bool isDeclInFunctionOrMethod(const clang::Decl* decl) {
     if (!decl)
