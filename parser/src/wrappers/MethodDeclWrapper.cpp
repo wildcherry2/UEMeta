@@ -36,7 +36,7 @@ void UEMeta::MethodDeclWrapper::putVTableDetails(ParserTypes::MemberFunction* p_
     // Preserve the existing Microsoft ABI support boundary.
     auto* vtable = llvm::dyn_cast<clang::MicrosoftVTableContext>(getASTContext().getVTableContext());
     if (!vtable) {
-        throw std::runtime_error("Itanium (Linux) ABI not supported yet!");
+        throw DeclException(decl, "Itanium (Linux) ABI not supported yet!");
     }
 
     // Destructors occupy the ABI's deleting-destructor entry, not the complete-destructor entry.

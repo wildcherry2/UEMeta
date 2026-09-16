@@ -61,7 +61,7 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
         clang::QualType underlying;
         const auto      type_query = DeclDb::queryType(declared_type, &underlying);
         if (get_if<std::monostate>(&type_query)) {
-            throw std::runtime_error{"Failed to query global variable type (exception)!"};
+            throw DeclException(decl, "Failed to query global variable type (exception)!");
         }
         ParserTypes::VersionedTypeRefOrAnon_VersionItem* type_ref_or_anon_version = p_msg->mutable_type_ref()->add_versions();
 
@@ -76,7 +76,7 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
                 const auto  result = RecordDeclWrapper(record, arena).toIntermediateRepresentation();
                 const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result);
                 if (!nested)
-                    throw std::runtime_error("An embedded anonymous record did not produce a record!");
+                    throw DeclException(decl, "An embedded anonymous record did not produce a record!");
                 type_ref_or_anon->set_allocated_anon_record(*nested);
             }
             else if (auto* enumeration = llvm::dyn_cast_or_null<clang::EnumDecl>(tag->getDefinition())) {
@@ -84,7 +84,7 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
                 const auto  result = EnumDeclWrapper(enumeration, arena).toIntermediateRepresentation();
                 const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
                 if (!nested)
-                    throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
+                    throw DeclException(decl, "An embedded anonymous enum did not produce an enum!");
                 type_ref_or_anon->set_allocated_anon_enum(*nested);
             }
         }

@@ -25,7 +25,7 @@ namespace UEMeta {
             static void     awaitPendingSerializations();
 
         protected:
-            template <TopLevelDecl PT>
+            template <TopLevelProto PT>
             static void saveToFile(const PT* msg, const std::shared_ptr<google::protobuf::Arena>& arena) {
                 if (!msg)
                     throw std::invalid_argument("Failed to serialize because msg is null!");
@@ -119,13 +119,13 @@ namespace UEMeta {
 
             if (has_identity) {
                 if (fqn.empty() || fqn == "::") {
-                    throw std::runtime_error("Failed to construct FQN!");
+                    throw DeclException(decl, "Failed to construct FQN!");
                 }
 
                 metadata->set_qualified_name(fqn);
 
                 if (decl_id.a == 0 && decl_id.b == 0) {
-                    throw std::runtime_error("Invalid type_id!");
+                    throw DeclException(decl, "Invalid type_id!");
                 }
 
                 decl_id.putProtoHash(metadata->mutable_decl_id());
@@ -138,12 +138,12 @@ namespace UEMeta {
         void putContextFQN(llvm::raw_string_ostream& out_stream, const clang::Decl* for_decl = nullptr) const {
             const auto* this_decl_as_decl_context = llvm::dyn_cast_or_null<clang::DeclContext>(for_decl ? for_decl : decl);
             if (!this_decl_as_decl_context) {
-                throw std::runtime_error("DeclContext not found!");
+                throw DeclException(decl, "DeclContext not found!");
             }
             const clang::Decl*               decl_context = clang::Decl::castFromDeclContext(this_decl_as_decl_context->getNonTransparentContext());
             const clang::NestedNameSpecifier scope_nns = clang::TypeName::getFullyQualifiedDeclaredContext(decl->getASTContext(), decl_context, true);
             if (!scope_nns) {
-                throw std::runtime_error("Failed to get scope of anonymous enumerators!");
+                throw DeclException(decl, "Failed to get scope of anonymous enumerators!");
             }
             scope_nns.print(out_stream, decl->getASTContext().getPrintingPolicy());
         }
@@ -160,7 +160,7 @@ namespace UEMeta {
             };
 
             if ((!declared_params && !specialization_args) || !p_msg) {
-                throw std::invalid_argument("Template parameters are not valid!");
+                throw DeclException(decl, "Template parameters are not valid!");
             }
 
             p_msg->set_specialization_kind(getTemplateSpecializationKind());
@@ -295,7 +295,7 @@ namespace UEMeta {
                                                           &put_generic_type_ref, id_out_ptr,
                                                           this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
                     if (argument.getKind() == clang::TemplateArgument::Null) {
-                        throw std::runtime_error("Encountered a null template specialization argument!");
+                        throw DeclException(decl, "Encountered a null template specialization argument!");
                     }
 
                     if (argument.getKind() == clang::TemplateArgument::Pack) {
@@ -312,7 +312,7 @@ namespace UEMeta {
                         if (!generic && argument.getKind() != clang::TemplateArgument::Type &&
                             argument.getKind() != clang::TemplateArgument::Template &&
                             argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
-                            throw std::runtime_error("Failed to resolve a carried-over generic argument!");
+                            throw DeclException(decl, "Failed to resolve a carried-over generic argument!");
                         }
 
                         p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC);
@@ -403,7 +403,7 @@ namespace UEMeta {
         // Populates a TypeRef with the given type_name and QueryResult
         void putTypeRef(const std::string& type_name, const DeclDb::QueryResult& result, ParserTypes::TypeRef* p_ref) const {
             if (std::get_if<std::monostate>(&result)) {
-                throw std::runtime_error("DeclDb query returned std::monostate!");
+                throw DeclException(decl, "DeclDb query returned std::monostate!");
             }
 
             setVersionedString(p_ref->mutable_type_name(), type_name);
@@ -451,14 +451,14 @@ namespace UEMeta {
                 case clang::TSK_ExplicitInstantiationDefinition:
                     return ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION;
                 default:
-                    throw std::runtime_error("Unknown template specialization kind!");
+                    throw DeclException(decl, "Unknown template specialization kind!");
             }
         }
 
         void putTemplateRef(const clang::TemplateArgument& argument, ParserTypes::TypeRef* p_ref,
                             std::vector<AnyString>* id_out_ptr = nullptr) const {
             if (argument.getKind() != clang::TemplateArgument::Template && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
-                throw std::invalid_argument("Template argument is not a template name!");
+                throw DeclException(decl, "Template argument is not a template name!");
             }
 
             const clang::TemplateName  template_name = argument.getAsTemplateOrTemplatePattern();

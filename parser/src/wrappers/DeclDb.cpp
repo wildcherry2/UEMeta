@@ -34,7 +34,7 @@ static bool isImplicitSpec(const T* decl) {
 
 void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) {
     if (!decl)
-        throw std::runtime_error("Can't addDeclIdentity with null Decl pointer!");
+        throw DeclException(decl, "Can't addDeclIdentity with null Decl pointer!");
     decl_to_identity_map.insert({decl, hash});
     identity_to_decl_map.insert({hash, decl});
     visited_decls.insert(decl);
@@ -174,8 +174,11 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         EnumDeclWrapper(decl, arena).toFile();
     }
+    catch (DeclException<clang::EnumDecl>& de) {
+        throw;
+    }
     catch (std::exception& e) {
-        UEM_ERROR("{}", e.what());
+        throw DeclException(decl, "{}", e.what());
     }
 }
 
@@ -203,8 +206,11 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         VarDeclWrapper(decl, arena).toFile();
     }
+    catch (DeclException<clang::VarDecl>& de) {
+        throw;
+    }
     catch (std::exception& e) {
-        UEM_ERROR("{}", e.what());
+        throw DeclException(decl, "{}", e.what());
     }
 }
 
@@ -240,8 +246,11 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         RecordDeclWrapper(decl, arena).toFile();
     }
-    catch (const std::exception& e) {
-        UEM_ERROR("{}", e.what());
+    catch (DeclException<clang::RecordDecl>& de) {
+        throw;
+    }
+    catch (std::exception& e) {
+        throw DeclException(decl, "{}", e.what());
     }
 }
 
@@ -274,8 +283,11 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         FunctionDeclWrapper(decl, arena).toFile();
     }
+    catch (DeclException<clang::FunctionDecl>& de) {
+        throw;
+    }
     catch (std::exception& e) {
-        UEM_ERROR("{}", e.what());
+        throw DeclException(decl, "{}", e.what());
     }
 }
 
@@ -283,7 +295,7 @@ void UEMeta::DeclDb::addForwardDeclaration(clang::Decl* for_decl) {
     const auto* tag      = llvm::dyn_cast_or_null<clang::TagDecl>(for_decl);
     const auto* function = llvm::dyn_cast_or_null<clang::FunctionDecl>(for_decl);
     if (!(tag && tag->isThisDeclarationADefinition()) && !(function && function->isThisDeclarationADefinition())) {
-        throw std::invalid_argument("Failed to addForwardDeclaration because the declaration is not a record, enum or function definition!");
+        throw DeclException(for_decl, "Failed to addForwardDeclaration because the declaration is not a record, enum or function definition!");
     }
     if (const auto other_decls = decl_to_forward_decl_occurrence_map.find(for_decl); other_decls != decl_to_forward_decl_occurrence_map.end()) {
         other_decls->second.emplace_back(Detail::DeclWrapperStatics::allocateDeclOccurrence());
@@ -295,7 +307,7 @@ void UEMeta::DeclDb::addForwardDeclaration(clang::Decl* for_decl) {
 
 void UEMeta::DeclDb::addDeclarationAsVisited(clang::Decl* decl) {
     if (!decl) {
-        throw std::invalid_argument("Failed to addDeclarationAsVisited because decl is null!");
+        throw DeclException(decl, "Failed to addDeclarationAsVisited because decl is null!");
     }
 
     visited_decls.insert(decl);

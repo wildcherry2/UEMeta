@@ -106,14 +106,14 @@ private:
 // Callers handle forward occurrences before entering this serialization path.
 UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper::toIntermediateRepresentation() const {
     if (!decl)
-        throw std::invalid_argument("Cannot toIntermediateRepresentation a null record declaration!");
+        throw DeclException(decl, "Cannot toIntermediateRepresentation a null record declaration!");
 
     // File-scope anonymous unions inject static variables into their enclosing namespace.
     if (decl->isUnion() && decl->isAnonymousStructOrUnion() && decl->getDeclContext()->getNonTransparentContext()->isFileContext()) {
         return serializeGlobalUnion();
     }
     if (decl->isAnonymousStructOrUnion()) {
-        throw std::invalid_argument("Nested anonymous storage must be extracted by its owning record!");
+        throw DeclException(decl, "Nested anonymous storage must be extracted by its owning record!");
     }
 
     // Register named identities before member serialization so self-references resolve in this pass.
@@ -243,7 +243,7 @@ ParserTypes::AccessSpecifier UEMeta::RecordDeclWrapper::getAccess(clang::AccessS
         case clang::AS_none:
             return record->isClass() ? ParserTypes::ACCESS_SPECIFIER_PRIVATE : ParserTypes::ACCESS_SPECIFIER_PUBLIC;
     }
-    throw std::runtime_error("Unknown record access specifier!");
+    throw DeclException(decl, "Unknown record access specifier!");
 }
 
 /**
@@ -479,7 +479,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(clang::EnumDecl* enumeration, ParserT
     auto        result       = EnumDeclWrapper(enumeration, nested_arena).toIntermediateRepresentation();
     const auto* nested       = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
     if (!nested || !(*nested)->metadata().has_decl_id()) {
-        throw std::runtime_error("A named nested enum did not produce an enum identity!");
+        throw DeclException(decl, "A named nested enum did not produce an enum identity!");
     }
     Hash identity{};
     identity.a = (*nested)->metadata().decl_id().a();
@@ -518,13 +518,13 @@ void UEMeta::RecordDeclWrapper::addNestedHash(const ParserTypes::DeclarationMeta
 // when we do not select one of these embedded-message branches.
 void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::VersionedTypeRefOrAnon* p_msg) const {
     if (type.isNull())
-        throw std::runtime_error("Cannot toIntermediateRepresentation a field without a type!");
+        throw DeclException(decl, "Cannot toIntermediateRepresentation a field without a type!");
 
     // Keep cvref/pointer/array spelling in TypeRef while fully resolving alias sugar.
     type             = type.getCanonicalType();
     const auto query = DeclDb::queryType(type);
     if (std::holds_alternative<std::monostate>(query)) {
-        throw std::runtime_error("DeclDb failed to query a record member type!");
+        throw DeclException(decl, "DeclDb failed to query a record member type!");
     }
     auto* version = p_msg->add_versions();
     version->add_source_versions(Config::getConfig().getVersion());
@@ -546,7 +546,7 @@ void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::
             const auto  result = RecordDeclWrapper(record, arena).toIntermediateRepresentation();
             const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result);
             if (!nested)
-                throw std::runtime_error("An embedded anonymous record did not produce a record!");
+                throw DeclException(decl, "An embedded anonymous record did not produce a record!");
             value->set_allocated_anon_record(*nested);
             return;
         }
@@ -555,7 +555,7 @@ void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::
             const auto  result = EnumDeclWrapper(enumeration, arena).toIntermediateRepresentation();
             const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
             if (!nested)
-                throw std::runtime_error("An embedded anonymous enum did not produce an enum!");
+                throw DeclException(decl, "An embedded anonymous enum did not produce an enum!");
             value->set_allocated_anon_enum(*nested);
             return;
         }

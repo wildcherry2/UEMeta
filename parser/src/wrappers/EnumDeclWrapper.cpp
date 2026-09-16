@@ -11,7 +11,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
     if (underlying.isNull())
         underlying = decl->getPromotionType();
     if (underlying.isNull())
-        throw std::runtime_error("Underlying type of enumerator is unknown!");
+        throw DeclException(decl, "Underlying type of enumerator is unknown!");
 
     // if it has a stable identity or depends on a declarator, toIntermediateRepresentation with global thread-local message allocation
     // and return it
@@ -26,7 +26,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
         {
             const auto underlying_type = underlying.getAsString();
             if (underlying_type.empty()) {
-                throw std::runtime_error("Underlying type of enumerator is unknown!");
+                throw DeclException(decl, "Underlying type of enumerator is unknown!");
             }
             setVersionedString(out_msg->mutable_underlying_type(), underlying_type);
         }
@@ -105,7 +105,7 @@ void UEMeta::EnumDeclWrapper::serializeAsFields(ParserTypes::AccessSpecifier acc
     if (type.isNull())
         type = decl->getPromotionType();
     if (type.isNull())
-        throw std::runtime_error("Underlying type of enumerator is unknown!");
+        throw DeclException(decl, "Underlying type of enumerator is unknown!");
     const std::string type_name =
         clang::TypeName::getFullyQualifiedName(type.getCanonicalType(), getASTContext(), getASTContext().getPrintingPolicy(), true);
 
