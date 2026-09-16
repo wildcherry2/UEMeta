@@ -13,8 +13,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
     if (underlying.isNull())
         throw DeclException(decl, "Underlying type of enumerator is unknown!");
 
-    // if it has a stable identity or depends on a declarator, toIntermediateRepresentation with global thread-local message allocation
-    // and return it
+    // Named, typedef-named and embedded enums retain an enum representation.
     if (computeHasIdentity() || decl->isEmbeddedInDeclarator()) {
         const auto out_msg = google::protobuf::Arena::Create<ParserTypes::TLEnumDeclaration>(arena.get());
         {
@@ -23,13 +22,8 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
             putMetadata(out_msg->mutable_metadata(), true, fqn, decl_id);
             DeclDb::addDeclIdentity(decl, decl_id);
         }
-        {
-            const auto underlying_type = underlying.getAsString();
-            if (underlying_type.empty()) {
-                throw DeclException(decl, "Underlying type of enumerator is unknown!");
-            }
-            setVersionedString(out_msg->mutable_underlying_type(), underlying_type);
-        }
+        // A non-null enum integer type has a spelling; missing types were rejected above.
+        setVersionedString(out_msg->mutable_underlying_type(), underlying.getAsString());
 
         out_msg->set_scope(!decl->isScoped()               ? ParserTypes::ENUM_SCOPE_UNSCOPED
                            : decl->isScopedUsingClassTag() ? ParserTypes::ENUM_SCOPE_CLASS
@@ -37,12 +31,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
         for (const clang::EnumConstantDecl* enumerator : decl->enumerators()) {
             auto* p_enumerator = out_msg->add_enumerators();
 
-            if (decl->getDeclName().isIdentifier()) {
-                p_enumerator->set_name(decl->getName().str());
-            }
-            else {
-                p_enumerator->set_name(decl->getNameAsString());
-            }
+            p_enumerator->set_name(enumerator->getNameAsString());
 
             if (const clang::RawComment* comment = getASTContext().getRawCommentForAnyRedecl(enumerator)) {
                 setVersionedString(p_enumerator->mutable_documentation(), comment->getRawText(getASTContext().getSourceManager()));
@@ -95,8 +84,8 @@ void UEMeta::EnumDeclWrapper::toFile(IntermediateRepresentation&& ir, const std:
             saveToFile(p_var, arena);
         }
     }
-    else if (auto** p_enum = std::get_if<ParserTypes::TLEnumDeclaration*>(&ir)) {
-        saveToFile(*p_enum, arena);
+    else {
+        saveToFile(std::get<ParserTypes::TLEnumDeclaration*>(ir), arena);
     }
 }
 
@@ -159,8 +148,7 @@ UEMeta::Hash UEMeta::EnumDeclWrapper::computeDeclId(std::string_view fqn) const 
 bool UEMeta::EnumDeclWrapper::computeHasIdentity() const { return decl->hasNameForLinkage(); }
 
 std::string UEMeta::EnumDeclWrapper::computeFQN() const {
-    if (const clang::QualType type = getASTContext().getCanonicalTagType(decl); !type.isNull()) {
-        return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
-    }
-    return "";
+    // ASTContext supplies the canonical tag type for a valid EnumDecl.
+    const clang::QualType type = getASTContext().getCanonicalTagType(decl);
+    return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
 }

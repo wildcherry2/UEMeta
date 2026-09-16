@@ -136,12 +136,14 @@ namespace UEMeta {
         }
 
         void putContextFQN(llvm::raw_string_ostream& out_stream, const clang::Decl* for_decl = nullptr) const {
-            const auto* this_decl_as_decl_context = llvm::dyn_cast_or_null<clang::DeclContext>(for_decl ? for_decl : decl);
-            if (!this_decl_as_decl_context) {
+            const clang::Decl* context_owner = for_decl ? for_decl : decl;
+            if (!context_owner || !context_owner->getDeclContext()) {
                 throw DeclException(decl, "DeclContext not found!");
             }
-            const clang::Decl*               decl_context = clang::Decl::castFromDeclContext(this_decl_as_decl_context->getNonTransparentContext());
-            const clang::NestedNameSpecifier scope_nns = clang::TypeName::getFullyQualifiedDeclaredContext(decl->getASTContext(), decl_context, true);
+            // Clang resolves the supplied declaration's context itself. Passing
+            // that context would skip a scope (or the translation unit entirely).
+            const clang::NestedNameSpecifier scope_nns =
+                clang::TypeName::getFullyQualifiedDeclaredContext(decl->getASTContext(), context_owner, true);
             if (!scope_nns) {
                 throw DeclException(decl, "Failed to get scope of anonymous enumerators!");
             }

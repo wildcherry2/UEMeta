@@ -9,7 +9,11 @@ project(parser LANGUAGES CXX)
 include(FetchContent)
 find_package(Python3 3.14 REQUIRED COMPONENTS Interpreter)
 
-option(UEMETA_ENABLE_TESTING "Build parser testing harness" OFF)
+option(UEMETA_ENABLE_TESTING "Build wrapper unit tests" OFF)
+option(UEMETA_ENABLE_COVERAGE "Measure wrapper coverage with Clang" OFF)
+if(UEMETA_ENABLE_COVERAGE AND NOT UEMETA_ENABLE_TESTING)
+    message(FATAL_ERROR "UEMETA_ENABLE_COVERAGE requires UEMETA_ENABLE_TESTING")
+endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(FETCHCONTENT_QUIET OFF CACHE BOOL "Show FetchContent population progress" FORCE)
@@ -521,8 +525,8 @@ source_group("Generated\\Protobuf" FILES
     ${UEMETA_PROTO_GENERATED_HEADERS}
 )
 
-add_executable(parser
-        src/main.cpp src/MetaFrontendAction.cpp
+add_library(uemeta-parser-core STATIC
+        src/MetaFrontendAction.cpp
         src/Cli.cpp
         src/MetaTool.cpp
         src/StablePath.cpp
@@ -537,15 +541,17 @@ add_executable(parser
         src/wrappers/DeclDb.cpp
         src/wrappers/DeclWrapper.cpp)
 
-set_target_properties(parser PROPERTIES
+add_executable(parser src/main.cpp)
+target_link_libraries(parser PRIVATE uemeta-parser-core)
+
+set_target_properties(parser uemeta-parser-core PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
-    RUNTIME_OUTPUT_NAME parser
 )
 
 if(MSVC)
-    set_target_properties(parser PROPERTIES
+    set_target_properties(parser uemeta-parser-core PROPERTIES
         MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
     )
     set_source_files_properties(${UEMETA_PROTO_GENERATED_SOURCES} PROPERTIES
@@ -553,48 +559,49 @@ if(MSVC)
     )
 endif()
 
-target_include_directories(parser PRIVATE
+target_include_directories(uemeta-parser-core PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
 )
 
-target_include_directories(parser SYSTEM PRIVATE
+target_include_directories(uemeta-parser-core SYSTEM PUBLIC
     "${UEMETA_PROTO_GENERATED_DIR}"
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )
 
-target_compile_options(parser PRIVATE
+target_compile_options(uemeta-parser-core PUBLIC
     ${UEMETA_LLVM_DEFINITIONS}
     $<$<CXX_COMPILER_ID:MSVC>:/std:c++latest>
-    $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<BOOL:${MSVC}>>:/clang:-std=c++2c>
+    $<$<BOOL:${MSVC}>:/EHsc>
     $<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>
-    $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
-    $<$<CXX_COMPILER_ID:MSVC>:${UEMETA_MSVC_DISABLED_WARNINGS}>
-    $<$<CXX_COMPILER_ID:Clang>:-std=c++2c>
+    $<$<BOOL:${MSVC}>:/bigobj>
+    $<$<BOOL:${MSVC}>:${UEMETA_MSVC_DISABLED_WARNINGS}>
+    $<$<AND:$<CXX_COMPILER_ID:Clang>,$<NOT:$<BOOL:${MSVC}>>>:-std=c++2c>
     $<$<CXX_COMPILER_ID:GNU>:-std=c++2c>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<BOOL:${MSVC}>:/W4>
     $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
-    $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Od>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/Zi>
+    $<$<BOOL:${MSVC}>:/external:W0>
+    $<$<AND:$<BOOL:${MSVC}>,$<CONFIG:Debug>>:/Od>
+    $<$<AND:$<BOOL:${MSVC}>,$<CONFIG:Debug>>:/Zi>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/RTC1>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/O2>
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Ob2>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
-    $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Debug>>:-O0>
-    $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Debug>>:-g>
-    $<$<AND:$<NOT:$<CXX_COMPILER_ID:MSVC>>,$<CONFIG:Release>>:-O3>
+    $<$<AND:$<BOOL:${MSVC}>,$<CONFIG:Release>>:/O2>
+    $<$<AND:$<BOOL:${MSVC}>,$<CONFIG:Release>>:/Ob2>
+    $<$<NOT:$<BOOL:${MSVC}>>:-Wall>
+    $<$<NOT:$<BOOL:${MSVC}>>:-Wextra>
+    $<$<NOT:$<BOOL:${MSVC}>>:-Wpedantic>
+    $<$<AND:$<NOT:$<BOOL:${MSVC}>>,$<CONFIG:Debug>>:-O0>
+    $<$<AND:$<NOT:$<BOOL:${MSVC}>>,$<CONFIG:Debug>>:-g>
+    $<$<AND:$<NOT:$<BOOL:${MSVC}>>,$<CONFIG:Release>>:-O3>
 )
 
-target_link_options(parser PRIVATE
+target_link_options(uemeta-parser-core PUBLIC
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/DEBUG:FULL>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:REF>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:ICF>
 )
 
-target_link_libraries(parser PRIVATE
+target_link_libraries(uemeta-parser-core PUBLIC
     clangTooling
     clangFrontend
     clangASTMatchers
@@ -609,7 +616,7 @@ target_link_libraries(parser PRIVATE
 set(PARSER_BUNDLE_DIR "${PROJECT_SOURCE_DIR}/out")
 set(PARSER_BUNDLE_CLANG_DIR "${PARSER_BUNDLE_DIR}/Clang")
 set(PARSER_LLVM_BIN_DIR "${llvm_prebuilt_SOURCE_DIR}/bin")
-target_compile_definitions(parser PRIVATE
+target_compile_definitions(uemeta-parser-core PUBLIC
     QUILL_DISABLE_FUNCTION_NAME
     QUILL_DISABLE_FILE_INFO
     $<$<CONFIG:Debug>:DEBUG=1>
@@ -666,171 +673,7 @@ if(UEMETA_ENABLE_TESTING)
         )
     endif()
 
-    set(UEMETA_TEST_TARGET_DIR "${PROJECT_SOURCE_DIR}/testing/target")
-    set(UEMETA_TEST_TARGET_INCLUDE_DIR "${UEMETA_TEST_TARGET_DIR}/include")
-    set(UEMETA_TEST_TARGET_SOURCE_DIR "${UEMETA_TEST_TARGET_DIR}/src")
-    set(UEMETA_TEST_HARNESS_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/testing/harness/include")
-    set(UEMETA_TEST_HARNESS_SOURCE_DIR "${PROJECT_SOURCE_DIR}/testing/harness/src")
-    set(UEMETA_TEST_OUTPUT_DIR "${PROJECT_SOURCE_DIR}/testing/output")
-    set(UEMETA_TEST_TARGET_SOURCE "${UEMETA_TEST_TARGET_SOURCE_DIR}/test.cpp")
-    set(UEMETA_TEST_PARSER_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/RunParserForTests.cmake")
-    set(UEMETA_TEST_PARSER_OUTPUT_MARKER "${CMAKE_CURRENT_BINARY_DIR}/uemeta-test-parser-output.ready")
-
-    file(GLOB UEMETA_TEST_TARGET_HEADERS CONFIGURE_DEPENDS
-        "${UEMETA_TEST_TARGET_INCLUDE_DIR}/*.h"
-        "${UEMETA_TEST_TARGET_INCLUDE_DIR}/*.hpp"
-        "${UEMETA_TEST_TARGET_INCLUDE_DIR}/*.cpp"
-    )
-    file(GLOB UEMETA_TEST_HARNESS_SOURCES CONFIGURE_DEPENDS
-        "${UEMETA_TEST_HARNESS_SOURCE_DIR}/*.cpp"
-    )
-    file(GLOB UEMETA_TEST_HARNESS_HEADERS CONFIGURE_DEPENDS
-        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}/*.h"
-        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}/*.hpp"
-    )
-
-    if(NOT EXISTS "${UEMETA_TEST_TARGET_SOURCE}")
-        message(FATAL_ERROR "Expected parser test target source at ${UEMETA_TEST_TARGET_SOURCE}")
-    endif()
-
-    if(NOT UEMETA_TEST_TARGET_HEADERS)
-        message(FATAL_ERROR "Expected parser test target headers in ${UEMETA_TEST_TARGET_INCLUDE_DIR}")
-    endif()
-
-    if(NOT UEMETA_TEST_HARNESS_SOURCES)
-        message(FATAL_ERROR "Expected GoogleTest harness sources in ${UEMETA_TEST_HARNESS_SOURCE_DIR}")
-    endif()
-
-    file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" UEMETA_TEST_WORKING_DIRECTORY_JSON)
-    file(TO_CMAKE_PATH "${UEMETA_TEST_TARGET_SOURCE}" UEMETA_TEST_TARGET_SOURCE_JSON)
-    file(TO_CMAKE_PATH "${UEMETA_TEST_TARGET_DIR}" UEMETA_TEST_TARGET_DIR_JSON)
-    file(TO_CMAKE_PATH "${UEMETA_TEST_TARGET_INCLUDE_DIR}" UEMETA_TEST_TARGET_INCLUDE_DIR_JSON)
-    file(TO_CMAKE_PATH "${UEMETA_TEST_OUTPUT_DIR}" UEMETA_TEST_OUTPUT_DIR_JSON)
-    file(TO_CMAKE_PATH "${UEMETA_TEST_PARSER_OUTPUT_MARKER}" UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON)
-
-    set(UEMETA_TEST_CLANG_EXECUTABLE "${PARSER_BUNDLE_CLANG_DIR}/clang-cl${CMAKE_EXECUTABLE_SUFFIX}")
-    set(UEMETA_TEST_COMPILE_COMMAND
-        "clang-cl${CMAKE_EXECUTABLE_SUFFIX} /nologo /TP /std:c++latest /EHsc /Zc:preprocessor /bigobj /DWIN32 /D_WINDOWS ${UEMETA_CLANG_CL_CONFIG_DEFINITION} /MT ${UEMETA_CLANG_CL_CONFIG_OPTIMIZATION} ${UEMETA_CLANG_CL_CONFIG_INLINE_EXPANSION} /I\"${UEMETA_TEST_TARGET_INCLUDE_DIR_JSON}\" /c \"${UEMETA_TEST_TARGET_SOURCE_JSON}\""
-    )
-    file(TO_CMAKE_PATH "${UEMETA_TEST_CLANG_EXECUTABLE}" UEMETA_TEST_CLANG_EXECUTABLE_JSON)
-    string(REPLACE "\"" "\\\"" UEMETA_TEST_COMPILE_COMMAND_JSON "${UEMETA_TEST_COMPILE_COMMAND}")
-    string(CONCAT UEMETA_TEST_COMPILE_COMMANDS_JSON
-        "[\n"
-        "  {\n"
-        "    \"directory\": \"${UEMETA_TEST_WORKING_DIRECTORY_JSON}\",\n"
-        "    \"command\": \"${UEMETA_TEST_COMPILE_COMMAND_JSON}\",\n"
-        "    \"file\": \"${UEMETA_TEST_TARGET_SOURCE_JSON}\"\n"
-        "  }\n"
-        "]\n"
-    )
-
-    string(CONCAT UEMETA_TEST_PARSER_LAUNCHER_CONTENT
-        "file(MAKE_DIRECTORY [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===])\n"
-        "file(GLOB UEMETA_TEST_STALE_OUTPUT_FILES\n"
-        "    [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*bin]===]\n"
-        "    [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*json]===]\n"
-        ")\n"
-        "if(UEMETA_TEST_STALE_OUTPUT_FILES)\n"
-        "    file(REMOVE \${UEMETA_TEST_STALE_OUTPUT_FILES})\n"
-        "endif()\n"
-        "file(REMOVE [===[${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}]===])\n"
-        "execute_process(\n"
-        "    COMMAND \"$<TARGET_FILE:parser>\"\n"
-        "        --compile-commands [===[${UEMETA_TEST_COMPILE_COMMANDS_JSON}]===]\n"
-        "        --clang-path [===[${UEMETA_TEST_CLANG_EXECUTABLE_JSON}]===]\n"
-        "        --output [===[${UEMETA_TEST_OUTPUT_DIR_JSON}]===]\n"
-        "        --format binary\n"
-        "        --builtin-subpaths InlinedBuiltinTypes.hpp\n"
-        "    RESULT_VARIABLE UEMETA_TEST_PARSER_RESULT\n"
-        ")\n"
-        "if(NOT UEMETA_TEST_PARSER_RESULT EQUAL 0)\n"
-        "    message(FATAL_ERROR \"parser test target run failed with exit code \${UEMETA_TEST_PARSER_RESULT}\")\n"
-        "endif()\n"
-        "file(GLOB UEMETA_TEST_PARSER_OUTPUT_FILES [===[${UEMETA_TEST_OUTPUT_DIR_JSON}/*bin]===])\n"
-        "if(NOT UEMETA_TEST_PARSER_OUTPUT_FILES)\n"
-        "    message(FATAL_ERROR \"parser test target produced no binary output in ${UEMETA_TEST_OUTPUT_DIR_JSON}\")\n"
-        "endif()\n"
-        "file(WRITE [===[${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}]===] \"ready\\n\")\n"
-    )
-    file(GENERATE OUTPUT "${UEMETA_TEST_PARSER_LAUNCHER}" CONTENT "${UEMETA_TEST_PARSER_LAUNCHER_CONTENT}")
-
-    add_custom_target(uemeta-test-output
-        COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_TEST_PARSER_LAUNCHER}"
-        DEPENDS
-            parser
-            "${UEMETA_TEST_PARSER_LAUNCHER}"
-            "${UEMETA_TEST_TARGET_SOURCE}"
-            ${UEMETA_TEST_TARGET_HEADERS}
-        COMMENT "Preparing parser test output"
-        VERBATIM
-    )
-
-    add_executable(uemeta-parser-tests
-        ${UEMETA_TEST_HARNESS_SOURCES}
-        ${UEMETA_TEST_HARNESS_HEADERS}
-        ${UEMETA_PROTO_GENERATED_SOURCES}
-    )
-    add_dependencies(uemeta-parser-tests uemeta-test-output)
-
-    set_target_properties(uemeta-parser-tests PROPERTIES
-        CXX_STANDARD 23
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-    )
-
-    if(MSVC)
-        set_target_properties(uemeta-parser-tests PROPERTIES
-            MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
-        )
-    endif()
-
-    target_compile_definitions(uemeta-parser-tests PRIVATE
-        UEMETA_TEST_OUTPUT_DIR="${UEMETA_TEST_OUTPUT_DIR_JSON}"
-        UEMETA_TEST_TARGET_DIR="${UEMETA_TEST_TARGET_DIR_JSON}"
-        UEMETA_TEST_TARGET_INCLUDE_DIR="${UEMETA_TEST_TARGET_INCLUDE_DIR_JSON}"
-        UEMETA_TEST_TARGET_SOURCE="${UEMETA_TEST_TARGET_SOURCE_JSON}"
-        UEMETA_TEST_PARSER_OUTPUT_MARKER="${UEMETA_TEST_PARSER_OUTPUT_MARKER_JSON}"
-    )
-
-    target_include_directories(uemeta-parser-tests SYSTEM PRIVATE
-        "${UEMETA_PROTO_GENERATED_DIR}"
-    )
-
-    target_include_directories(uemeta-parser-tests PRIVATE
-        "${UEMETA_TEST_HARNESS_INCLUDE_DIR}"
-    )
-
-    target_compile_options(uemeta-parser-tests PRIVATE
-        $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
-        $<$<CXX_COMPILER_ID:MSVC>:/bigobj>
-        $<$<CXX_COMPILER_ID:MSVC>:/W4>
-        $<$<CXX_COMPILER_ID:MSVC>:/external:anglebrackets>
-        $<$<CXX_COMPILER_ID:MSVC>:/external:W0>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
-    )
-
-    target_link_libraries(uemeta-parser-tests PRIVATE
-        GTest::gtest_main
-        protobuf::libprotobuf
-    )
-
-    add_test(
-        NAME uemeta-test-output-ctest
-        COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_TEST_PARSER_LAUNCHER}"
-    )
-    set_tests_properties(uemeta-test-output-ctest PROPERTIES
-        FIXTURES_SETUP uemeta-parser-output
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    )
-
-    gtest_discover_tests(uemeta-parser-tests
-        DISCOVERY_MODE PRE_TEST
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-        PROPERTIES
-            FIXTURES_REQUIRED uemeta-parser-output
-    )
+    add_subdirectory(testing)
 endif()
 
 set(UEMETA_PLAYGROUND_SOURCE "${PROJECT_SOURCE_DIR}/playground/pg.cpp")
