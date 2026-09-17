@@ -13,10 +13,13 @@ target_include_directories(uemeta-parser-tests PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_link_libraries(uemeta-parser-tests PRIVATE uemeta-parser-core GTest::gtest)
 
 # Register each wrapper's tests and measured production files together.
-# Header-only wrappers can omit an implementation source.
+# Wrappers may be header-only, or share a header registered by another wrapper.
 function(uemeta_add_wrapper_tests wrapper)
     target_sources(uemeta-parser-tests PRIVATE "harness/src/wrappers/${wrapper}Tests.cpp")
-    set(sources "${PROJECT_SOURCE_DIR}/include/UEMeta/wrappers/${wrapper}.hpp")
+    set(sources)
+    if(EXISTS "${PROJECT_SOURCE_DIR}/include/UEMeta/wrappers/${wrapper}.hpp")
+        list(APPEND sources "${PROJECT_SOURCE_DIR}/include/UEMeta/wrappers/${wrapper}.hpp")
+    endif()
     if(EXISTS "${PROJECT_SOURCE_DIR}/src/wrappers/${wrapper}.cpp")
         list(APPEND sources "${PROJECT_SOURCE_DIR}/src/wrappers/${wrapper}.cpp")
     endif()
@@ -25,6 +28,9 @@ endfunction()
 
 uemeta_add_wrapper_tests(EnumDeclWrapper)
 uemeta_add_wrapper_tests(VarDeclWrapper)
+uemeta_add_wrapper_tests(FunctionDeclWrapper)
+# MethodDeclWrapper is declared in FunctionDeclWrapper.hpp, already measured above.
+uemeta_add_wrapper_tests(MethodDeclWrapper)
 
 gtest_discover_tests(uemeta-parser-tests
     DISCOVERY_MODE PRE_TEST

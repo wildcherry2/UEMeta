@@ -28,10 +28,11 @@ namespace UEMeta::Testing {
             asts.clear();
         }
 
-        clang::ASTContext* parseCode(std::string_view code, std::string_view source_file = "wrapper_fixture.cpp") {
-            auto ast = clang::tooling::buildASTFromCodeWithArgs(
-                std::string{code}, {"-std=c++20", "-fparse-all-comments", "-Wno-missing-declarations", "--target=x86_64-pc-windows-msvc"},
-                std::string{source_file});
+        clang::ASTContext* parseCode(std::string_view code, std::string_view source_file = "wrapper_fixture.cpp",
+                                     const std::vector<std::string>& extra_arguments = {}) {
+            std::vector<std::string> arguments{"-std=c++20", "-fparse-all-comments", "-Wno-missing-declarations", "--target=x86_64-pc-windows-msvc"};
+            arguments.insert(arguments.end(), extra_arguments.begin(), extra_arguments.end());
+            auto ast = clang::tooling::buildASTFromCodeWithArgs(std::string{code}, arguments, std::string{source_file});
             if (!ast || ast->getDiagnostics().hasErrorOccurred()) {
                 ADD_FAILURE() << "Invalid wrapper fixture:\n" << code;
                 return nullptr;
