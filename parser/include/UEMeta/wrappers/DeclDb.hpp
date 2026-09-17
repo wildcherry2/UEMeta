@@ -68,6 +68,10 @@ namespace UEMeta {
 
         // Serializes known forward declarations to a ForwardDeclarationList and saves it.
         static void serializeForwardDeclarations();
+
+#ifdef UEM_TESTING
+        static void reset();
+#endif
     private:
         DeclDb() = default;
 

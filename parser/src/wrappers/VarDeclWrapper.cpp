@@ -41,7 +41,6 @@ std::string UEMeta::VarDeclWrapper::computeFQN() const {
     std::string              out{};
     llvm::raw_string_ostream os{out};
     putContextFQN(os);
-    os << "::";
     decl->printName(os);
     return out;
 }

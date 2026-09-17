@@ -12,10 +12,16 @@
 
 namespace {
     using UEMeta::EnumDeclWrapper;
+    using UEMeta::Testing::enumId;
     using UEMeta::Testing::expectBuiltinType;
     using UEMeta::Testing::expectFalse;
+    using UEMeta::Testing::expectId;
     using UEMeta::Testing::expectMetadata;
+    using UEMeta::Testing::expectProto;
     using UEMeta::Testing::expectVersioned;
+    using UEMeta::Testing::metadata;
+    using UEMeta::Testing::proto;
+    using UEMeta::Testing::variableId;
     using EnumMessage = ParserTypes::TLEnumDeclaration;
     using Variables   = std::vector<ParserTypes::TLGlobalVariableDeclaration*>;
     using MissingType = UEMeta::DeclException<clang::EnumDecl>;
@@ -33,9 +39,9 @@ namespace {
             }
         }
 
-        static std::vector<clang::EnumDecl*> parse(std::string_view code) {
+        std::vector<clang::EnumDecl*> parse(std::string_view code, std::string_view source_file = "wrapper_fixture.cpp") {
             std::vector<clang::EnumDecl*> enums;
-            if (auto* context = parseCode(code))
+            if (auto* context = parseCode(code, source_file))
                 collectEnums(context->getTranslationUnitDecl(), enums);
             return enums;
         }
@@ -61,7 +67,8 @@ namespace {
             };
         })cpp");
         ASSERT_EQ(enums.size(), 1u);
-        const auto* message = asEnum(enums[0]);
+        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
+        const auto* message    = asEnum(enums[0]);
         ASSERT_NE(message, nullptr);
         EXPECT_EQ(message->GetArena(), arena.get());
         expectMetadata(message->metadata(), "::Example::State");
@@ -85,6 +92,22 @@ namespace {
         EXPECT_EQ(hash.a, message->metadata().decl_id().a());
         EXPECT_EQ(hash.b, message->metadata().decl_id().b());
         EXPECT_EQ(UEMeta::DeclDb::queryDecl(hash), enums[0]);
+
+        auto expected                = proto<EnumMessage>(R"pb(
+            underlying_type { versions { source_versions: "test-version" value: "long long" } }
+            scope: ENUM_SCOPE_CLASS
+            enumerators {
+                name: "Negative"
+                documentation { versions { source_versions: "test-version" value: "///< First enumerator." } }
+                value { versions { source_versions: "test-version" value: "-9223372036854775808" } }
+            }
+            enumerators { name: "Zero" value { versions { source_versions: "test-version" value: "0" } } }
+            enumerators { name: "Next" value { versions { source_versions: "test-version" value: "1" } } }
+            enumerators { name: "Alias" value { versions { source_versions: "test-version" value: "1" } } }
+            enumerators { name: "Maximum" value { versions { source_versions: "test-version" value: "9223372036854775807" } } }
+        )pb");
+        *expected.mutable_metadata() = metadata("::Example::State", enumId("::Example::State"), occurrence, "/// Enum documentation.");
+        expectProto(*message, expected);
     }
 
     TEST_F(EnumDeclWrapperTest, DistinguishesUnscopedClassAndStructEnumsIncludingEmptyEnums) {
@@ -99,12 +122,29 @@ namespace {
             SCOPED_TRACE(index);
             const auto* message = asEnum(enums[index]);
             ASSERT_NE(message, nullptr);
+            EXPECT_TRUE(message->has_scope());
             EXPECT_EQ(message->scope(), scopes[index]);
             EXPECT_EQ(message->enumerators_size(), counts[index]);
             expectVersioned(message->underlying_type(), types[index]);
             expectMetadata(message->metadata(), names[index]);
+            expectId(message->metadata().decl_id(), enumId(names[index]));
             EXPECT_FALSE(message->metadata().has_documentation());
         }
+        const auto* plain = asEnum(enums[0]);
+        ASSERT_NE(plain, nullptr);
+        ASSERT_EQ(plain->enumerators_size(), 2);
+        EXPECT_EQ(plain->enumerators(0).name(), "First");
+        EXPECT_EQ(plain->enumerators(1).name(), "Second");
+        expectVersioned(plain->enumerators(0).value(), "0");
+        expectVersioned(plain->enumerators(1).value(), "1");
+        EXPECT_FALSE(plain->enumerators(0).has_documentation());
+        EXPECT_FALSE(plain->enumerators(1).has_documentation());
+        const auto* structure = asEnum(enums[2]);
+        ASSERT_NE(structure, nullptr);
+        ASSERT_EQ(structure->enumerators_size(), 1);
+        EXPECT_EQ(structure->enumerators(0).name(), "Value");
+        expectVersioned(structure->enumerators(0).value(), "7");
+        EXPECT_FALSE(structure->enumerators(0).has_documentation());
     }
 
     TEST_F(EnumDeclWrapperTest, PreservesMaximumUnsignedValueAndWrittenUnderlyingAlias) {
@@ -112,6 +152,9 @@ namespace {
         ASSERT_EQ(enums.size(), 1u);
         const auto* message = asEnum(enums[0]);
         ASSERT_NE(message, nullptr);
+        expectMetadata(message->metadata(), "::Bits");
+        expectId(message->metadata().decl_id(), enumId("::Bits"));
+        EXPECT_EQ(message->scope(), ParserTypes::ENUM_SCOPE_CLASS);
         expectVersioned(message->underlying_type(), "Word");
         ASSERT_EQ(message->enumerators_size(), 1);
         EXPECT_EQ(message->enumerators(0).name(), "All");
@@ -126,9 +169,13 @@ namespace {
         const auto* message = asEnum(enums[0]);
         ASSERT_NE(message, nullptr);
         expectMetadata(message->metadata(), "::N::Direction");
+        expectId(message->metadata().decl_id(), enumId("::N::Direction"));
+        expectVersioned(message->underlying_type(), "int");
+        EXPECT_EQ(message->scope(), ParserTypes::ENUM_SCOPE_UNSCOPED);
         ASSERT_EQ(message->enumerators_size(), 2);
         EXPECT_EQ(message->enumerators(0).name(), "Left");
         EXPECT_EQ(message->enumerators(1).name(), "Right");
+        expectVersioned(message->enumerators(0).value(), "-3");
         expectVersioned(message->enumerators(1).value(), "-2");
     }
 
@@ -141,9 +188,14 @@ namespace {
         ASSERT_NE(message, nullptr);
         EXPECT_FALSE(message->metadata().qualified_name().empty());
         EXPECT_TRUE(message->metadata().has_decl_id());
+        EXPECT_FALSE(message->metadata().has_is_anonymous());
+        expectVersioned(message->metadata().file_path(), "wrapper_fixture.cpp");
+        expectVersioned(message->underlying_type(), "int");
+        EXPECT_EQ(message->scope(), ParserTypes::ENUM_SCOPE_UNSCOPED);
         ASSERT_EQ(message->enumerators_size(), 2);
         EXPECT_EQ(message->enumerators(0).name(), "First");
         EXPECT_EQ(message->enumerators(1).name(), "Second");
+        expectVersioned(message->enumerators(0).value(), "2");
         expectVersioned(message->enumerators(1).value(), "3");
     }
 
@@ -166,10 +218,33 @@ namespace {
         EXPECT_LT(a->metadata().occurrence_index().versions(0).value(), b->metadata().occurrence_index().versions(0).value());
     }
 
+    TEST_F(EnumDeclWrapperTest, SourceFileAndDocumentationChangeMetadataButNotIdentity) {
+        const auto first  = parse("/// Earlier enum.\nenum class Relocated : short { Value = 1 };", "before.hpp");
+        const auto second = parse("/// Later enum.\nenum class Relocated : short { Value = 2 };", "after.hpp");
+        ASSERT_EQ(first.size(), 1u);
+        ASSERT_EQ(second.size(), 1u);
+        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
+        const auto* earlier    = asEnum(first[0]);
+        const auto* later      = asEnum(second[0]);
+        ASSERT_NE(earlier, nullptr);
+        ASSERT_NE(later, nullptr);
+        auto expected                = proto<EnumMessage>(R"pb(
+            scope: ENUM_SCOPE_CLASS
+            underlying_type { versions { source_versions: "test-version" value: "short" } }
+            enumerators { name: "Value" value { versions { source_versions: "test-version" value: "1" } } }
+        )pb");
+        *expected.mutable_metadata() = metadata("::Relocated", enumId("::Relocated"), occurrence, "/// Earlier enum.", "before.hpp");
+        expectProto(*earlier, expected);
+        *expected.mutable_metadata() = metadata("::Relocated", enumId("::Relocated"), occurrence + 1, "/// Later enum.", "after.hpp");
+        expected.mutable_enumerators(0)->mutable_value()->mutable_versions(0)->set_value("2");
+        expectProto(*later, expected);
+    }
+
     TEST_F(EnumDeclWrapperTest, AnonymousEnumeratorsBecomeOrderedStaticConstexprGlobalsWithCanonicalTypes) {
         const auto enums = parse("namespace Outer::Inner { using Word = long long; enum : Word { Negative = -8, Next, Alias = Next }; }");
         ASSERT_EQ(enums.size(), 1u);
-        auto ir = EnumDeclWrapper{enums[0], arena}.toIntermediateRepresentation();
+        const auto occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
+        auto       ir         = EnumDeclWrapper{enums[0], arena}.toIntermediateRepresentation();
         ASSERT_TRUE(std::holds_alternative<Variables>(ir));
         const auto& variables = std::get<Variables>(ir);
         ASSERT_EQ(variables.size(), 3u);
@@ -187,6 +262,20 @@ namespace {
             expectVersioned(variable.constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
             expectVersioned(variable.default_value(), values[index]);
             expectBuiltinType(variable.type_ref(), "long long");
+            auto       expected          = proto<ParserTypes::TLGlobalVariableDeclaration>(R"pb(
+                is_anon_enum_value: true
+                type_ref { versions { source_versions: "test-version" value { type_ref {
+                    type_name { versions { source_versions: "test-version" value: "long long" } }
+                    is_builtin_or_template: true
+                } } } }
+                storage_class { versions { source_versions: "test-version" value: VAR_STORAGE_CLASS_STATIC } }
+                constant_evaluation_kind { versions { source_versions: "test-version" value: CONSTANT_EVALUATION_CONSTEXPR } }
+                default_value { versions { source_versions: "test-version" value: "" } }
+            )pb");
+            const auto name              = "::Outer::Inner::" + names[index];
+            *expected.mutable_metadata() = metadata(name, variableId(name), occurrence + index);
+            expected.mutable_default_value()->mutable_versions(0)->set_value(values[index]);
+            expectProto(variable, expected);
             if (index > 0) {
                 EXPECT_LT(variables[index - 1]->metadata().occurrence_index().versions(0).value(),
                           variable.metadata().occurrence_index().versions(0).value());
@@ -204,6 +293,10 @@ namespace {
         const auto& variables = std::get<Variables>(ir);
         ASSERT_EQ(variables.size(), 1u);
         expectMetadata(variables[0]->metadata(), "::Global");
+        expectId(variables[0]->metadata().decl_id(), variableId("::Global"));
+        expectVersioned(variables[0]->default_value(), "9");
+        expectBuiltinType(variables[0]->type_ref(), "int");
+        EXPECT_TRUE(variables[0]->is_anon_enum_value());
     }
 
     TEST_F(EnumDeclWrapperTest, NestedNamedEnumKeepsItsOwningRecordInTheQualifiedName) {
@@ -260,14 +353,22 @@ namespace {
         const auto* named = asEnum(enums[0]);
         ASSERT_NE(named, nullptr);
         expectVersioned(named->underlying_type(), "long long");
+        expectMetadata(named->metadata(), "::Named");
+        ASSERT_EQ(named->enumerators_size(), 1);
+        EXPECT_EQ(named->enumerators(0).name(), "NamedValue");
+        expectVersioned(named->enumerators(0).value(), "-1");
         auto ir = EnumDeclWrapper{enums[1], arena}.toIntermediateRepresentation();
         ASSERT_TRUE(std::holds_alternative<Variables>(ir));
         ASSERT_EQ(std::get<Variables>(ir).size(), 1u);
         expectBuiltinType(std::get<Variables>(ir)[0]->type_ref(), "long long");
+        expectMetadata(std::get<Variables>(ir)[0]->metadata(), "::AnonymousValue");
+        expectVersioned(std::get<Variables>(ir)[0]->default_value(), "-2");
         ParserTypes::TLRecordDeclaration record;
         EnumDeclWrapper{enums[1], arena}.serializeAsFields(ParserTypes::ACCESS_SPECIFIER_PUBLIC, &record);
         ASSERT_EQ(record.fields_size(), 1);
         expectBuiltinType(record.fields(0).type_ref(), "long long");
+        EXPECT_EQ(record.fields(0).name(), "AnonymousValue");
+        expectVersioned(record.fields(0).default_value(), "-2");
     }
 
     TEST_F(EnumDeclWrapperTest, MissingIntegerAndPromotionTypesThrowBeforeProducingOutput) {
@@ -319,6 +420,27 @@ namespace {
                 EXPECT_FALSE(field.has_bit_width());
                 EXPECT_FALSE(field.has_offset_bits());
                 EXPECT_EQ(field.has_documentation(), index == 1);
+                auto expected = proto<ParserTypes::Field>(R"pb(
+                    type_ref { versions { source_versions: "test-version" value { type_ref {
+                        type_name { versions { source_versions: "test-version" value: "short" } }
+                        is_builtin_or_template: true
+                    } } } }
+                    access { versions { source_versions: "test-version" value: ACCESS_SPECIFIER_PUBLIC } }
+                    is_mutable { false_versions: "test-version" }
+                    is_bitfield { false_versions: "test-version" }
+                    is_anon_enum_value: true
+                    storage_class { versions { source_versions: "test-version" value: VAR_STORAGE_CLASS_STATIC } }
+                    constant_evaluation_kind { versions { source_versions: "test-version" value: CONSTANT_EVALUATION_CONSTEXPR } }
+                    default_value { versions { source_versions: "test-version" value: "" } }
+                )pb");
+                expected.set_name(names[index - 1]);
+                expected.mutable_access()->mutable_versions(0)->set_value(access);
+                expected.mutable_default_value()->mutable_versions(0)->set_value(values[index - 1]);
+                if (index == 1)
+                    *expected.mutable_documentation() = proto<ParserTypes::VersionedString>(R"pb(
+                        versions { source_versions: "test-version" value: "///< Field documentation." }
+                    )pb");
+                expectProto(field, expected);
             }
             expectVersioned(record.fields(1).documentation(), "///< Field documentation.");
         }
@@ -333,6 +455,15 @@ namespace {
         EXPECT_EQ(record.fields(0).name(), "Dependent");
         expectVersioned(record.fields(0).default_value(), "N + 2");
         expectBuiltinType(record.fields(0).type_ref(), "int");
+        expectVersioned(record.fields(0).access(), ParserTypes::ACCESS_SPECIFIER_PUBLIC);
+        expectVersioned(record.fields(0).storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
+        expectVersioned(record.fields(0).constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
+        expectFalse(record.fields(0).is_mutable());
+        expectFalse(record.fields(0).is_bitfield());
+        EXPECT_TRUE(record.fields(0).is_anon_enum_value());
+        EXPECT_FALSE(record.fields(0).has_bit_width());
+        EXPECT_FALSE(record.fields(0).has_offset_bits());
+        EXPECT_FALSE(record.fields(0).has_documentation());
     }
 
     TEST_F(EnumDeclWrapperTest, NamelessEnumeratorDoesNotSetAnOptionalFieldName) {
@@ -345,6 +476,16 @@ namespace {
         ASSERT_EQ(record.fields_size(), 1);
         EXPECT_FALSE(record.fields(0).has_name());
         expectVersioned(record.fields(0).default_value(), "7");
+        expectBuiltinType(record.fields(0).type_ref(), "int");
+        expectVersioned(record.fields(0).access(), ParserTypes::ACCESS_SPECIFIER_PRIVATE);
+        expectVersioned(record.fields(0).storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
+        expectVersioned(record.fields(0).constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
+        expectFalse(record.fields(0).is_mutable());
+        expectFalse(record.fields(0).is_bitfield());
+        EXPECT_TRUE(record.fields(0).is_anon_enum_value());
+        EXPECT_FALSE(record.fields(0).has_documentation());
+        EXPECT_FALSE(record.fields(0).has_bit_width());
+        EXPECT_FALSE(record.fields(0).has_offset_bits());
     }
 
     TEST_F(EnumDeclWrapperTest, StaticToFileWritesBothRepresentationAlternativesWithoutReadingThemBack) {

@@ -24,6 +24,7 @@ function(uemeta_add_wrapper_tests wrapper)
 endfunction()
 
 uemeta_add_wrapper_tests(EnumDeclWrapper)
+uemeta_add_wrapper_tests(VarDeclWrapper)
 
 gtest_discover_tests(uemeta-parser-tests
     DISCOVERY_MODE PRE_TEST

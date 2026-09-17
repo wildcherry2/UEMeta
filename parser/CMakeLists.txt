@@ -619,6 +619,7 @@ target_compile_definitions(uemeta-parser-core PUBLIC
     QUILL_DISABLE_FUNCTION_NAME
     QUILL_DISABLE_FILE_INFO
     $<$<CONFIG:Debug>:DEBUG=1>
+    $<$<BOOL:${UEMETA_ENABLE_TESTING}>:UEM_TESTING=1>
 )
 
 set_property(DIRECTORY APPEND PROPERTY

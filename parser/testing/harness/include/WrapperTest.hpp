@@ -16,7 +16,19 @@ namespace UEMeta::Testing {
     protected:
         std::shared_ptr<google::protobuf::Arena> arena = std::make_shared<google::protobuf::Arena>();
 
-        static clang::ASTContext* parseCode(std::string_view code, std::string_view source_file = "wrapper_fixture.cpp") {
+        void SetUp() override {
+            DeclDb::awaitPendingSerializations();
+            DeclDb::reset();
+        }
+
+        void TearDown() override {
+            // Serialization and DeclDb must release AST references before the fixture does.
+            DeclDb::awaitPendingSerializations();
+            DeclDb::reset();
+            asts.clear();
+        }
+
+        clang::ASTContext* parseCode(std::string_view code, std::string_view source_file = "wrapper_fixture.cpp") {
             auto ast = clang::tooling::buildASTFromCodeWithArgs(
                 std::string{code}, {"-std=c++20", "-fparse-all-comments", "-Wno-missing-declarations", "--target=x86_64-pc-windows-msvc"},
                 std::string{source_file});
@@ -25,9 +37,7 @@ namespace UEMeta::Testing {
                 return nullptr;
             }
             auto* context = &ast->getASTContext();
-            // DeclDb retains declaration pointers across all wrapper suites.
-            // Keep ASTs alive until exit so their addresses cannot be reused.
-            static std::vector<std::unique_ptr<clang::ASTUnit>> asts;
+            // Several snippets can participate in one test; retain them until TearDown resets DeclDb.
             asts.push_back(std::move(ast));
             return context;
         }
@@ -42,5 +52,8 @@ namespace UEMeta::Testing {
             ASSERT_TRUE(std::filesystem::is_regular_file(path)) << path;
             EXPECT_GT(std::filesystem::file_size(path), 0u);
         }
+
+    private:
+        std::vector<std::unique_ptr<clang::ASTUnit>> asts;
     };
 } // namespace UEMeta::Testing

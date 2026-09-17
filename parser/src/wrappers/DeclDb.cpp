@@ -365,6 +365,15 @@ void UEMeta::DeclDb::serializeForwardDeclarations() {
     out_file.close();
 }
 
+#ifdef UEM_TESTING
+void UEMeta::DeclDb::reset() {
+    decl_to_identity_map.clear();
+    decl_to_forward_decl_occurrence_map.clear();
+    identity_to_decl_map.clear();
+    visited_decls.clear();
+}
+#endif
+
 bool isDeclInFunctionOrMethod(const clang::Decl* decl) {
     if (!decl)
         return false;
