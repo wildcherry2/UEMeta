@@ -7,7 +7,8 @@
 
 #include <gtest/gtest.h>
 #include "ProtoAssertions.hpp"
-#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "WrapperTest.hpp"
 
 namespace {

@@ -2,6 +2,7 @@
 
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "clang/AST/DeclTemplate.h"
 

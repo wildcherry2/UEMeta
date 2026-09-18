@@ -4,6 +4,7 @@
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
 #include "UEMeta/clang/wrappers/VarDeclWrapper.hpp"
 #include "clang/AST/DeclTemplate.h"

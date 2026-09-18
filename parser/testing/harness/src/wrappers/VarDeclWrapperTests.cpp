@@ -8,7 +8,8 @@
 
 #include <gtest/gtest.h>
 #include "ProtoAssertions.hpp"
-#include "UEMeta/wrappers/VarDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/clang/wrappers/VarDeclWrapper.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 

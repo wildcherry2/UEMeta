@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/wrappers/DeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
 #include "llvm/Support/FileSystem.h"
 
 int main(int argc, char** argv) {

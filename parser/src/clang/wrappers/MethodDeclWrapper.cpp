@@ -1,5 +1,6 @@
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 
+#include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/GlobalDecl.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/VTableBuilder.h"

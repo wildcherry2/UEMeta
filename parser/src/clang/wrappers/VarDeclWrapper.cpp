@@ -2,6 +2,7 @@
 #include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/DeclTemplate.h"
 
 ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediateSerialization() const {

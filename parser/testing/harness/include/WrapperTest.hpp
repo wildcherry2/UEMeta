@@ -8,7 +8,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "UEMeta/wrappers/DeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Tooling/Tooling.h"
 

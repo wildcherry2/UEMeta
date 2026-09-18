@@ -1,5 +1,6 @@
 #include "CallableTest.hpp"
-#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 #include "clang/Basic/TargetInfo.h"
 
 namespace {

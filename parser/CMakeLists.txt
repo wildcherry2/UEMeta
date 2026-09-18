@@ -526,6 +526,7 @@ source_group("Generated\\Protobuf" FILES
 )
 
 add_library(uemeta-parser-core STATIC
+        src/clang/MetaASTConsumer.cpp
         src/clang/MetaFrontendAction.cpp
         src/Cli.cpp
         src/clang/MetaTool.cpp
@@ -539,7 +540,8 @@ add_library(uemeta-parser-core STATIC
         src/clang/wrappers/MethodDeclWrapper.cpp
         src/clang/wrappers/RecordDeclWrapper.cpp
         src/clang/DeclDb.cpp
-        src/clang/wrappers/DeclWrapper.cpp)
+        src/clang/wrappers/DeclWrapper.cpp
+        src/clang/MetaPreprocessor.cpp)
 
 add_executable(parser src/main.cpp)
 target_link_libraries(parser PRIVATE uemeta-parser-core)

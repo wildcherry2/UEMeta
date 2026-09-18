@@ -4,7 +4,8 @@
 #include <vector>
 
 #include "ProtoAssertions.hpp"
-#include "UEMeta/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 

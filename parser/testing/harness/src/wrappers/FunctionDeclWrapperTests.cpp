@@ -1,5 +1,5 @@
 #include "CallableTest.hpp"
-#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 
 namespace {
     using namespace UEMeta::Testing;
