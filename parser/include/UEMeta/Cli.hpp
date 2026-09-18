@@ -12,7 +12,7 @@
 #include "quill/Logger.h"
 #include "quill/bundled/fmt/ranges.h"
 
-#include "UEMeta/StablePath.hpp"
+#include "utility/StablePath.hpp"
 
 /**
  * @brief Application entry point declared so configuration and logging singletons can restrict initialization.

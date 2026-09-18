@@ -1,4 +1,4 @@
-#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 
 #include "clang/AST/GlobalDecl.h"
 #include "clang/AST/RecordLayout.h"

@@ -1,6 +1,6 @@
-#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 
-#include "UEMeta/wrappers/Utility.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"

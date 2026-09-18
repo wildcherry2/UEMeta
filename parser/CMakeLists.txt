@@ -526,20 +526,20 @@ source_group("Generated\\Protobuf" FILES
 )
 
 add_library(uemeta-parser-core STATIC
-        src/MetaFrontendAction.cpp
+        src/clang/MetaFrontendAction.cpp
         src/Cli.cpp
-        src/MetaTool.cpp
-        src/StablePath.cpp
+        src/clang/MetaTool.cpp
+        src/utility/StablePath.cpp
         ${UEMETA_PROTO_GENERATED_SOURCES}
         ${UEMETA_PROTO_GENERATED_HEADERS}
-        src/HeartbeatLogger.cpp
-        src/wrappers/EnumDeclWrapper.cpp
-        src/wrappers/Utility.cpp
-        src/wrappers/VarDeclWrapper.cpp
-        src/wrappers/MethodDeclWrapper.cpp
-        src/wrappers/RecordDeclWrapper.cpp
-        src/wrappers/DeclDb.cpp
-        src/wrappers/DeclWrapper.cpp)
+        src/utility/HeartbeatLogger.cpp
+        src/clang/wrappers/EnumDeclWrapper.cpp
+        src/utility/DeclUtility.cpp
+        src/clang/wrappers/VarDeclWrapper.cpp
+        src/clang/wrappers/MethodDeclWrapper.cpp
+        src/clang/wrappers/RecordDeclWrapper.cpp
+        src/clang/DeclDb.cpp
+        src/clang/wrappers/DeclWrapper.cpp)
 
 add_executable(parser src/main.cpp)
 target_link_libraries(parser PRIVATE uemeta-parser-core)

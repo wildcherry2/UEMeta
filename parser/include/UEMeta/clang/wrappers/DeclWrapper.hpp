@@ -5,9 +5,9 @@
 #include <string_view>
 
 #include "BS_thread_pool.hpp"
-#include "DeclDb.hpp"
+#include "UEMeta/clang/DeclDb.hpp"
 #include "TopLevel.pb.h"
-#include "Utility.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclTemplate.h"

@@ -2,7 +2,7 @@
 #include <variant>
 #include <vector>
 #include "TopLevel.pb.h"
-#include "UEMeta/wrappers/DeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
 #include "clang/AST/Decl.h"
 
 namespace UEMeta {

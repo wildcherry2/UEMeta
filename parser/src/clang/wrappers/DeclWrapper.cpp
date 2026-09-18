@@ -1,4 +1,4 @@
-#include "UEMeta/wrappers/DeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
 
 BS::thread_pool<> UEMeta::Detail::DeclWrapperStatics::serialization_pool;
 

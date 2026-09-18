@@ -1,5 +1,5 @@
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/MetaTool.hpp"
+#include "UEMeta/clang/MetaTool.hpp"
 
 #include <exception>
 

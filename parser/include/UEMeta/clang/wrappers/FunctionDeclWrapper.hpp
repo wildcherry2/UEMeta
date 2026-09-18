@@ -1,8 +1,8 @@
 #pragma once
 
 #include "DeclWrapper.hpp"
-#include "UEMeta/wrappers/DeclDb.hpp"
-#include "UEMeta/wrappers/Utility.hpp"
+#include "UEMeta/clang/DeclDb.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/DeclCXX.h"

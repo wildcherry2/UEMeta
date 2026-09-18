@@ -1,7 +1,7 @@
-#include "UEMeta/wrappers/VarDeclWrapper.hpp"
-#include "UEMeta/wrappers/DeclDb.hpp"
-#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
-#include "UEMeta/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/VarDeclWrapper.hpp"
+#include "UEMeta/clang/DeclDb.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "clang/AST/DeclTemplate.h"
 
 ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediateSerialization() const {
