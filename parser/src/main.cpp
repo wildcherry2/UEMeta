@@ -1,28 +1,28 @@
-#include "UEMeta/ClangHandler.hpp"
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/MakeTool.hpp"
+#include "UEMeta/MetaTool.hpp"
+
+#include <exception>
 
 /// @brief Initializes logging/configuration, builds the Clang tool, and runs the AST extraction pass.
 int main(int argc, char** argv) {
     try {
-        if (const auto cfg_init_result = UEMeta::Config::Initialize(argc, argv)) {
+        if (const auto cfg_init_result = UEMeta::Config::initialize(argc, argv)) {
             return cfg_init_result;
         }
 
-        if (const auto log_init_result = UEMeta::Logger::Initialize()) {
+        if (const auto log_init_result = UEMeta::Logger::initialize()) {
             return log_init_result;
         }
 
-        UEM_INFO("Using config:\n{}", UEMeta::Config::GetConfig().ToString());
+        UEM_INFO("Using config:\n{}", UEMeta::Config::getConfig().toString());
 
 #if defined(DEBUG)
         UEM_INFO("Using debug build of parser! Default output is JSON, and files will have their FQNs rather than FQN hashes!");
 #endif
 
-        const auto tool = UEMeta::MakeTool();
-        if (!tool) return 0;
+        UEMeta::MetaTool tool;
 
-        switch (UEMeta::RunClangTool(tool->clang_tool)) {
+        switch (tool.runClangTool()) {
             case 0: {
                 UEM_INFO("Successfully ran tool!");
                 return 0;
@@ -35,10 +35,12 @@ int main(int argc, char** argv) {
                 UEM_WARN("Ran tool on subset of files due to missing compile commands!");
             }
         }
-    } catch (std::exception& ex) {
+    }
+    catch (std::exception& ex) {
         UEM_ERROR("Exception occurred: {}", ex.what());
         return -1;
-    } catch (...) {
+    }
+    catch (...) {
         UEM_ERROR("Unknown exception occurred!");
         return -1;
     }

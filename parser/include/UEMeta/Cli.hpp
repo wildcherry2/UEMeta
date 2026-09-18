@@ -1,15 +1,15 @@
 #pragma once
+#include <atomic>
 #include <filesystem>
+#include <map>
 #include <ostream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
-#include <atomic>
-#include <map>
-#include <unordered_set>
 
-#include "quill/Logger.h"
 #include "quill/LogMacros.h"
+#include "quill/Logger.h"
 #include "quill/bundled/fmt/ranges.h"
 
 #include "UEMeta/StablePath.hpp"
@@ -19,130 +19,112 @@
  */
 int main(int argc, char** argv);
 
-
-//todo make getters lazy initialize cfg?
+// todo make getters lazy initialize cfg?
 namespace UEMeta {
     /**
      * @brief Process-wide CLI configuration used by tool setup.
      */
     class Config {
     public:
-        enum class SerializationFormat {
-            json,
-            binary
-        };
+        enum class SerializationFormat { Json, Binary };
 
         /**
          * @brief Returns the normalized compile_commands.json content.
          */
-        [[nodiscard]] const std::string& CompileCommands() const;
-
-        /**
-         * @brief Returns the clang or clang-cl executable path.
-         */
-        [[nodiscard]] const StablePath& ClangPath() const;
+        [[nodiscard]] const std::string& getCompileCommands() const;
 
         /**
          * @brief Returns compiler arguments appended after compile command filtering.
          */
-        [[nodiscard]] const std::unordered_set<std::string>& AdditionalClangArgs() const;
+        [[nodiscard]] const std::unordered_set<std::string>& getAdditionalClangArgs() const;
 
         /**
          * @brief Returns compile command arguments that should be stripped before invoking Clang.
          */
-        [[nodiscard]] const std::unordered_set<std::string>& StripArgs() const;
+        [[nodiscard]] const std::unordered_set<std::string>& getStripArgs() const;
 
         /**
-         * @brief Returns true when the user prefers `clang` over `clang-cl`.
+         * @brief Selects clang's GNU-style arguments when true, or clang-cl's MSVC-style arguments when false.
          */
-        [[nodiscard]] bool PrefersClang() const;
+        [[nodiscard]] bool prefersClang() const;
 
         /**
          * @brief Returns true when the user wants the serialized files to indicate a declaration's name instead of the
          * name's hash
          */
-        [[nodiscard]] bool PrefersFullNameInFileName() const;
+        [[nodiscard]] bool prefersFullNameInFileName() const;
 
         /**
-         * @brief Returns true when the user wants implicit (compiler-generated) template specializations serialized.
+         * @brief Returns true when the user wants synchronous serialization.
          */
-        [[nodiscard]] bool ProcessImplicitSpecializations() const;
-
-        /**
-         * @brief Returns true when the user wants to dump everything to a single JSON.
-         */
-        [[nodiscard]] bool DumpToJson() const;
+        [[nodiscard]] bool syncSerialization() const;
 
         /**
          * @brief Returns the output format.
          */
-        [[nodiscard]] SerializationFormat Format() const;
+        [[nodiscard]] SerializationFormat getFormat() const;
 
         /**
          * @brief Returns the set of substrings to use when determining if a declaration belongs to a builtin library,
          * like std, STL, or Windows/Unix libs
          */
-        [[nodiscard]] const std::unordered_set<std::string>& BuiltinSubpaths() const;
+        [[nodiscard]] const std::unordered_set<std::string>& getBuiltinSubpaths() const;
 
         /**
          * @brief Returns the path to the log file. If empty, no log file should be written to.
          */
-        [[nodiscard]] const StablePath& Log();
+        [[nodiscard]] const StablePath& getLog();
 
         /**
          * @brief Returns the directory to output serialized ASTs to.
          */
-        [[nodiscard]] const StablePath& OutputDirectory() const;
-
+        [[nodiscard]] const StablePath& getOutputDirectory() const;
 
         /**
          * @brief Returns the version of files that is being parsed; inferred from the directory name of the
          * output directory.
          */
-        [[nodiscard]] const std::string& Version() const;
+        [[nodiscard]] const std::string& getVersion() const;
 
         /**
          * @brief Writes a human-readable configuration summary to a stream.
          */
-        friend std::ostream & operator<<(std::ostream& os, const Config& obj) {
-            return os << obj.ToString();
-        }
+        friend std::ostream& operator<<(std::ostream& os, const Config& obj) { return os << obj.toString(); }
 
-        std::string ToString() const {
+        std::string toString() const {
             return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
-                                          "process_implicit_specializations={}\ndump_to_json={}\nstrip_commands={}\n"
-                                          "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\nclang_path={}\n"
-                                          "log={}\noutput_directory={}", compile_commands, prefer_clang,
-                                          prefer_full_name_in_file_name, process_implicit_specializations,
-                                          dump_to_json, strip_commands, additional_clang_args,
-                                          builtin_subpaths, format_string_map.at(format), clang_path.string(),
-                                          log.string(), output_directory.string());
+                                    "sync_serialization={}\nstrip_commands={}\n"
+                                    "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\n"
+                                    "log={}\noutput_directory={}",
+                                    compile_commands, prefer_clang, prefer_full_name_in_file_name, sync_serialization, strip_commands,
+                                    additional_clang_args, builtin_subpaths, format_string_map.at(format), log.string(),
+                                    output_directory.string());
         }
 
         /**
          * @brief Returns the process-wide configuration singleton.
          */
-        static Config& GetConfig();
+        static Config& getConfig();
 
         /**
          * @brief Copy construction is disabled because Config is a singleton.
          */
-        Config(const Config& Other) = delete;
+        Config(const Config& other) = delete;
 
         /**
          * @brief Move construction is disabled because Config is a singleton.
          */
-        Config(Config&& Other) noexcept = delete;
+        Config(Config&& other) noexcept = delete;
 
         /**
          * @brief Copy assignment is disabled because Config is a singleton.
          */
-        Config& operator=(const Config& Other) = delete;
+        Config& operator=(const Config& other) = delete;
 
         /**
          * @brief Move assignment is disabled because Config is a singleton.
          */
-        Config& operator=(Config&& Other) noexcept = delete;
+        Config& operator=(Config&& other) noexcept = delete;
 
     private:
         friend int ::main(int argc, char** argv);
@@ -155,7 +137,7 @@ namespace UEMeta {
         /**
          * @brief Throws if configuration is read before initialization completes.
          */
-        void AssertInitialized() const;
+        void assertInitialized() const;
 
         /**
          * @brief Parses CLI arguments and initializes the process-wide configuration.
@@ -164,32 +146,29 @@ namespace UEMeta {
          * @param argv Argument vector from main.
          * @return 0 on success, otherwise a CLI or initialization error code.
          */
-        static int Initialize(int argc, char** argv);
+        static int initialize(int argc, char** argv);
 
-        bool prefer_clang{};
-        bool dump_to_json{};
-        bool prefer_full_name_in_file_name{};
-        bool process_implicit_specializations{};
-        SerializationFormat format = SerializationFormat::json; // will be manipulated in Initialize
+        /// @brief Reads a compile_commands.json file or returns inline JSON unchanged.
+        static std::string loadCompileCommandsString(const std::string& in);
+
+        bool                            prefer_clang{};
+        bool                            sync_serialization{};
+        bool                            prefer_full_name_in_file_name{};
+        SerializationFormat             format = SerializationFormat::Json; // will be manipulated in initialize
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};
         std::unordered_set<std::string> builtin_subpaths{};
-        StablePath clang_path{};
-        StablePath log{};
-        StablePath output_directory{};
-        std::string compile_commands{};
-        std::string version{};
-        std::atomic_flag initialized{};
+        StablePath                      log{};
+        StablePath                      output_directory{};
+        std::string                     compile_commands{};
+        std::string                     version{};
+        std::atomic_flag                initialized{};
 
-        inline static const std::map<std::string, SerializationFormat> string_format_map = {
-            {"json", SerializationFormat::json},
-            {"binary", SerializationFormat::binary}
-        };
+        inline static const std::map<std::string, SerializationFormat> string_format_map = {{"json", SerializationFormat::Json},
+                                                                                            {"binary", SerializationFormat::Binary}};
 
-        inline static const std::map<SerializationFormat, std::string> format_string_map = {
-            {SerializationFormat::json, "json"},
-            {SerializationFormat::binary, "binary"}
-        };
+        inline static const std::map<SerializationFormat, std::string> format_string_map = {{SerializationFormat::Json, "json"},
+                                                                                            {SerializationFormat::Binary, "binary"}};
     };
 
     /**
@@ -200,37 +179,37 @@ namespace UEMeta {
         /**
          * @brief Returns the initialized Quill logger or a bootstrap fallback logger.
          */
-        [[nodiscard]] quill::Logger* GetQuill() const;
+        [[nodiscard]] quill::Logger* getQuill() const;
 
         /**
          * @brief Reports whether the main logger has been initialized.
          */
-        [[nodiscard]] bool IsInitialized() const;
+        [[nodiscard]] bool isInitialized() const;
 
         /**
          * @brief Returns the process-wide logger singleton.
          */
-        static Logger& GetLogger();
+        static Logger& getLogger();
 
         /**
          * @brief Copy construction is disabled because Logger is a singleton.
          */
-        Logger(const Logger& Other) = delete;
+        Logger(const Logger& other) = delete;
 
         /**
          * @brief Move construction is disabled because Logger is a singleton.
          */
-        Logger(Logger&& Other) noexcept = delete;
+        Logger(Logger&& other) noexcept = delete;
 
         /**
          * @brief Copy assignment is disabled because Logger is a singleton.
          */
-        Logger& operator=(const Logger& Other) = delete;
+        Logger& operator=(const Logger& other) = delete;
 
         /**
          * @brief Move assignment is disabled because Logger is a singleton.
          */
-        Logger& operator=(Logger&& Other) noexcept = delete;
+        Logger& operator=(Logger&& other) noexcept = delete;
 
     private:
         friend int ::main(int argc, char** argv);
@@ -243,52 +222,51 @@ namespace UEMeta {
         /**
          * @brief Throws if the main logger is required before initialization.
          */
-        void AssertInitialized() const;
+        void assertInitialized() const;
 
         /**
          * @brief Initializes Quill sinks, formatting, and the process-wide logger.
          *
          * @return 0 on success, otherwise -1.
          */
-        static int Initialize();
+        static int initialize();
 
         quill::Logger* logger{};
     };
 
     namespace Logging {
         template <typename Message>
-        decltype(auto) BuildLogMessage(Message&& message) noexcept {
+        decltype(auto) buildLogMessage(Message&& message) noexcept {
             return std::forward<Message>(message);
         }
 
         template <typename Format, typename... Args>
             requires(sizeof...(Args) > 0)
-        std::string BuildLogMessage(Format&& format, Args&&... args) {
-            return fmtquill::format(fmtquill::runtime(fmtquill::string_view{std::forward<Format>(format)}),
-                                    std::forward<Args>(args)...);
+        std::string buildLogMessage(Format&& format, Args&&... args) {
+            return fmtquill::format(fmtquill::runtime(fmtquill::string_view{std::forward<Format>(format)}), std::forward<Args>(args)...);
         }
-    }
-}
+    } // namespace Logging
+} // namespace UEMeta
 
 /**
  * @brief Emits an informational log message through the UEMeta logger.
  */
-#define UEM_INFO(...) LOG_INFO(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
+#define UEM_INFO(...) LOG_INFO(::UEMeta::Logger::getLogger().getQuill(), "{}", ::UEMeta::Logging::buildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits a warning log message through the UEMeta logger.
  */
-#define UEM_WARN(...) LOG_WARNING(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
+#define UEM_WARN(...) LOG_WARNING(::UEMeta::Logger::getLogger().getQuill(), "{}", ::UEMeta::Logging::buildLogMessage(__VA_ARGS__))
 
 /**
  * @brief Emits a debug log message through the UEMeta logger.
  */
 #ifdef DEBUG
-#define UEM_DEBUG(...) LOG_DEBUG(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
+#define UEM_DEBUG(...) LOG_DEBUG(::UEMeta::Logger::getLogger().getQuill(), "{}", ::UEMeta::Logging::buildLogMessage(__VA_ARGS__))
 #else
 #define UEM_DEBUG(...)
 #endif
 /**
  * @brief Emits an error log message through the UEMeta logger.
  */
-#define UEM_ERROR(...) LOG_ERROR(::UEMeta::Logger::GetLogger().GetQuill(), "{}", ::UEMeta::Logging::BuildLogMessage(__VA_ARGS__))
+#define UEM_ERROR(...) LOG_ERROR(::UEMeta::Logger::getLogger().getQuill(), "{}", ::UEMeta::Logging::buildLogMessage(__VA_ARGS__))
