@@ -12,5 +12,7 @@ namespace UEMeta {
     protected:
         /// @brief Creates the consumer that traverses the AST and waits for serialization to finish.
         std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance& compiler, llvm::StringRef file) override;
+
+        bool PrepareToExecuteAction(clang::CompilerInstance& CI) override;
     };
 } // namespace UEMeta
