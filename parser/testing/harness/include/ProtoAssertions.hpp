@@ -10,6 +10,32 @@
 #include "google/protobuf/util/message_differencer.h"
 
 namespace UEMeta::Testing {
+    // Build expected schema values independently of production serialization helpers.
+    template <typename Message, typename Value>
+    Message versioned(const Value& value) {
+        Message message;
+        auto*   version = message.add_versions();
+        version->add_source_versions("test-version");
+        version->set_value(value);
+        return message;
+    }
+
+    inline ParserTypes::VersionedBool boolean(bool value) {
+        ParserTypes::VersionedBool message;
+        if (value)
+            message.add_true_versions("test-version");
+        else
+            message.add_false_versions("test-version");
+        return message;
+    }
+
+    inline ParserTypes::TypeRef builtin(std::string_view name) {
+        ParserTypes::TypeRef message;
+        *message.mutable_type_name() = versioned<ParserTypes::VersionedString>(name);
+        message.set_is_builtin_or_template(true);
+        return message;
+    }
+
     // Expected messages are written by the test, not serialized by another wrapper.
     // Compare all fields, including optional presence, oneof alternatives and repeated-field order.
     template <typename Message>

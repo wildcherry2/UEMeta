@@ -34,7 +34,7 @@ namespace {
             return message;
         }
 
-        static ParserTypes::FunctionCommon methodCommon(ParserTypes::FunctionKind         kind        = ParserTypes::FUNCTION_KIND_MEMBER,
+        static ParserTypes::FunctionCommon methodCommon(ParserTypes::FunctionKind         kind = ParserTypes::FUNCTION_KIND_MEMBER,
                                                         std::optional<std::string_view>   return_type = "void",
                                                         ParserTypes::FunctionStorageClass storage = ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED) {
             auto traits = common(kind, return_type, storage);
@@ -53,7 +53,7 @@ namespace {
         ASSERT_EQ(functions.size(), 1u);
         auto traits              = methodCommon(ParserTypes::FUNCTION_KIND_MEMBER, "int");
         *traits.add_parameters() = parameter("index", "int", "2");
-        const auto expected =
+        const auto expected      =
             expectedMethod("read", functionId("::N::Owner::read", "int const volatile &"), traits, ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, true);
         const auto  before  = outputFiles();
         const auto* message = serialize(functions[0], true);
@@ -74,9 +74,11 @@ namespace {
         ASSERT_EQ(functions.size(), 5u);
         const std::vector<std::string> names{"default_public", "protected_method", "private_method", "default_private", "public_method"};
         const std::vector<std::string> owners{"Structure", "Structure", "Structure", "Class", "Class"};
-        const std::vector<ParserTypes::AccessSpecifier> access{ParserTypes::ACCESS_SPECIFIER_PUBLIC, ParserTypes::ACCESS_SPECIFIER_PROTECTED,
-                                                               ParserTypes::ACCESS_SPECIFIER_PRIVATE, ParserTypes::ACCESS_SPECIFIER_PRIVATE,
-                                                               ParserTypes::ACCESS_SPECIFIER_PUBLIC};
+        const std::vector<ParserTypes::AccessSpecifier> access{
+            ParserTypes::ACCESS_SPECIFIER_PUBLIC, ParserTypes::ACCESS_SPECIFIER_PROTECTED,
+            ParserTypes::ACCESS_SPECIFIER_PRIVATE, ParserTypes::ACCESS_SPECIFIER_PRIVATE,
+            ParserTypes::ACCESS_SPECIFIER_PUBLIC
+        };
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(names[index]);
             const auto expected = expectedMethod(names[index], functionId("::" + owners[index] + "::" + names[index]), methodCommon(), access[index]);
@@ -155,10 +157,12 @@ namespace {
         ASSERT_EQ(functions.size(), 3u);
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
-            const auto kind   = index == 0   ? ParserTypes::FUNCTION_KIND_CONSTRUCTOR
-                                : index == 1 ? ParserTypes::FUNCTION_KIND_DESTRUCTOR
-                                             : ParserTypes::FUNCTION_KIND_MEMBER;
-            auto       traits = methodCommon(kind, index < 2 ? std::nullopt : std::optional<std::string_view>{"void"});
+            const auto kind = index == 0
+                                  ? ParserTypes::FUNCTION_KIND_CONSTRUCTOR
+                                  : index == 1
+                                  ? ParserTypes::FUNCTION_KIND_DESTRUCTOR
+                                  : ParserTypes::FUNCTION_KIND_MEMBER;
+            auto traits = methodCommon(kind, index < 2 ? std::nullopt : std::optional<std::string_view>{"void"});
             traits.set_definition_kind(index < 2 ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED : ParserTypes::FUNCTION_DEFINITION_DELETED);
             *traits.mutable_consteval_kind() = versioned<ParserTypes::VersionedConstantEvaluationKind>(
                 index < 2 ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE);
@@ -176,7 +180,7 @@ namespace {
         const std::vector<std::string> names{"first", "pure", "~Base"};
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
-            auto traits = index == 2 ? methodCommon(ParserTypes::FUNCTION_KIND_DESTRUCTOR, std::nullopt) : methodCommon();
+            auto traits   = index == 2 ? methodCommon(ParserTypes::FUNCTION_KIND_DESTRUCTOR, std::nullopt) : methodCommon();
             auto expected =
                 expectedMethod(names[index], functionId("::Base::" + names[index]), traits, ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false, false,
                                index == 1 ? ParserTypes::FUNCTION_VIRTUALITY_PURE : ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);

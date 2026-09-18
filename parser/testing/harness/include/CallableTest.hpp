@@ -8,32 +8,6 @@
 #include "clang/AST/DeclFriend.h"
 
 namespace UEMeta::Testing {
-    // Function and method expectations share the schema, not the wrapper implementation.
-    template <typename Message, typename Value>
-    Message versioned(const Value& value) {
-        Message message;
-        auto*   version = message.add_versions();
-        version->add_source_versions("test-version");
-        version->set_value(value);
-        return message;
-    }
-
-    inline ParserTypes::VersionedBool boolean(bool value) {
-        ParserTypes::VersionedBool message;
-        if (value)
-            message.add_true_versions("test-version");
-        else
-            message.add_false_versions("test-version");
-        return message;
-    }
-
-    inline ParserTypes::TypeRef builtin(std::string_view name) {
-        ParserTypes::TypeRef message;
-        *message.mutable_type_name() = versioned<ParserTypes::VersionedString>(name);
-        message.set_is_builtin_or_template(true);
-        return message;
-    }
-
     inline ParserTypes::Parameter parameter(std::string_view name, std::string_view type,
                                             std::optional<std::string_view> default_value = std::nullopt) {
         ParserTypes::Parameter message;
@@ -80,14 +54,6 @@ namespace UEMeta::Testing {
             const auto id = DeclDb::queryDeclIdentity(declaration);
             ASSERT_TRUE(std::holds_alternative<bool>(id));
             EXPECT_FALSE(std::get<bool>(id));
-        }
-
-        static std::vector<std::filesystem::path> outputFiles() {
-            std::vector<std::filesystem::path> paths;
-            for (const auto& entry : std::filesystem::directory_iterator{Config::getConfig().getOutputDirectory().getUnderlyingPath()})
-                paths.push_back(entry.path());
-            std::sort(paths.begin(), paths.end());
-            return paths;
         }
 
     private:

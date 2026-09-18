@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -52,6 +53,14 @@ namespace UEMeta::Testing {
         static void expectOutput(const std::filesystem::path& path) {
             ASSERT_TRUE(std::filesystem::is_regular_file(path)) << path;
             EXPECT_GT(std::filesystem::file_size(path), 0u);
+        }
+
+        static std::vector<std::filesystem::path> outputFiles() {
+            std::vector<std::filesystem::path> paths;
+            for (const auto& entry : std::filesystem::directory_iterator{Config::getConfig().getOutputDirectory().getUnderlyingPath()})
+                paths.push_back(entry.path());
+            std::sort(paths.begin(), paths.end());
+            return paths;
         }
 
     private:

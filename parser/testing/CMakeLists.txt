@@ -31,6 +31,7 @@ uemeta_add_wrapper_tests(VarDeclWrapper)
 uemeta_add_wrapper_tests(FunctionDeclWrapper)
 # MethodDeclWrapper is declared in FunctionDeclWrapper.hpp, already measured above.
 uemeta_add_wrapper_tests(MethodDeclWrapper)
+uemeta_add_wrapper_tests(RecordDeclWrapper)
 
 gtest_discover_tests(uemeta-parser-tests
     DISCOVERY_MODE PRE_TEST
