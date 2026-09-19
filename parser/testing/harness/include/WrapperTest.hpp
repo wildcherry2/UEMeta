@@ -22,6 +22,8 @@ namespace UEMeta::Testing {
             DeclDb::awaitPendingSerializations();
             DeclDb::reset();
             ReflectionDb::reset();
+            // Expected occurrences are zero-based and independent of test order.
+            Detail::DeclWrapperStatics::resetDeclOccurrences();
         }
 
         void TearDown() override {

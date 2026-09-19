@@ -4,8 +4,8 @@
 #include <vector>
 
 #include "ProtoAssertions.hpp"
-#include "UEMeta/utility/DeclException.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 
@@ -127,8 +127,6 @@ namespace {
             return result ? *result : nullptr;
         }
 
-        static uint64_t nextOccurrence() { return UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1; }
-
         static std::vector<std::filesystem::path> addedFiles(const std::vector<std::filesystem::path>& before) {
             const auto                         after = outputFiles();
             std::vector<std::filesystem::path> added;
@@ -165,7 +163,6 @@ namespace {
     TEST_F(RecordDeclWrapperTest, EmptyRecordsPreserveKindsMetadataIdentityAndArena) {
         const auto records = parse("namespace Outer::Inner { /// Record documentation.\nstruct S {}; class C {}; union U {}; }");
         ASSERT_EQ(records.size(), 3u);
-        const auto                                 occurrence = nextOccurrence();
         const std::vector<std::string>             names{"::Outer::Inner::S", "::Outer::Inner::C", "::Outer::Inner::U"};
         const std::vector<ParserTypes::RecordKind> kinds{ParserTypes::RECORD_KIND_STRUCT, ParserTypes::RECORD_KIND_CLASS,
                                                          ParserTypes::RECORD_KIND_UNION};
@@ -174,7 +171,7 @@ namespace {
             const auto* actual = serialize(records[i]);
             ASSERT_NE(actual, nullptr);
             EXPECT_EQ(actual->GetArena(), arena.get());
-            expectProto(*actual, record(names[i], occurrence + i, kinds[i], 1, 1, "", i == 0 ? "/// Record documentation." : ""));
+            expectProto(*actual, record(names[i], i, kinds[i], 1, 1, "", i == 0 ? "/// Record documentation." : ""));
             expectRegistered(records[i], recordId(names[i]));
         }
     }
@@ -190,7 +187,7 @@ namespace {
             void* pointer;
         };)cpp");
         ASSERT_EQ(records.size(), 1u);
-        auto expected                    = record("::Layout", nextOccurrence(), ParserTypes::RECORD_KIND_CLASS, 24, 8);
+        auto expected                    = record("::Layout", 0, ParserTypes::RECORD_KIND_CLASS, 24, 8);
         *expected.add_fields()           = field("first", "char", 8, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
         auto counter                     = field("count", "int", 32, 32, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
         *counter.mutable_is_mutable()    = boolean(true);
@@ -211,14 +208,13 @@ namespace {
         ASSERT_EQ(first.size(), 1u);
         ASSERT_EQ(changed.size(), 1u);
         ASSERT_EQ(other.size(), 1u);
-        const auto occurrence  = nextOccurrence();
-        auto       expected    = record("::N::Stable", occurrence, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
+        auto expected          = record("::N::Stable", 0, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *expected.add_fields() = field("value", "int", 32, 0);
         expectProto(*serialize(first[0]), expected);
-        expected               = record("::N::Stable", occurrence + 1, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
+        expected               = record("::N::Stable", 1, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
         *expected.add_fields() = field("value", "double", 64, 0);
         expectProto(*serialize(changed[0]), expected);
-        expected               = record("::Other::Stable", occurrence + 2, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
+        expected               = record("::Other::Stable", 2, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
         *expected.add_fields() = field("value", "double", 64, 0);
         expectProto(*serialize(other[0]), expected);
         EXPECT_NE(recordId("::N::Stable"), recordId("::Other::Stable"));
@@ -227,7 +223,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, UnionMembersOverlapWithoutReorderingOrInventingPaddingFields) {
         const auto records = parse("union Value { char small; double large; int values[3]; };");
         ASSERT_EQ(records.size(), 1u);
-        auto expected          = record("::Value", nextOccurrence(), ParserTypes::RECORD_KIND_UNION, 16, 8);
+        auto expected          = record("::Value", 0, ParserTypes::RECORD_KIND_UNION, 16, 8);
         *expected.add_fields() = field("small", "char", 8, 0);
         *expected.add_fields() = field("large", "double", 64, 0);
         *expected.add_fields() = field("values", "int[3]", 96, 0);
@@ -237,7 +233,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, BitfieldsRetainUnnamedAndZeroWidthEntriesInSourceOrder) {
         const auto records = parse("struct Bits { unsigned : 1; unsigned a : 3; unsigned : 2; unsigned b : 4 = 7; unsigned : 0; char tail; };");
         ASSERT_EQ(records.size(), 1u);
-        auto                                               expected = record("::Bits", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 8, 4);
+        auto                                               expected = record("::Bits", 0, ParserTypes::RECORD_KIND_STRUCT, 8, 4);
         const std::vector<std::optional<std::string_view>> names{std::nullopt, "a", std::nullopt, "b", std::nullopt};
         const std::vector<uint64_t>                        widths{1, 3, 2, 4, 0}, offsets{0, 1, 4, 6, 32};
         for (size_t i = 0; i < names.size(); ++i) {
@@ -260,7 +256,7 @@ namespace {
             template<class T> static T dependent;
         };)cpp");
         ASSERT_EQ(records.size(), 1u);
-        auto expected          = record("::Static", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 1, 1);
+        auto expected          = record("::Static", 0, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
         *expected.add_fields() = staticField("ordinary", "int", 32);
         *expected.add_fields() = staticField("tls", "long", 32, ParserTypes::VAR_STORAGE_CLASS_THREAD_LOCAL);
         auto answer = staticField("answer", "const int", 32, ParserTypes::VAR_STORAGE_CLASS_STATIC, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
@@ -274,7 +270,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, SelfReferencesResolveBeforeFieldsAndKeepCanonicalDeclaratorSpelling) {
         const auto records = parse("namespace N { struct Node { using Alias = Node; const Alias* next; Alias& reference; Alias* links[2]; }; }");
         ASSERT_EQ(records.size(), 1u);
-        auto expected = record("::N::Node", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 32, 8);
+        auto expected = record("::N::Node", 0, ParserTypes::RECORD_KIND_STRUCT, 32, 8);
         // Clang prints arrays with a qualified element spelling but no leading global-scope token.
         const std::vector<std::string> names{"next", "reference", "links"}, types{"const ::N::Node *", "::N::Node &", "N::Node *[2]"};
         for (size_t i = 0; i < names.size(); ++i) {
@@ -299,7 +295,7 @@ namespace {
         };)cpp",
                                    {"-fms-extensions"});
         ASSERT_EQ(records.size(), 4u);
-        auto expected          = record("::Outer", nextOccurrence(), ParserTypes::RECORD_KIND_CLASS, 12, 4);
+        auto expected          = record("::Outer", 0, ParserTypes::RECORD_KIND_CLASS, 12, 4);
         *expected.add_fields() = field("prefix", "char", 8, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
         *expected.add_fields() = field("first", "int", 32, 32, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
         *expected.add_fields() = field("inner_prefix", "char", 8, 32, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
@@ -316,11 +312,10 @@ namespace {
     TEST_F(RecordDeclWrapperTest, EmbeddedAnonymousRecordOwnsItsRaisedMembersAndSharesTheArena) {
         const auto records = parse("struct Outer { char prefix; struct { char tag; union { int x; float y; }; } value; };");
         ASSERT_EQ(records.size(), 3u);
-        const auto occurrence  = nextOccurrence();
-        auto       expected    = record("::Outer", occurrence, ParserTypes::RECORD_KIND_STRUCT, 12, 4);
+        auto expected          = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 12, 4);
         *expected.add_fields() = field("prefix", "char", 8, 0);
         auto value             = field("value", "", 64, 32);
-        auto embedded          = anonymousRecord(occurrence + 1, ParserTypes::RECORD_KIND_STRUCT, 8, 4);
+        auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, 8, 4);
         *embedded.add_fields() = field("tag", "char", 8, 0);
         *embedded.add_fields() = field("x", "int", 32, 32);
         *embedded.add_fields() = field("y", "float", 32, 32);
@@ -339,7 +334,7 @@ namespace {
         const auto records =
             parse("struct Outer { long long prefix; struct { short pad; unsigned short : 3; unsigned short leaf : 4; }; };", {"-fms-extensions"});
         ASSERT_EQ(records.size(), 2u);
-        auto expected                  = record("::Outer", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 16, 8);
+        auto expected                  = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 16, 8);
         *expected.add_fields()         = field("prefix", "long long", 64, 0);
         *expected.add_fields()         = field("pad", "short", 16, 64);
         auto padding                   = field(std::nullopt, "unsigned short", 3, 80);
@@ -355,7 +350,7 @@ namespace {
         const auto records = parse("struct Outer { char prefix; union { int x; short y; }; };");
         ASSERT_EQ(records.size(), 2u);
         records[0]->setInvalidDecl();
-        auto expected          = record("::Outer", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
+        auto expected          = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         *expected.add_fields() = field("prefix", "char", std::nullopt, std::nullopt);
         // The valid nested union still supplies type widths, but no absolute instance offsets.
         *expected.add_fields() = field("x", "int", 32, std::nullopt);
@@ -366,13 +361,12 @@ namespace {
     TEST_F(RecordDeclWrapperTest, EmbeddedAnonymousTypesAreFoundBehindPointerReferenceAndArrayLayers) {
         const auto records = parse("struct Outer { struct { int x; } *pointer; struct { short y; } (&reference)[2]; struct { char z; } array[3]; };");
         ASSERT_EQ(records.size(), 4u);
-        const auto                     occurrence = nextOccurrence();
-        auto                           expected   = record("::Outer", occurrence, ParserTypes::RECORD_KIND_STRUCT, 24, 8);
+        auto                           expected = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 24, 8);
         const std::vector<std::string> names{"pointer", "reference", "array"}, leaf_names{"x", "y", "z"}, types{"int", "short", "char"};
         const std::vector<uint64_t>    widths{64, 64, 24}, sizes{4, 2, 1};
         for (size_t i = 0; i < names.size(); ++i) {
             auto item              = field(names[i], "", widths[i], i * 64);
-            auto embedded          = anonymousRecord(occurrence + 1 + i, ParserTypes::RECORD_KIND_STRUCT, sizes[i], sizes[i]);
+            auto embedded          = anonymousRecord(1 + i, ParserTypes::RECORD_KIND_STRUCT, sizes[i], sizes[i]);
             *embedded.add_fields() = field(leaf_names[i], types[i], sizes[i] * 8, 0);
             *item.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = embedded;
             *expected.add_fields()                                                                = item;
@@ -383,10 +377,10 @@ namespace {
     TEST_F(RecordDeclWrapperTest, TypedefNamedAnonymousRecordsHaveStandaloneIdentities) {
         const auto records = parse("typedef struct { int value; } Named; struct Owner { typedef struct { char tag; } Inner; Inner member; };");
         ASSERT_EQ(records.size(), 3u);
-        auto expected          = record("::Named", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 4, 4);
+        auto expected          = record("::Named", 0, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *expected.add_fields() = field("value", "int", 32, 0);
         expectProto(*serialize(records[0]), expected);
-        expected = record("::Owner", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 1, 1);
+        expected = record("::Owner", 1, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
         nestedHash(expected, recordId("::Owner::Inner"));
         auto member                = field("member", "::Owner::Inner", 8, 0);
         *member.mutable_type_ref() = fieldType(reference("::Owner::Inner", recordId("::Owner::Inner")));
@@ -403,8 +397,7 @@ namespace {
             Mode mode;
         };)cpp");
         ASSERT_EQ(records.size(), 3u);
-        const auto occurrence = nextOccurrence();
-        auto       expected   = record("::Outer", occurrence, ParserTypes::RECORD_KIND_STRUCT, 2, 1);
+        auto expected = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 2, 1);
         nestedHash(expected, recordId("::Outer::Inner"));
         nestedHash(expected, enumId("::Outer::Mode"));
         auto value                = field("value", "::Outer::Inner", 8, 0);
@@ -417,9 +410,9 @@ namespace {
         expectProto(*serialize(records[0]), expected);
         const auto files = addedFiles(before);
         ASSERT_EQ(files.size(), 3u);
-        expectOutput(outputPath(metadata("::Outer::Inner", recordId("::Outer::Inner"), occurrence + 1), "recordbin"));
-        expectOutput(outputPath(metadata("::Outer::Inner::Leaf", recordId("::Outer::Inner::Leaf"), occurrence + 2), "recordbin"));
-        expectOutput(outputPath(metadata("::Outer::Mode", enumId("::Outer::Mode"), occurrence + 3), "enumbin"));
+        expectOutput(outputPath(metadata("::Outer::Inner", recordId("::Outer::Inner"), 1), "recordbin"));
+        expectOutput(outputPath(metadata("::Outer::Inner::Leaf", recordId("::Outer::Inner::Leaf"), 2), "recordbin"));
+        expectOutput(outputPath(metadata("::Outer::Mode", enumId("::Outer::Mode"), 3), "enumbin"));
         const auto after = outputFiles();
         for (auto* child : records[0]->decls()) {
             if (auto* r = llvm::dyn_cast<clang::RecordDecl>(child))
@@ -445,13 +438,12 @@ namespace {
             enum class Unresolved : int;
         };)cpp");
         ASSERT_EQ(records.size(), 4u);
-        const auto occurrence = nextOccurrence();
-        auto       expected   = record("::Outer", occurrence, ParserTypes::RECORD_KIND_STRUCT, 32, 8);
+        auto expected = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 32, 8);
         nestedHash(expected, recordId("::Outer::Later"));
         nestedHash(expected, enumId("::Outer::Mode"));
         auto early      = field("before", "::Outer::Later *", 64, 0);
         auto early_type = builtin("::Outer::Later *");
-        early_type.set_forward_decl_index(occurrence + 1);
+        early_type.set_forward_decl_index(1);
         *early.mutable_type_ref() = fieldType(early_type);
         *expected.add_fields()    = early;
         auto late                 = field("after", "::Outer::Later *", 64, 64);
@@ -462,7 +454,7 @@ namespace {
         *expected.add_fields() = unknown;
         early                  = field("early", "::Outer::Mode", 32, 192);
         early_type             = builtin("::Outer::Mode");
-        early_type.set_forward_decl_index(occurrence + 3);
+        early_type.set_forward_decl_index(3);
         *early.mutable_type_ref() = fieldType(early_type);
         *expected.add_fields()    = early;
         late                      = field("late", "::Outer::Mode", 32, 224);
@@ -484,7 +476,7 @@ namespace {
             char last;
         };)cpp");
         ASSERT_EQ(records.size(), 1u);
-        auto expected          = record("::Owner", nextOccurrence(), ParserTypes::RECORD_KIND_CLASS, 2, 1);
+        auto expected          = record("::Owner", 0, ParserTypes::RECORD_KIND_CLASS, 2, 1);
         *expected.add_fields() = field("first", "char", 8, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
         for (const auto name : {"A", "B"}) {
             auto constant =
@@ -505,10 +497,9 @@ namespace {
     TEST_F(RecordDeclWrapperTest, EmbeddedEnumBelongsToItsFieldAndIsNotRaisedOrWrittenSeparately) {
         const auto records = parse("struct Owner { enum : unsigned char { A = 2, B } value; };");
         ASSERT_EQ(records.size(), 1u);
-        const auto occurrence = nextOccurrence();
-        auto       expected   = record("::Owner", occurrence, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
-        auto       value      = field("value", "", 8, 0);
-        auto       embedded   = proto<ParserTypes::TLEnumDeclaration>(R"pb(
+        auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
+        auto value    = field("value", "", 8, 0);
+        auto embedded = proto<ParserTypes::TLEnumDeclaration>(R"pb(
             underlying_type { versions { source_versions: "test-version" value: "unsigned char" } }
             scope: ENUM_SCOPE_UNSCOPED
             enumerators { name: "A" value { versions { source_versions: "test-version" value: "2" } } }
@@ -516,7 +507,7 @@ namespace {
         )pb");
         // EnumDeclWrapper's current embedded representation includes Clang's source-qualified anonymous spelling.
         const std::string name                                                               = "::Owner::(unnamed enum at wrapper_fixture.cpp:1:16)";
-        *embedded.mutable_metadata()                                                         = metadata(name, enumId(name), occurrence + 1);
+        *embedded.mutable_metadata()                                                         = metadata(name, enumId(name), 1);
         *value.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_enum() = embedded;
         *expected.add_fields()                                                               = value;
         const auto  before                                                                   = outputFiles();
@@ -533,7 +524,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, AnonymousStructEnumeratorsInheritOwningAccessWithoutConsumingStorage) {
         const auto records = parse("class Owner { protected: struct { enum { Count = 3 }; int value; }; };", {"-fms-extensions"});
         ASSERT_EQ(records.size(), 2u);
-        auto expected = record("::Owner", nextOccurrence(), ParserTypes::RECORD_KIND_CLASS, 4, 4);
+        auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_CLASS, 4, 4);
         auto constant = staticField("Count", "int", std::nullopt, ParserTypes::VAR_STORAGE_CLASS_STATIC, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
         constant.set_is_anon_enum_value(true);
         *constant.mutable_access()        = versioned<ParserTypes::VersionedAccessSpecifier>(ParserTypes::ACCESS_SPECIFIER_PROTECTED);
@@ -552,8 +543,7 @@ namespace {
         }; })cpp",
                                    {"-fms-extensions"});
         ASSERT_EQ(records.size(), 2u);
-        const auto occurrence = nextOccurrence();
-        const auto ir         = RecordDeclWrapper{records[0], arena}.toIntermediateRepresentation();
+        const auto ir = RecordDeclWrapper{records[0], arena}.toIntermediateRepresentation();
         ASSERT_TRUE(std::holds_alternative<Variables>(ir));
         const auto& values = std::get<Variables>(ir);
         ASSERT_EQ(values.size(), 3u);
@@ -561,7 +551,7 @@ namespace {
         for (size_t i = 0; i < values.size(); ++i) {
             SCOPED_TRACE(names[i]);
             ParserTypes::TLGlobalVariableDeclaration expected;
-            *expected.mutable_metadata()      = metadata(names[i], variableId(names[i]), occurrence + i, i == 0 ? "/// Global union value." : "");
+            *expected.mutable_metadata()      = metadata(names[i], variableId(names[i]), i, i == 0 ? "/// Global union value." : "");
             *expected.mutable_type_ref()      = fieldType(builtin(types[i]));
             *expected.mutable_storage_class() = versioned<ParserTypes::VersionedVariableStorageClass>(ParserTypes::VAR_STORAGE_CLASS_STATIC);
             *expected.mutable_constant_evaluation_kind() =
@@ -581,18 +571,17 @@ namespace {
     TEST_F(RecordDeclWrapperTest, GlobalAnonymousUnionEmbedsDeclaratorOwnedTypesAndUsesGlobalScope) {
         const auto records = parse("static union { struct { int x; } value; enum { A = 1 } mode; };");
         ASSERT_EQ(records.size(), 2u);
-        const auto occurrence = nextOccurrence();
-        const auto ir         = RecordDeclWrapper{records[0], arena}.toIntermediateRepresentation();
+        const auto ir = RecordDeclWrapper{records[0], arena}.toIntermediateRepresentation();
         ASSERT_TRUE(std::holds_alternative<Variables>(ir));
         const auto& values = std::get<Variables>(ir);
         ASSERT_EQ(values.size(), 2u);
-        expectProto(values[0]->metadata(), metadata("::value", variableId("::value"), occurrence));
-        auto embedded          = anonymousRecord(occurrence + 1, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
+        expectProto(values[0]->metadata(), metadata("::value", variableId("::value"), 0));
+        auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *embedded.add_fields() = field("x", "int", 32, 0);
         ASSERT_EQ(values[0]->type_ref().versions_size(), 1);
         ASSERT_TRUE(values[0]->type_ref().versions(0).value().has_anon_record());
         expectProto(values[0]->type_ref().versions(0).value().anon_record(), embedded);
-        expectProto(values[1]->metadata(), metadata("::mode", variableId("::mode"), occurrence + 2));
+        expectProto(values[1]->metadata(), metadata("::mode", variableId("::mode"), 2));
         ASSERT_EQ(values[1]->type_ref().versions_size(), 1);
         ASSERT_TRUE(values[1]->type_ref().versions(0).value().has_anon_enum());
         const auto& enumeration = values[1]->type_ref().versions(0).value().anon_enum();
@@ -611,7 +600,7 @@ namespace {
         for (size_t i = 0; i < 3; ++i)
             ASSERT_NE(serialize(records[i]), nullptr);
         // Windows layout: Left@0, Right@4, vbptr@8, own@16, Virtual@24; alignment 8.
-        auto expected          = record("::Derived", nextOccurrence(), ParserTypes::RECORD_KIND_CLASS, 32, 8);
+        auto expected          = record("::Derived", 3, ParserTypes::RECORD_KIND_CLASS, 32, 8);
         *expected.add_bases()  = base(reference("::Left", recordId("::Left")), ParserTypes::ACCESS_SPECIFIER_PRIVATE, false, 0);
         *expected.add_bases()  = base(reference("::Right", recordId("::Right")), ParserTypes::ACCESS_SPECIFIER_PROTECTED, false, 4);
         *expected.add_bases()  = base(reference("::Virtual", recordId("::Virtual")), ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, 24);
@@ -623,8 +612,7 @@ namespace {
         const auto records = parse("struct Known {}; template<class T, class... Bases> struct Derived : Known, T, Bases... {};");
         ASSERT_EQ(records.size(), 2u);
         // Known deliberately is not serialized: references must not invent identities.
-        auto expected =
-            record("::Derived<T, Bases...>", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typenametypename...>");
+        auto expected = record("::Derived<T, Bases...>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typenametypename...>");
         *expected.mutable_template_details()->add_parameters() = typeParameter("T");
         *expected.mutable_template_details()->add_parameters() = typeParameter("Bases", true);
         auto known                                             = builtin("::Known");
@@ -639,7 +627,7 @@ namespace {
         const auto records = parse("template<class T> struct Base { T value; }; struct Derived : Base<double> { char tail; };");
         ASSERT_EQ(records.size(), 2u);
         ASSERT_NE(serialize(records[0]), nullptr);
-        auto expected = record("::Derived", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 16, 8);
+        auto expected = record("::Derived", 1, ParserTypes::RECORD_KIND_STRUCT, 16, 8);
         *expected.add_bases() =
             base(reference("::Base<double>", recordId("::Base<T>", "<typename>")), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, 0);
         *expected.add_fields() = field("tail", "char", 8, 64);
@@ -649,7 +637,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, StandardNamespaceReferencesRetainTheirHeaderInsteadOfInventingHashes) {
         const auto records = parse("namespace std { struct External {}; } struct Owner { std::External* pointer; };");
         ASSERT_EQ(records.size(), 2u);
-        auto expected = record("::Owner", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 8, 8);
+        auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
         auto pointer  = field("pointer", "::std::External *", 64, 0);
         pointer.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_type_ref()->set_header("wrapper_fixture.cpp");
         *expected.add_fields() = pointer;
@@ -659,7 +647,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, LambdaFieldUsesAReferenceRatherThanEmbeddingAnUnownedAnonymousRecord) {
         const auto records = parse("struct Owner { decltype([]{}) callback; };");
         ASSERT_EQ(records.size(), 1u);
-        auto expected = record("::Owner", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 1, 1);
+        auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
         auto callback = field("callback", "::Owner::(lambda at wrapper_fixture.cpp:1:25)", 8, 0);
         callback.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_type_ref()->set_is_builtin_or_template(false);
         *expected.add_fields() = callback;
@@ -676,8 +664,7 @@ namespace {
             enum { Count = N + 1 };
         };)cpp");
         ASSERT_EQ(records.size(), 3u);
-        const auto occurrence = nextOccurrence();
-        auto       expected   = record("::Dependent<T, N>", occurrence, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typenameint>");
+        auto expected = record("::Dependent<T, N>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typenameint>");
         *expected.mutable_template_details() = proto<ParserTypes::TemplateDetails>(R"pb(
             parameters { kind: TEMPLATE_PARAMETER_KIND_CLASS type { type_name { versions { source_versions: "test-version" value: "T" } } is_builtin_or_template: true } }
             parameters { kind: TEMPLATE_PARAMETER_KIND_NON_TYPE name { versions { source_versions: "test-version" value: "N" } } type { type_name { versions { source_versions: "test-version" value: "int" } } is_builtin_or_template: true } }
@@ -693,7 +680,7 @@ namespace {
         *expected.add_fields() = bits;
         *expected.add_fields() = field("raised", "int", std::nullopt, std::nullopt);
         *expected.add_fields() = field("other", "type-parameter-0-0", std::nullopt, std::nullopt);
-        auto embedded          = anonymousRecord(occurrence + 1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
+        auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         *embedded.add_fields() = field("retained", "type-parameter-0-0", std::nullopt, std::nullopt);
         value                  = field("embedded", "", std::nullopt, std::nullopt);
         *value.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = embedded;
@@ -708,12 +695,11 @@ namespace {
     TEST_F(RecordDeclWrapperTest, PrimaryPartialAndExplicitSpecializationsHaveDistinctIdentitiesAndDetails) {
         const auto records = parse("template<class T> struct Box {}; template<class T> struct Box<T*> {}; template<> struct Box<int> {};");
         ASSERT_EQ(records.size(), 3u);
-        const auto occurrence = nextOccurrence();
         const auto primary_id = recordId("::Box<T>", "<typename>");
-        auto       primary    = record("::Box<T>", occurrence, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typename>");
+        auto       primary    = record("::Box<T>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typename>");
         *primary.mutable_template_details()->add_parameters() = typeParameter("T");
         expectProto(*serialize(records[0]), primary);
-        auto  partial = record("::Box<T *>", occurrence + 1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typename><typename>");
+        auto  partial = record("::Box<T *>", 1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typename><typename>");
         auto* details = partial.mutable_template_details();
         details->set_specialization_kind(ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT);
         *details->add_parameters()                   = typeParameter("T");
@@ -722,7 +708,7 @@ namespace {
         parameter->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC);
         *parameter->mutable_type() = builtin("type-parameter-0-0 *");
         expectProto(*serialize(records[1]), partial);
-        auto specialized = record("::Box<int>", occurrence + 2, ParserTypes::RECORD_KIND_STRUCT, 1, 1, "<int>");
+        auto specialized = record("::Box<int>", 2, ParserTypes::RECORD_KIND_STRUCT, 1, 1, "<int>");
         details          = specialized.mutable_template_details();
         details->set_specialization_kind(ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT);
         *details->mutable_primary_template_decl_id() = reference("Box", primary_id);
@@ -735,7 +721,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, SpecializationOfAnUndefinedPrimaryDoesNotInventItsIdentity) {
         const auto records = parse("template<class T> struct Box; template<> struct Box<int> {};");
         ASSERT_EQ(records.size(), 2u);
-        auto  expected = record("::Box<int>", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 1, 1, "<int>");
+        auto  expected = record("::Box<int>", 0, ParserTypes::RECORD_KIND_STRUCT, 1, 1, "<int>");
         auto* details  = expected.mutable_template_details();
         details->set_specialization_kind(ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT);
         auto* argument = details->add_specialized_parameters();
@@ -771,7 +757,7 @@ namespace {
             const std::string type = from_partial ? "int *" : implicit ? "double" : declaration_only ? "long" : "int";
             SCOPED_TRACE(type);
             const int64_t size     = from_partial || type == "double" ? 8 : 4;
-            auto          expected = record("::Box<" + type + ">", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, size, size, "<" + type + ">");
+            auto          expected = record("::Box<" + type + ">", 2 + count, ParserTypes::RECORD_KIND_STRUCT, size, size, "<" + type + ">");
             *expected.add_fields() = field("value", type, size * 8, 0);
             auto* details          = expected.mutable_template_details();
             details->set_specialization_kind(implicit           ? ParserTypes::TEMPLATE_SPECIALIZATION_IMPLICIT
@@ -794,8 +780,7 @@ namespace {
     TEST_F(RecordDeclWrapperTest, NumericTemplateArgumentsAndDefaultsAreCorrectAndAffectIdentity) {
         const auto records = parse("template<int N = 2> struct Count {}; template<> struct Count<3> {}; template<> struct Count<4> {};");
         ASSERT_EQ(records.size(), 3u);
-        const auto occurrence                = nextOccurrence();
-        auto       expected                  = record("::Count<N>", occurrence, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<int>");
+        auto expected                        = record("::Count<N>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<int>");
         *expected.mutable_template_details() = proto<ParserTypes::TemplateDetails>(R"pb(
             parameters {
                 kind: TEMPLATE_PARAMETER_KIND_NON_TYPE
@@ -807,7 +792,7 @@ namespace {
         expectProto(*serialize(records[0]), expected);
         for (size_t i = 1; i < records.size(); ++i) {
             const auto value = std::to_string(i + 2);
-            expected         = record("::Count<" + value + ">", occurrence + i, ParserTypes::RECORD_KIND_STRUCT, 1, 1, "<" + value + ">");
+            expected         = record("::Count<" + value + ">", i, ParserTypes::RECORD_KIND_STRUCT, 1, 1, "<" + value + ">");
             auto* details    = expected.mutable_template_details();
             details->set_specialization_kind(ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT);
             *details->mutable_primary_template_decl_id() = reference("Count", recordId("::Count<N>", "<int>"));
@@ -826,11 +811,10 @@ namespace {
         )cpp");
         ASSERT_EQ(records.size(), 2u);
         ASSERT_NE(serialize(records[0]), nullptr);
-        const auto  occurrence = nextOccurrence();
-        const auto  before     = outputFiles();
-        const auto* actual     = serialize(records[1]);
+        const auto  before = outputFiles();
+        const auto* actual = serialize(records[1]);
         ASSERT_NE(actual, nullptr);
-        expectProto(actual->metadata(), metadata("::Derived", recordId("::Derived"), occurrence));
+        expectProto(actual->metadata(), metadata("::Derived", recordId("::Derived"), 1));
         EXPECT_EQ(actual->kind(), ParserTypes::RECORD_KIND_STRUCT);
         expectVersioned(actual->size_bytes(), 8);
         expectVersioned(actual->align_bytes(), 8);
@@ -906,11 +890,10 @@ namespace {
     TEST_F(RecordDeclWrapperTest, UnsetMemberAccessUsesTheOwningRecordDefault) {
         const auto records = parse("class Class { int value; }; struct Struct { int value; };");
         ASSERT_EQ(records.size(), 2u);
-        const auto occurrence = nextOccurrence();
         for (size_t i = 0; i < records.size(); ++i) {
             (*records[i]->field_begin())->setAccess(clang::AS_none);
-            auto expected = record(i == 0 ? "::Class" : "::Struct", occurrence + i,
-                                   i == 0 ? ParserTypes::RECORD_KIND_CLASS : ParserTypes::RECORD_KIND_STRUCT, 4, 4);
+            auto expected =
+                record(i == 0 ? "::Class" : "::Struct", i, i == 0 ? ParserTypes::RECORD_KIND_CLASS : ParserTypes::RECORD_KIND_STRUCT, 4, 4);
             *expected.add_fields() =
                 field("value", "int", 32, 0, i == 0 ? ParserTypes::ACCESS_SPECIFIER_PRIVATE : ParserTypes::ACCESS_SPECIFIER_PUBLIC);
             expectProto(*serialize(records[i]), expected);
@@ -932,10 +915,9 @@ namespace {
             if (auto* templated = llvm::dyn_cast<clang::FunctionTemplateDecl>(member); templated && templated->getName() == "ignored")
                 templated->setImplicit();
         }
-        const auto  occurrence = nextOccurrence();
-        const auto* actual     = serialize(records[0]);
+        const auto* actual = serialize(records[0]);
         ASSERT_NE(actual, nullptr);
-        expectProto(actual->metadata(), metadata("::Owner", recordId("::Owner"), occurrence));
+        expectProto(actual->metadata(), metadata("::Owner", recordId("::Owner"), 0));
         expectVersioned(actual->size_bytes(), 1);
         expectVersioned(actual->align_bytes(), 1);
         ASSERT_EQ(actual->fields_size(), 1);
@@ -951,7 +933,7 @@ namespace {
         *details.add_parameters() = typeParameter("T");
         expectProto(method.common().template_details(), details);
         EXPECT_EQ(method.GetArena(), arena.get());
-        auto expected = record("::Owner", occurrence, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
+        auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
         nestedHash(expected, recordId("::Owner::Nested<T>", "<typename>"));
         expectProto(actual->nested_hashes(), expected.nested_hashes());
         EXPECT_EQ(actual->bases_size(), 0);
@@ -962,7 +944,7 @@ namespace {
         const auto records = parse("struct Packet { int length; unsigned char bytes[]; };", {"-x", "c", "-std=c17"});
         ASSERT_EQ(records.size(), 1u);
         ASSERT_FALSE(llvm::isa<clang::CXXRecordDecl>(records[0]));
-        auto expected          = record("::Packet", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, 4, 4);
+        auto expected          = record("::Packet", 0, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *expected.add_fields() = field("length", "int", 32, 0);
         *expected.add_fields() = field("bytes", "unsigned char[]", std::nullopt, 32);
         expectProto(*serialize(records[0]), expected);
@@ -973,11 +955,11 @@ namespace {
         // incomplete node here without CXXRecordDecl::bases() requiring definition data.
         const auto records = parse("struct Forward; struct Invalid { int member; };", {"-x", "c", "-std=c17"});
         ASSERT_EQ(records.size(), 2u);
-        const auto forward = record("::Forward", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
+        const auto forward = record("::Forward", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         expectProto(*serialize(records[0]), forward);
         // A recoverable AST can retain a definition after diagnostics marked it invalid.
         records[1]->setInvalidDecl();
-        auto expected          = record("::Invalid", nextOccurrence(), ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
+        auto expected          = record("::Invalid", 1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         *expected.add_fields() = field("member", "int", std::nullopt, std::nullopt);
         expectProto(*serialize(records[1]), expected);
     }

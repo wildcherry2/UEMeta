@@ -276,10 +276,9 @@ namespace {
         const auto functions = parse("struct Owner { int read() const; };");
         ASSERT_EQ(functions.size(), 1u);
         auto*                                  method     = llvm::cast<clang::CXXMethodDecl>(functions[0]);
-        const auto                             occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         const auto*                            message    = MethodDeclWrapper{method, arena}.toIntermediateRepresentation();
         ParserTypes::TLFreeFunctionDeclaration expected;
-        *expected.mutable_metadata() = metadata("::Owner::read", functionId("::Owner::read", " const"), occurrence);
+        *expected.mutable_metadata() = metadata("::Owner::read", functionId("::Owner::read", " const"), 0);
         *expected.mutable_common()   = methodCommon(ParserTypes::FUNCTION_KIND_MEMBER, "int");
         expectProto(*message, expected);
         expectUnregistered(method);

@@ -25,6 +25,9 @@ namespace UEMeta {
             static uint64_t allocateDeclOccurrence();
             static void     awaitPendingSerializations();
 
+#ifdef UEM_TESTING
+            static void resetDeclOccurrences();
+#endif
         protected:
             template <TopLevelProto PT>
             static void saveToFile(const PT* msg, const std::shared_ptr<google::protobuf::Arena>& arena) {
