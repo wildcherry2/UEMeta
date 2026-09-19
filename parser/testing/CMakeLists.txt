@@ -1,4 +1,5 @@
 add_executable(uemeta-parser-tests harness/src/TestMain.cpp)
+target_sources(uemeta-parser-tests PRIVATE harness/src/DeclDbTests.cpp)
 set_target_properties(uemeta-parser-tests PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON

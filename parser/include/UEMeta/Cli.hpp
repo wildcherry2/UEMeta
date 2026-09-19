@@ -64,6 +64,10 @@ namespace UEMeta {
          */
         [[nodiscard]] SerializationFormat getFormat() const;
 
+#ifdef UEM_TESTING
+        void setFormatForTesting(SerializationFormat value) noexcept { format = value; }
+#endif
+
         /**
          * @brief Returns true when Unreal Engine-specific parsing extensions are enabled.
          */
