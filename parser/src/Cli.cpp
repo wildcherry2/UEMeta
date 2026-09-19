@@ -52,9 +52,9 @@ constexpr auto PREFER_FULL_NAME_HELP = "By default, the hash of the fully qualif
                                        " the serialized file name. Specifying this make the fully qualified name of the"
                                        " declaration appear in the file name, instead of its hash.";
 
-constexpr auto BUILTIN_SUBPATHS_HELP = "List of substrings that are contained within paths to builtin files. Builtin files"
-                                       " are not serialized, since they're considered available in the environment and"
-                                       " consistent across all versions.";
+constexpr auto ENABLE_UNREAL_EXTENSIONS_HELP = "Enable Unreal Engine-specific parsing extensions.";
+
+constexpr auto FILE_DELIMITER_HELP = "Directory name that bounds upward file-system searches.";
 
 /**
  * @brief Default compiler arguments removed from Unreal compile command entries before Clang runs.
@@ -107,9 +107,14 @@ UEMeta::Config::SerializationFormat UEMeta::Config::getFormat() const {
     return format;
 }
 
-const std::unordered_set<std::string>& UEMeta::Config::getBuiltinSubpaths() const {
+bool UEMeta::Config::unrealExtensionsEnabled() const {
     assertInitialized();
-    return builtin_subpaths;
+    return enable_unreal_extensions;
+}
+
+const std::filesystem::path::string_type& UEMeta::Config::getFileDelimiter() const {
+    assertInitialized();
+    return file_delimiter;
 }
 
 const UEMeta::StablePath& UEMeta::Config::getLog() {
@@ -190,11 +195,12 @@ int UEMeta::Config::initialize(int argc, char** argv) {
     app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)->default_val(false);
     app.add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
     app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
+    app.add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)->default_val(false);
     app.add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)->required()->transform(Config::loadCompileCommandsString);
     app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
     app.add_option("--clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
     app.add_option("-l,--log", cfg.log, LOG_HELP);
-    app.add_option("--builtin-subpaths", cfg.builtin_subpaths, BUILTIN_SUBPATHS_HELP)->delimiter(',')->transform(CLI::EscapedString);
+    app.add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)->default_str("UnrealEngine");
     app.add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP)->default_val(StablePath::currentProgramDirectory() / "Output");
     app.add_option("-f,--format", cfg.format, FORMAT_HELP)
         ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))

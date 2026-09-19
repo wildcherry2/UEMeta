@@ -65,10 +65,14 @@ namespace UEMeta {
         [[nodiscard]] SerializationFormat getFormat() const;
 
         /**
-         * @brief Returns the set of substrings to use when determining if a declaration belongs to a builtin library,
-         * like std, STL, or Windows/Unix libs
+         * @brief Returns true when Unreal Engine-specific parsing extensions are enabled.
          */
-        [[nodiscard]] const std::unordered_set<std::string>& getBuiltinSubpaths() const;
+        [[nodiscard]] bool unrealExtensionsEnabled() const;
+
+        /**
+         * @brief Returns the directory name that bounds upward file-system searches.
+         */
+        [[nodiscard]] const std::filesystem::path::string_type& getFileDelimiter() const;
 
         /**
          * @brief Returns the path to the log file. If empty, no log file should be written to.
@@ -94,11 +98,11 @@ namespace UEMeta {
         std::string toString() const {
             return fmtquill::format("compile_commands={}\nprefer_clang={}\nprefer_full_name_in_file_name={}\n"
                                     "sync_serialization={}\nstrip_commands={}\n"
-                                    "additional_clang_args={}\nbuiltin_subpaths={}\nformat={}\n"
+                                    "additional_clang_args={}\nenable_unreal_extensions={}\nfile_delimiter={}\nformat={}\n"
                                     "log={}\noutput_directory={}",
                                     compile_commands, prefer_clang, prefer_full_name_in_file_name, sync_serialization, strip_commands,
-                                    additional_clang_args, builtin_subpaths, format_string_map.at(format), log.string(),
-                                    output_directory.string());
+                                    additional_clang_args, enable_unreal_extensions, std::filesystem::path{file_delimiter}.string(),
+                                    format_string_map.at(format), log.string(), output_directory.string());
         }
 
         /**
@@ -154,14 +158,15 @@ namespace UEMeta {
         bool                            prefer_clang{};
         bool                            sync_serialization{};
         bool                            prefer_full_name_in_file_name{};
+        bool                            enable_unreal_extensions{};
         SerializationFormat             format = SerializationFormat::Json; // will be manipulated in initialize
         std::unordered_set<std::string> strip_commands{};
         std::unordered_set<std::string> additional_clang_args{};
-        std::unordered_set<std::string> builtin_subpaths{};
         StablePath                      log{};
         StablePath                      output_directory{};
-        std::string                     compile_commands{};
-        std::string                     version{};
+        std::string                       compile_commands{};
+        std::filesystem::path::string_type file_delimiter{std::filesystem::path{"UnrealEngine"}.native()};
+        std::string                       version{};
         std::atomic_flag                initialized{};
 
         inline static const std::map<std::string, SerializationFormat> string_format_map = {{"json", SerializationFormat::Json},
