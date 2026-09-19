@@ -108,6 +108,21 @@ enum TemplateSpecializationKind {
     TEMPLATE_SPECIALIZATION_EXPLICIT_INSTANTIATION_DEFINITION = 4;
 }
 
+enum ReflectionKind {
+    REFLECTION_KIND_UNKNOWN = 0;
+    REFLECTION_KIND_UCLASS = 1;
+    REFLECTION_KIND_UINTERFACE = 2;
+    REFLECTION_KIND_USTRUCT = 4;
+    REFLECTION_KIND_UENUM = 8;
+    REFLECTION_KIND_UPROPERTY = 16;
+    REFLECTION_KIND_UFUNCTION = 32;
+
+    // For now, definitely check if delegate reflection data is captured properly on a case-by-case basis
+    REFLECTION_KIND_DYNAMIC_DELEGATE = 64;
+    REFLECTION_KIND_DYNAMIC_DELEGATE_MULTICAST = 128;
+    REFLECTION_KIND_DYNAMIC_DELEGATE_MULTICAST_SPARSE = 256;
+}
+
 message VersionedFunctionDefinitionKind {
     message VersionItem {
         repeated string source_versions = 1;

@@ -40,6 +40,10 @@ message TLRecordDeclaration {
   optional VersionedHashList nested_hashes = 7;
   repeated BaseSpecifier bases = 8;
   repeated MemberFunction methods = 9;
+
+  // if present, this record represents an unreal UStruct, UClass, or UInterface
+  // under the /Script/ path.
+  optional VersionedString reflected_package = 10;
 }
 
 // Top-level enum declaration.
@@ -54,6 +58,14 @@ message TLEnumDeclaration {
   optional EnumScope scope = 3;
 
   repeated Enumerator enumerators = 4;
+
+  // if present, this record represents an unreal UEnum
+  // under the /Script/ path.
+  optional VersionedString reflected_package = 10;
+
+  // in some UE4 versions, `UENUM() namespace Alpha { enum Type {a, b, c} }` is a valid way to make a reflected enum named `Alpha` with `Type`'s enumerators.
+  // if this is true, then this is the case, and the reflected name is the namespace name (deducable from slicing the FQN).
+  optional bool reflected_namespace = 11;
 }
 
 // An independently tracked top-level free-function declaration.
@@ -177,6 +189,10 @@ message MemberFunction {
   // effectively, the hash of a platform independent mangled name + template data.
   // This is not in FunctionCommon because global functions have this in their DeclarationMetadata
   Hash func_id = 10;
+
+  // if true, this is reflected as an unreal UFunction under the same package
+  // as the owning UClass, and it's params are reflected as well
+  optional VersionedBool is_reflected = 11;
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,
@@ -226,6 +242,10 @@ message Field {
   VersionedConstantEvaluationKind constant_evaluation_kind = 10;
   VersionedVariableStorageClass storage_class = 11;
   optional bool is_anon_enum_value = 12;
+
+  // if true, the field is reflected as a UProperty under the same package as the
+  // owning UClass.
+  optional VersionedBool is_reflected = 13;
 }
 
 message BaseSpecifier {
@@ -310,18 +330,4 @@ message VersionedHashList {
   }
 
   repeated VersionItem versions = 1;
-}
-
-// Any top level item
-message TLItem {
-  oneof value {
-    TLRecordDeclaration record = 1;
-    TLEnumDeclaration enum_declaration = 2;
-    TLFreeFunctionDeclaration function = 3;
-    TLGlobalVariableDeclaration variable = 4;
-  }
-}
-
-message TLItemList {
-  repeated TLItem items = 1;
 }
