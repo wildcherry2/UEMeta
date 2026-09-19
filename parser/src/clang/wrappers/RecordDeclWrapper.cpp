@@ -5,6 +5,7 @@
 #include "UEMeta/utility/DeclException.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "clang/AST/DeclTemplate.h"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 /*
  * Clang's AST (abstract syntax tree) contains both source declarations and compiler-created
@@ -140,6 +141,10 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
     if (layout) {
         setVersioned(p_msg->mutable_size_bytes(), layout->getSize().getQuantity());
         setVersioned(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
+    }
+
+    if (const std::string_view package = ReflectionDb::registerReflectable(decl); !package.empty()) {
+        setVersionedString(p_msg->mutable_reflected_package(), package);
     }
 
     // Clang stores bases outside decls(), so only base specifiers require their own loop.
@@ -356,6 +361,9 @@ void UEMeta::RecordDeclWrapper::handleField(const clang::FieldDecl* field, Parse
     setVersionedBool(p_msg->mutable_is_bitfield(), field->isBitField());
     setVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
     setVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
+    if (!ReflectionDb::registerReflectable(field).empty()) {
+        setVersionedBool(p_msg->mutable_is_reflected(), true);
+    }
 
     // Bit widths can be known even when the enclosing record's layout remains dependent.
     if (field->isBitField()) {

@@ -6,6 +6,7 @@
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"
 #include "llvm/ADT/StringExtras.h"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toIntermediateRepresentation() const {
     clang::QualType underlying = decl->getIntegerType();
@@ -39,6 +40,10 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
             }
 
             setVersionedString(p_enumerator->mutable_value(), llvm::toString(enumerator->getInitVal(), 10));
+        }
+        std::string_view package = ReflectionDb::registerReflectable(decl);
+        if (!package.empty()) {
+            setVersionedString(out_msg->mutable_reflected_package(), package);
         }
         return out_msg;
     }

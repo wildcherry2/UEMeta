@@ -10,6 +10,7 @@
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Type.h"
 #include "google/protobuf/util/json_util.h"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 llvm::DenseMap<const clang::Decl*, UEMeta::Hash>                UEMeta::DeclDb::decl_to_identity_map;
 absl::flat_hash_map<UEMeta::Hash, const clang::Decl*>           UEMeta::DeclDb::identity_to_decl_map;
@@ -175,7 +176,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         EnumDeclWrapper(decl, arena).toFile();
     }
-    catch (DeclException<clang::EnumDecl>& de) {
+    catch ([[maybe_unused]] DeclException<clang::EnumDecl>& de) {
         throw;
     }
     catch (std::exception& e) {
@@ -207,7 +208,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         VarDeclWrapper(decl, arena).toFile();
     }
-    catch (DeclException<clang::VarDecl>& de) {
+    catch ([[maybe_unused]] DeclException<clang::VarDecl>& de) {
         throw;
     }
     catch (std::exception& e) {
@@ -247,7 +248,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         RecordDeclWrapper(decl, arena).toFile();
     }
-    catch (DeclException<clang::RecordDecl>& de) {
+    catch ([[maybe_unused]] DeclException<clang::RecordDecl>& de) {
         throw;
     }
     catch (std::exception& e) {
@@ -284,7 +285,38 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
         const auto arena = std::make_shared<google::protobuf::Arena>();
         FunctionDeclWrapper(decl, arena).toFile();
     }
-    catch (DeclException<clang::FunctionDecl>& de) {
+    catch ([[maybe_unused]] DeclException<clang::FunctionDecl>& de) {
+        throw;
+    }
+    catch (std::exception& e) {
+        throw DeclException(decl, "{}", e.what());
+    }
+}
+
+void UEMeta::DeclDb::serializeIfNeeded(clang::NamespaceDecl* decl) {
+    try {
+        if (!decl) return;
+        if (!Config::getConfig().unrealExtensionsEnabled()) return;
+        if (visited_decls.contains(decl))
+            return;
+        visited_decls.insert(decl);
+        if (isDeclInSystemOrStdHeader(decl))
+            return;
+        if (const std::string_view package = ReflectionDb::registerReflectable(decl); package.empty()) return;
+
+        const auto arena = std::make_shared<google::protobuf::Arena>();
+        const auto* enum_decl = llvm::dyn_cast_or_null<clang::EnumDecl>(*decl->decls_begin());
+        visited_decls.insert(enum_decl);
+        if (!enum_decl) throw DeclException(decl, "Namespace picked up as reflectable, but it doesn't have an EnumDecl as the only child decl!");
+        auto enum_ir = EnumDeclWrapper(enum_decl, arena).toIntermediateRepresentation();
+        if (std::get_if<0>(&enum_ir)) {
+            throw DeclException(decl, "Reflected namespaced enum is anonymous (unsupported)!");
+        }
+        ParserTypes::TLEnumDeclaration* p_enum = *std::get_if<1>(&enum_ir);
+        p_enum->set_reflected_namespace(true);
+        return EnumDeclWrapper::toFile(std::move(enum_ir), arena);
+    }
+    catch ([[maybe_unused]] DeclException<clang::FunctionDecl>& de) {
         throw;
     }
     catch (std::exception& e) {

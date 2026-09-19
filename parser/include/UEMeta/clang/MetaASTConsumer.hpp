@@ -30,6 +30,8 @@ namespace UEMeta {
 
         bool VisitVarDecl(clang::VarDecl* decl);
 
+        bool VisitNamespaceDecl(clang::NamespaceDecl* decl);
+
         void Initialize(clang::ASTContext& context) override;
 
         void HandleTranslationUnit(clang::ASTContext& context) override;

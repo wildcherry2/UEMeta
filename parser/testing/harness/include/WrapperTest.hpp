@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "UEMeta/clang/ReflectionDb.hpp"
 #include "UEMeta/clang/wrappers/DeclWrapper.hpp"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Tooling/Tooling.h"
@@ -20,12 +21,14 @@ namespace UEMeta::Testing {
         void SetUp() override {
             DeclDb::awaitPendingSerializations();
             DeclDb::reset();
+            ReflectionDb::reset();
         }
 
         void TearDown() override {
             // Serialization and DeclDb must release AST references before the fixture does.
             DeclDb::awaitPendingSerializations();
             DeclDb::reset();
+            ReflectionDb::reset();
             asts.clear();
         }
 
