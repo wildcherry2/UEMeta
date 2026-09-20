@@ -14,12 +14,13 @@ namespace UEMeta {
         [[nodiscard]] IntermediateRepresentation toIntermediateRepresentation() const;
         void                                     toFile() const;
 
+        static void toString(const IntermediateRepresentation& ir, std::string& out);
         static void toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena);
 
         // Append anonymous enumerators as static constexpr fields; access is resolved by the owning record.
         void serializeAsFields(ParserTypes::AccessSpecifier access, ParserTypes::TLRecordDeclaration* dest) const;
 
-    protected:
+    private:
         [[nodiscard]] Hash        computeDeclId(std::string_view fqn) const;
         [[nodiscard]] bool        computeHasIdentity() const;
         [[nodiscard]] std::string computeFQN() const;

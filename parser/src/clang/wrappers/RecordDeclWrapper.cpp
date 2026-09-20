@@ -170,6 +170,17 @@ void UEMeta::RecordDeclWrapper::toFile(IntermediateRepresentation&& ir, const st
     }
 }
 
+void UEMeta::RecordDeclWrapper::toString(const IntermediateRepresentation& ir, std::string& out) {
+    if (const auto* p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
+        saveToString(*p_record, out);
+    }
+    else if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
+        for (const auto* p_var : *vec) {
+            saveToString(p_var, out);
+        }
+    }
+}
+
 std::string UEMeta::RecordDeclWrapper::computeFQN() const {
     // Canonical tag types also give typedef-named anonymous records their C++ name.
     const clang::QualType type = getASTContext().getCanonicalTagType(decl);

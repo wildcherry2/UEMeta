@@ -28,6 +28,8 @@ namespace UEMeta {
     public:
         enum class SerializationFormat { Json, Binary };
 
+        enum class Mode { Parser, Repl };
+
         /**
          * @brief Returns the normalized compile_commands.json content.
          */
@@ -63,6 +65,10 @@ namespace UEMeta {
          * @brief Returns the output format.
          */
         [[nodiscard]] SerializationFormat getFormat() const;
+
+        [[nodiscard]] Mode getMode() const;
+
+        [[nodiscard]] quill::LogLevel getLogLevel() const;
 
 #ifdef UEM_TESTING
         void setFormatForTesting(SerializationFormat value) noexcept { format = value; }
@@ -160,25 +166,49 @@ namespace UEMeta {
         /// @brief Reads a compile_commands.json file or returns inline JSON unchanged.
         static std::string loadCompileCommandsString(const std::string& in);
 
-        bool                            prefer_clang{};
-        bool                            sync_serialization{};
-        bool                            prefer_full_name_in_file_name{};
-        bool                            enable_unreal_extensions{};
-        SerializationFormat             format = SerializationFormat::Json; // will be manipulated in initialize
-        std::unordered_set<std::string> strip_commands{};
-        std::unordered_set<std::string> additional_clang_args{};
-        StablePath                      log{};
-        StablePath                      output_directory{};
-        std::string                       compile_commands{};
+        bool                               prefer_clang{};
+        bool                               sync_serialization{};
+        bool                               prefer_full_name_in_file_name{};
+        bool                               enable_unreal_extensions{};
+        SerializationFormat                format = SerializationFormat::Json; // will be manipulated in initialize
+        std::unordered_set<std::string>    strip_commands{};
+        std::unordered_set<std::string>    additional_clang_args{};
+        StablePath                         log{};
+        StablePath                         output_directory{};
+        std::string                        compile_commands{};
         std::filesystem::path::string_type file_delimiter{std::filesystem::path{"UnrealEngine"}.native()};
-        std::string                       version{};
-        std::atomic_flag                initialized{};
+        std::string                        version{};
+        std::atomic_flag                   initialized{};
+        Mode                               mode{};
+        quill::LogLevel                    log_level{};
 
-        inline static const std::map<std::string, SerializationFormat> string_format_map = {{"json", SerializationFormat::Json},
-                                                                                            {"binary", SerializationFormat::Binary}};
+        inline static const std::map<std::string, SerializationFormat> string_format_map = {
+            {"json", SerializationFormat::Json},
+            {"binary", SerializationFormat::Binary}
+        };
 
-        inline static const std::map<SerializationFormat, std::string> format_string_map = {{SerializationFormat::Json, "json"},
-                                                                                            {SerializationFormat::Binary, "binary"}};
+        inline static const std::map<SerializationFormat, std::string> format_string_map = {
+            {SerializationFormat::Json, "json"},
+            {SerializationFormat::Binary, "binary"}
+        };
+
+        inline static const std::map<std::string, quill::LogLevel> string_loglevel_map = {
+            { "info", quill::LogLevel::Info },
+            { "debug", quill::LogLevel::Debug },
+            { "error", quill::LogLevel::Error },
+            { "warn", quill::LogLevel::Warning },
+            { "trace", quill::LogLevel::TraceL1 },
+            { "disabled", quill::LogLevel::None }
+        };
+
+        inline static const std::map<quill::LogLevel, std::string> log_level_map = {
+            { quill::LogLevel::Info, "info" },
+            { quill::LogLevel::Debug, "debug" },
+            { quill::LogLevel::Error, "error" },
+            { quill::LogLevel::Warning, "warn" },
+            { quill::LogLevel::TraceL1, "trace" },
+            { quill::LogLevel::None, "disabled" }
+        };
     };
 
     /**
@@ -256,7 +286,7 @@ namespace UEMeta {
             return fmtquill::format(fmtquill::runtime(fmtquill::string_view{std::forward<Format>(format)}), std::forward<Args>(args)...);
         }
     } // namespace Logging
-} // namespace UEMeta
+}     // namespace UEMeta
 
 /**
  * @brief Emits an informational log message through the UEMeta logger.

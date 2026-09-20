@@ -16,6 +16,7 @@ namespace UEMeta {
         FunctionDeclWrapper(const T* decl, const std::shared_ptr<google::protobuf::Arena>& arena) : DeclWrapper<T>(decl, arena) {}
 
         using Super = DeclWrapper<T>;
+        using IntermediateRepresentation = ParserTypes::TLFreeFunctionDeclaration*;
 
         [[nodiscard]] ParserTypes::TLFreeFunctionDeclaration* toIntermediateRepresentation() const {
             const auto        out_msg = google::protobuf::Arena::Create<ParserTypes::TLFreeFunctionDeclaration>(Super::arena.get());
@@ -33,6 +34,10 @@ namespace UEMeta {
 
         static void toFile(const ParserTypes::TLFreeFunctionDeclaration* ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
             Detail::DeclWrapperStatics::saveToFile(ir, arena);
+        }
+
+        static void toString(const IntermediateRepresentation& ir, std::string& out) {
+            Detail::DeclWrapperStatics::saveToString(ir, out);
         }
 
     protected:

@@ -13,44 +13,44 @@
 #include "quill/sinks/FileSink.h"
 
 constexpr auto COMPILE_COMMANDS_HELP = "Path to compile_commands.json, or a JSON string representing the "
-                                       "compile_commands.json.";
+    "compile_commands.json.";
 
 constexpr auto PREFER_CLANG_HELP = "Use clang-style arguments with the in-process Clang driver.\n"
-                                   "By default, compile_commands uses clang-cl's MSVC-style arguments.";
+    "By default, compile_commands uses clang-cl's MSVC-style arguments.";
 
 constexpr auto STRIP_COMMANDS_HELP = "List of compile commands to ignore/strip from compile_commands.\n"
-                                     "PCH related arguments are stripped out by necessity.\n"
-                                     "For compiler arguments that have arguments themselves, you can append '{num_args}' "
-                                     "to the argument to also strip out the next num_args tokens. So, '/I{1}' would strip "
-                                     "out any instances of the /I argument followed by the token immediately after.\n"
-                                     "Argument stripping happens before additional_clang_args are appended.";
+    "PCH related arguments are stripped out by necessity.\n"
+    "For compiler arguments that have arguments themselves, you can append '{num_args}' "
+    "to the argument to also strip out the next num_args tokens. So, '/I{1}' would strip "
+    "out any instances of the /I argument followed by the token immediately after.\n"
+    "Argument stripping happens before additional_clang_args are appended.";
 
 constexpr auto ADDITIONAL_CLANG_ARGS_HELP = "List of additional clang args to force into the command list passed to the "
-                                            "in-process Clang driver.\n"
-                                            "-mwaitpkg and -fno-access-control are always added, with /clang: prefixes "
-                                            "in clang-cl mode.";
+    "in-process Clang driver.\n"
+    "-mwaitpkg and -fno-access-control are always added, with /clang: prefixes "
+    "in clang-cl mode.";
 
 constexpr auto LOG_HELP = "Path to log file.\nIf empty, no logs will be saved.\nIf given, it should be relative to the "
-                          "directory of parser.exe, or absolute.";
+    "directory of parser.exe, or absolute.";
 
 constexpr auto PATH_BEGIN_HELP = "If given, all file paths in the generated files start at a path_begin item rather "
-                                 "than the file system root.\nThis is useful for stripping PII and eliminating parts of "
-                                 "the path string that aren't needed.\nIf a given path doesn't have a substring in the "
-                                 "path_begin list, then the whole, absolute path is output.";
+    "than the file system root.\nThis is useful for stripping PII and eliminating parts of "
+    "the path string that aren't needed.\nIf a given path doesn't have a substring in the "
+    "path_begin list, then the whole, absolute path is output.";
 
 constexpr auto OUTPUT_DIRECTORY_HELP = "The path to the directory to save generated files in.\nDefaults to Output.";
 
 constexpr auto FORMAT_HELP = "The format of the generated files.\nIf 'binary', then the data will be serialized "
-                             "according to protobuf's default implementation.\n\tThis is the smallest and fastest format "
-                             "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
-                             "\n\tGood for debugging.";
+    "according to protobuf's default implementation.\n\tThis is the smallest and fastest format "
+    "to parse to and from.\nIf 'json', then the data will be serialized as human-readable JSON."
+    "\n\tGood for debugging.";
 
 constexpr auto SYNC_HELP = "When passed, a declaration is saved to a file before moving on to the next file. "
-                           "This can alleviate memory usage issues, but incurs a performance/time-to-finish penalty.";
+    "This can alleviate memory usage issues, but incurs a performance/time-to-finish penalty.";
 
 constexpr auto PREFER_FULL_NAME_HELP = "By default, the hash of the fully qualified name of a declaration is inserted into"
-                                       " the serialized file name. Specifying this make the fully qualified name of the"
-                                       " declaration appear in the file name, instead of its hash.";
+    " the serialized file name. Specifying this make the fully qualified name of the"
+    " declaration appear in the file name, instead of its hash.";
 
 constexpr auto ENABLE_UNREAL_EXTENSIONS_HELP = "Enable Unreal Engine-specific parsing extensions.";
 
@@ -105,6 +105,16 @@ bool UEMeta::Config::syncSerialization() const {
 UEMeta::Config::SerializationFormat UEMeta::Config::getFormat() const {
     assertInitialized();
     return format;
+}
+
+UEMeta::Config::Mode UEMeta::Config::getMode() const {
+    assertInitialized();
+    return mode;
+}
+
+quill::LogLevel UEMeta::Config::getLogLevel() const {
+    assertInitialized();
+    return log_level;
 }
 
 bool UEMeta::Config::unrealExtensionsEnabled() const {
@@ -166,20 +176,32 @@ int UEMeta::Config::initialize(int argc, char** argv) {
         return 0;
     }
 
-    CLI::App app{"Parses a translation unit with clang tools and outputs a flattened AST of top level declarations.", "UEMeta"};
-    app.allow_windows_style_options();
-    argv = app.ensure_utf8(argv);
+    CLI::App main_app{"Parses C++ code into a mergeable intermediate representation.", "UEMeta"};
+    main_app.allow_windows_style_options();
+    argv = main_app.ensure_utf8(argv);
+
+    CLI::App* parser = main_app.add_subcommand("parse", "Start the parser as a Clang tool over a translation unit.");
+    CLI::App* repl   = main_app.add_subcommand("repl", "Parse strings of C++ code in an interactive command line.");
+    main_app.require_subcommand(1);
+
+    // use locals to save per-subcommand common options and resolve them after the fact, since the CLI library doesn't.
+    struct ModeOptions {
+        StablePath          output_directory{};
+        SerializationFormat format{};
+        quill::LogLevel      log_level{};
+    } parser_options, repl_options;
 
     const auto try_cli_parse = [&] {
         try {
-            app.parse(argc, argv);
+            main_app.parse(argc, argv);
+            cfg.mode = parser->parsed() ? Mode::Parser : Mode::Repl;
         }
         catch (const CLI::CallForHelp& ex) {
-            app.exit(ex);
+            main_app.exit(ex);
             return 0;
         }
         catch (const CLI::ParseError& ex) {
-            return app.exit(ex);
+            return main_app.exit(ex);
         }
         catch (const std::exception& ex) {
             UEM_ERROR("CLI parse error: {}", ex.what());
@@ -192,26 +214,53 @@ int UEMeta::Config::initialize(int argc, char** argv) {
         return 0;
     };
 
-    app.add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)->default_val(false);
-    app.add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
-    app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
-    app.add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)->default_val(false);
-    app.add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)->required()->transform(Config::loadCompileCommandsString);
-    app.add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
-    app.add_option("--clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
-    app.add_option("-l,--log", cfg.log, LOG_HELP);
-    app.add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)->default_str("UnrealEngine");
-    app.add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP)->default_val(StablePath::currentProgramDirectory() / "Output");
-    app.add_option("-f,--format", cfg.format, FORMAT_HELP)
+    parser->add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)->default_val(false);
+    parser->add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
+    parser->add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
+    parser->add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)->default_val(false);
+    // todo direct file support
+    parser->add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
+        ->required()
+        ->transform(loadCompileCommandsString);
+    parser->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
+    parser->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
+    parser->add_option("-l,--log", cfg.log, LOG_HELP);
+    parser->add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)->default_str("UnrealEngine");
+    parser->add_option("--output", parser_options.output_directory, OUTPUT_DIRECTORY_HELP)
+        ->default_val(StablePath::currentProgramDirectory() / "Output");
+    parser->add_option("-f,--format", parser_options.format, FORMAT_HELP)
         ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
         ->default_val(UEM_DEFAULT_FORMAT);
+    parser->add_option("--log-level", parser_options.log_level)
+        ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
+        ->default_val(quill::LogLevel::Info);
+
+    CLI::Option* output_opt = repl->add_option("--output", repl_options.output_directory);
+    repl->add_option("--format", repl_options.format)
+        ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
+        ->default_val(SerializationFormat::Binary)
+        ->needs(output_opt);
+    repl->add_option("--clang-args", cfg.additional_clang_args)->delimiter(','); // note- must not be CL style args
+    repl->add_option("--log-level", repl_options.log_level)
+        ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
+        ->default_val(quill::LogLevel::Error);
+    repl->add_option("--version", cfg.version)
+        ->default_val("repl");
 
     if (const auto result = try_cli_parse())
         return result;
 
-    cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
-    cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
-    cfg.version = cfg.output_directory.getUnderlyingPath().filename().string();
+    auto& mode_options   = cfg.mode == Mode::Parser ? parser_options : repl_options;
+    cfg.output_directory = std::move(mode_options.output_directory);
+    cfg.format           = mode_options.format;
+    cfg.log_level        = mode_options.log_level;
+
+    if (cfg.mode == Mode::Parser) {
+        cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
+        cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+        cfg.version = cfg.output_directory.getUnderlyingPath().filename().string();
+    }
+
     cfg.initialized.test_and_set();
     return 0;
 }
@@ -273,7 +322,7 @@ int UEMeta::Logger::initialize() {
                 return -1;
             }
             logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink), std::move(file_sink)});
-            logger.logger->set_log_level(quill::LogLevel::TraceL1);
+            logger.logger->set_log_level(Config::getConfig().getLogLevel());
             return 0;
         }
 
@@ -283,7 +332,7 @@ int UEMeta::Logger::initialize() {
         }
 
         logger.logger = quill::Frontend::create_or_get_logger("main", {std::move(console_sink)});
-        logger.logger->set_log_level(quill::LogLevel::TraceL1);
+        logger.logger->set_log_level(Config::getConfig().getLogLevel());
 
         if (!logger.logger) {
             UEM_ERROR("Failed to initialize logger.");

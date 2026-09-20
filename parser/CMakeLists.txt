@@ -544,7 +544,8 @@ add_library(uemeta-parser-core STATIC
         src/clang/wrappers/DeclWrapper.cpp
         src/clang/MetaPreprocessor.cpp)
 
-add_executable(parser src/main.cpp)
+add_executable(parser src/main.cpp
+        src/Repl.cpp)
 target_link_libraries(parser PRIVATE uemeta-parser-core)
 
 set_target_properties(parser uemeta-parser-core PROPERTIES
@@ -640,10 +641,6 @@ add_custom_command(TARGET parser POST_BUILD
     VERBATIM
 )
 
-set(UEMETA_CLANG_CL_CONFIG_DEFINITION "$<IF:$<CONFIG:Debug>,/DDEBUG,/DNDEBUG>")
-set(UEMETA_CLANG_CL_CONFIG_OPTIMIZATION "$<IF:$<CONFIG:Debug>,/Od,/O2>")
-set(UEMETA_CLANG_CL_CONFIG_INLINE_EXPANSION "$<IF:$<CONFIG:Debug>,/Ob0,/Ob2>")
-
 if(UEMETA_ENABLE_TESTING)
     enable_testing()
     include(GoogleTest)
@@ -671,55 +668,3 @@ if(UEMETA_ENABLE_TESTING)
 
     add_subdirectory(testing)
 endif()
-
-set(UEMETA_PLAYGROUND_SOURCE "${PROJECT_SOURCE_DIR}/playground/pg.cpp")
-set(UEMETA_PLAYGROUND_OUTPUT_DIR "${PARSER_BUNDLE_DIR}/playground")
-set(UEMETA_PLAYGROUND_COMPILE_COMMANDS "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/playground_compile_commands.json")
-set(UEMETA_PLAYGROUND_LAUNCHER "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/RunPlayground.cmake")
-
-file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}" UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON)
-file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_SOURCE}" UEMETA_PLAYGROUND_SOURCE_JSON)
-file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_OUTPUT_DIR}" UEMETA_PLAYGROUND_OUTPUT_DIR_JSON)
-file(TO_CMAKE_PATH "${UEMETA_PLAYGROUND_COMPILE_COMMANDS}" UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON)
-
-string(CONCAT UEMETA_PLAYGROUND_COMPILE_COMMANDS_CONTENT
-    "[\n"
-    "  {\n"
-    "    \"directory\": \"${UEMETA_PLAYGROUND_WORKING_DIRECTORY_JSON}\",\n"
-    "    \"arguments\": [\n"
-    "      \"clang-cl${CMAKE_EXECUTABLE_SUFFIX}\",\n"
-    "      \"/nologo\", \"/TP\", \"/std:c++latest\", \"/EHsc\", \"/Zc:preprocessor\", \"/bigobj\",\n"
-    "      \"/DWIN32\", \"/D_WINDOWS\", \"${UEMETA_CLANG_CL_CONFIG_DEFINITION}\", \"/MT\",\n"
-    "      \"${UEMETA_CLANG_CL_CONFIG_OPTIMIZATION}\", \"${UEMETA_CLANG_CL_CONFIG_INLINE_EXPANSION}\", \"/c\",\n"
-    "      \"${UEMETA_PLAYGROUND_SOURCE_JSON}\"\n"
-    "    ],\n"
-    "    \"file\": \"${UEMETA_PLAYGROUND_SOURCE_JSON}\"\n"
-    "  }\n"
-    "]\n"
-)
-file(GENERATE
-    OUTPUT "${UEMETA_PLAYGROUND_COMPILE_COMMANDS}"
-    CONTENT "${UEMETA_PLAYGROUND_COMPILE_COMMANDS_CONTENT}"
-)
-string(CONCAT UEMETA_PLAYGROUND_LAUNCHER_CONTENT
-    "file(MAKE_DIRECTORY [===[${UEMETA_PLAYGROUND_OUTPUT_DIR_JSON}]===])\n"
-    "execute_process(\n"
-    "    COMMAND \"$<TARGET_FILE:parser>\"\n"
-    "        --compile-commands [===[${UEMETA_PLAYGROUND_COMPILE_COMMANDS_JSON}]===]\n"
-    "        --output [===[${UEMETA_PLAYGROUND_OUTPUT_DIR_JSON}]===]\n"
-    "        --format json\n"
-    "    RESULT_VARIABLE UEMETA_PLAYGROUND_RESULT\n"
-    ")\n"
-    "if(NOT UEMETA_PLAYGROUND_RESULT EQUAL 0)\n"
-    "    message(FATAL_ERROR \"playground parser run failed with exit code \${UEMETA_PLAYGROUND_RESULT}\")\n"
-    "endif()\n"
-)
-file(GENERATE OUTPUT "${UEMETA_PLAYGROUND_LAUNCHER}" CONTENT "${UEMETA_PLAYGROUND_LAUNCHER_CONTENT}")
-
-add_custom_target(playground
-    COMMAND "${CMAKE_COMMAND}" -P "${UEMETA_PLAYGROUND_LAUNCHER}"
-    DEPENDS parser "${UEMETA_PLAYGROUND_SOURCE}"
-    COMMENT "Running parser over playground/pg.cpp"
-    USES_TERMINAL
-    VERBATIM
-)

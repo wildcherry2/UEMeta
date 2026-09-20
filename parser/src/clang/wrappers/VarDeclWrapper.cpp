@@ -5,7 +5,7 @@
 #include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/DeclTemplate.h"
 
-ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediateSerialization() const {
+ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediateRepresentation() const {
     const auto        out_msg = google::protobuf::Arena::Create<ParserTypes::TLGlobalVariableDeclaration>(arena.get());
     const std::string fqn     = computeFQN();
 
@@ -32,10 +32,14 @@ ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediate
     return out_msg;
 }
 
-void UEMeta::VarDeclWrapper::toFile() const { return toFile(toIntermediateSerialization(), arena); }
+void UEMeta::VarDeclWrapper::toFile() const { return toFile(toIntermediateRepresentation(), arena); }
 
 void UEMeta::VarDeclWrapper::toFile(const ParserTypes::TLGlobalVariableDeclaration* ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     saveToFile(ir, arena);
+}
+
+void UEMeta::VarDeclWrapper::toString(const ParserTypes::TLGlobalVariableDeclaration* ir, std::string& out) {
+    saveToString(ir, out);
 }
 
 std::string UEMeta::VarDeclWrapper::computeFQN() const {

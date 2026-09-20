@@ -84,6 +84,17 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
 
 void UEMeta::EnumDeclWrapper::toFile() const { return toFile(toIntermediateRepresentation(), arena); }
 
+void UEMeta::EnumDeclWrapper::toString(const IntermediateRepresentation& ir, std::string& out) {
+    if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
+        for (const auto* p_var : *vec) {
+            saveToString(p_var, out);
+        }
+    }
+    else {
+        saveToString(std::get<ParserTypes::TLEnumDeclaration*>(ir), out);
+    }
+}
+
 void UEMeta::EnumDeclWrapper::toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
         for (const auto* p_var : *vec) {

@@ -3,6 +3,8 @@
 
 #include <exception>
 
+#include "UEMeta/Repl.hpp"
+
 /// @brief Initializes logging/configuration, builds the Clang tool, and runs the AST extraction pass.
 int main(int argc, char** argv) {
     try {
@@ -14,26 +16,31 @@ int main(int argc, char** argv) {
             return log_init_result;
         }
 
-        UEM_INFO("Using config:\n{}", UEMeta::Config::getConfig().toString());
+        if (UEMeta::Config::getConfig().getMode() == UEMeta::Config::Mode::Parser) {
+            UEM_INFO("Using config:\n{}", UEMeta::Config::getConfig().toString());
 
 #if defined(DEBUG)
-        UEM_INFO("Using debug build of parser! Default output is JSON, and files will have their FQNs rather than FQN hashes!");
+            UEM_INFO("Using debug build of parser! Default output is JSON, and files will have their FQNs rather than FQN hashes!");
 #endif
 
-        UEMeta::MetaTool tool;
+            UEMeta::MetaTool tool;
 
-        switch (tool.runClangTool()) {
-            case 0: {
-                UEM_INFO("Successfully ran tool!");
-                return 0;
+            switch (tool.runClangTool()) {
+                case 0: {
+                    UEM_INFO("Successfully ran tool!");
+                    return 0;
+                }
+                case 1: {
+                    UEM_ERROR("Failed to run tool!");
+                    return -1;
+                }
+                default: {
+                    UEM_WARN("Ran tool on subset of files due to missing compile commands!");
+                }
             }
-            case 1: {
-                UEM_ERROR("Failed to run tool!");
-                return -1;
-            }
-            default: {
-                UEM_WARN("Ran tool on subset of files due to missing compile commands!");
-            }
+        }
+        else {
+            UEMeta::Repl::startLoop();
         }
     }
     catch (std::exception& ex) {

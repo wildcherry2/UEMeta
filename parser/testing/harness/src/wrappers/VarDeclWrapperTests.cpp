@@ -50,7 +50,7 @@ namespace {
         }
 
         VariableMessage* serialize(const clang::VarDecl* declaration) const {
-            return VarDeclWrapper{declaration, arena}.toIntermediateSerialization();
+            return VarDeclWrapper{declaration, arena}.toIntermediateRepresentation();
         }
 
         static auto identity(const VariableMessage* message) {
@@ -649,7 +649,7 @@ namespace {
         const auto           before    = std::distance(std::filesystem::directory_iterator{directory}, std::filesystem::directory_iterator{});
         const VarDeclWrapper wrapper{variables[0], arena};
         using InvalidEnum = UEMeta::DeclException<clang::EnumDecl>;
-        EXPECT_THROW((void)wrapper.toIntermediateSerialization(), InvalidEnum);
+        EXPECT_THROW((void)wrapper.toIntermediateRepresentation(), InvalidEnum);
         EXPECT_THROW(wrapper.toFile(), InvalidEnum);
         EXPECT_EQ(std::distance(std::filesystem::directory_iterator{directory}, std::filesystem::directory_iterator{}), before);
     }

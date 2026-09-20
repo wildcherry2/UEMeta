@@ -34,6 +34,26 @@ static bool isImplicitSpec(const T* decl) {
     return decl->getTemplateSpecializationKind() == clang::TSK_ImplicitInstantiation;
 }
 
+template <typename T>
+concept TopLevelWrapper = std::same_as<UEMeta::EnumDeclWrapper, T>
+                          || std::same_as<UEMeta::FunctionDeclWrapper<>, T>
+                          || std::same_as<UEMeta::RecordDeclWrapper, T>
+                          || std::same_as<UEMeta::VarDeclWrapper, T>;
+
+template <TopLevelWrapper T>
+static void serialize(const typename T::WrappedDeclType* decl) {
+    const auto arena = std::make_shared<google::protobuf::Arena>();
+    auto       ir    = T(decl, arena).toIntermediateRepresentation();
+    if (UEMeta::Config::getConfig().getMode() == UEMeta::Config::Mode::Repl) {
+        std::string out;
+        T::toString(ir, out);
+        std::cout << out << std::endl;
+    }
+    if (!UEMeta::Config::getConfig().getOutputDirectory().isEmptyPath()) {
+        T::toFile(std::move(ir), arena);
+    }
+}
+
 void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) {
     if (!decl)
         throw DeclException(decl, "Can't addDeclIdentity with null Decl pointer!");
@@ -173,8 +193,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
             return;
         }
 
-        const auto arena = std::make_shared<google::protobuf::Arena>();
-        EnumDeclWrapper(decl, arena).toFile();
+        return serialize<EnumDeclWrapper>(decl);
     }
     catch ([[maybe_unused]] DeclException<clang::EnumDecl>& de) {
         throw;
@@ -204,9 +223,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl* decl) {
         if (isDeclInFunctionOrMethod(decl))
             return;
 
-        // Extern variables remain ordinary variable metadata, not forward occurrences.
-        const auto arena = std::make_shared<google::protobuf::Arena>();
-        VarDeclWrapper(decl, arena).toFile();
+        return serialize<VarDeclWrapper>(decl);
     }
     catch ([[maybe_unused]] DeclException<clang::VarDecl>& de) {
         throw;
@@ -245,8 +262,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
             return;
         }
 
-        const auto arena = std::make_shared<google::protobuf::Arena>();
-        RecordDeclWrapper(decl, arena).toFile();
+        return serialize<RecordDeclWrapper>(decl);
     }
     catch ([[maybe_unused]] DeclException<clang::RecordDecl>& de) {
         throw;
@@ -282,8 +298,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
             }
         }
 
-        const auto arena = std::make_shared<google::protobuf::Arena>();
-        FunctionDeclWrapper(decl, arena).toFile();
+        return serialize<FunctionDeclWrapper<>>(decl);
     }
     catch ([[maybe_unused]] DeclException<clang::FunctionDecl>& de) {
         throw;
@@ -304,7 +319,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::NamespaceDecl* decl) {
             return;
         if (const std::string_view package = ReflectionDb::registerReflectable(decl); package.empty()) return;
 
-        const auto arena = std::make_shared<google::protobuf::Arena>();
+        const auto  arena     = std::make_shared<google::protobuf::Arena>();
         const auto* enum_decl = llvm::dyn_cast_or_null<clang::EnumDecl>(*decl->decls_begin());
         visited_decls.insert(enum_decl);
         if (!enum_decl) throw DeclException(decl, "Namespace picked up as reflectable, but it doesn't have an EnumDecl as the only child decl!");
@@ -349,8 +364,8 @@ void UEMeta::DeclDb::addDeclarationAsVisited(clang::Decl* decl) {
 void UEMeta::DeclDb::awaitPendingSerializations() { return Detail::DeclWrapperStatics::awaitPendingSerializations(); }
 
 void UEMeta::DeclDb::serializeForwardDeclarations() {
-    google::protobuf::Arena arena;
-    auto*                   p_msg = google::protobuf::Arena::Create<ParserTypes::ForwardDeclarationList>(&arena);
+    const auto arena = std::make_shared<google::protobuf::Arena>();
+    auto*      p_msg = google::protobuf::Arena::Create<ParserTypes::ForwardDeclarationList>(arena.get());
     for (auto& decl_list_pair : decl_to_forward_decl_occurrence_map) {
         if (auto hash = decl_to_identity_map.find(decl_list_pair.first); hash != decl_to_identity_map.end()) {
             auto* p_list = p_msg->add_forward_declarations();
@@ -367,45 +382,23 @@ void UEMeta::DeclDb::serializeForwardDeclarations() {
         }
     }
 
-    const auto&                                    cfg       = Config::getConfig();
-    const auto                                     is_json   = cfg.getFormat() == Config::SerializationFormat::Json;
-    const auto                                     open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
-    constexpr google::protobuf::json::PrintOptions json_options{
-        .add_whitespace                       = true,
-        .always_print_fields_with_no_presence = true
-    };
-    const auto&   out_path = cfg.getOutputDirectory().getUnderlyingPath() / (is_json ? "fwd.decljson" : "fwd.declbin");
-    // todo can move this part and below to its own function shared with DeclWrapperStatics
-    std::ofstream out_file(out_path, open_mode);
-    if (!out_file) {
-        throw std::runtime_error("Failed to open file for writing!");
+    if (Config::getConfig().getMode() == Config::Mode::Repl) {
+        std::string out;
+        Detail::DeclWrapperStatics::saveToString(p_msg, out);
+        std::cout << out << std::endl;
     }
 
-    if (is_json) {
-        thread_local std::string buffer{};
-        buffer.clear();
-        if (google::protobuf::util::MessageToJsonString(*p_msg, &buffer, json_options).ok()) {
-            out_file << buffer;
-        }
-        else {
-            UEM_ERROR("Failed to write to file: {}", out_path.string());
-        }
+    if (!Config::getConfig().getOutputDirectory().isEmptyPath()) {
+        Detail::DeclWrapperStatics::saveToFile(p_msg, arena);
     }
-    else if (!p_msg->SerializeToOstream(&out_file)) {
-        UEM_ERROR("Failed to write to file: {}", out_path.string());
-    }
-
-    out_file.close();
 }
 
-#ifdef UEM_TESTING
 void UEMeta::DeclDb::reset() {
     decl_to_identity_map.clear();
     decl_to_forward_decl_occurrence_map.clear();
     identity_to_decl_map.clear();
     visited_decls.clear();
 }
-#endif
 
 bool isDeclInFunctionOrMethod(const clang::Decl* decl) {
     if (!decl)

@@ -53,7 +53,7 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::VarDecl* decl);
         static void serializeIfNeeded(clang::RecordDecl* decl);
         static void serializeIfNeeded(clang::FunctionDecl* decl);
-        static void serializeIfNeeded(clang::NamespaceDecl* decl);
+        static void serializeIfNeeded(clang::NamespaceDecl* decl); // for unreal extensions; effectively disabled in repl
 
         // Adds a forward occurrence keyed by the given record, enum or function definition.
         // Throws if for_decl is null, another declaration kind, or not a definition.
@@ -72,9 +72,7 @@ namespace UEMeta {
         // Serializes known forward declarations to a ForwardDeclarationList and saves it.
         static void serializeForwardDeclarations();
 
-#ifdef UEM_TESTING
         static void reset();
-#endif
     private:
         DeclDb() = default;
 

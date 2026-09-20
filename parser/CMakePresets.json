@@ -46,12 +46,6 @@
       }
     },
     {
-      "name": "playground",
-      "displayName": "Playground",
-      "inherits": "ninja-debug",
-      "binaryDir": "${sourceDir}/intermediate/build/playground"
-    },
-    {
       "name": "testing",
       "displayName": "Testing",
       "inherits": "ninja-release",
@@ -94,15 +88,6 @@
       "configurePreset": "ninja-release",
       "targets": [
         "parser"
-      ]
-    },
-    {
-      "name": "playground",
-      "displayName": "Playground",
-      "inherits": "ninja-debug",
-      "configurePreset": "playground",
-      "targets": [
-        "playground"
       ]
     },
     {

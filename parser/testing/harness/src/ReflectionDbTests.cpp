@@ -454,7 +454,8 @@ namespace {
     }
 
     TEST_F(ReflectionDbTest, MacroExpandedAnnotationsUseTheInvocationLocation) {
-        parse(R"cpp(
+        parse(
+            R"cpp(
             #define REFLECTED_RECORD(...) USTRUCT(__VA_ARGS__)
             #define REFLECTED_FIELD(...) UPROPERTY(__VA_ARGS__)
             #define DECLARE_RECORD(Name) struct Name {}
@@ -465,15 +466,14 @@ namespace {
             USTRUCT() DECLARE_RECORD(Expanded);
             struct Tail {};
         )cpp",
-              [](clang::ASTContext& context) {
-                  expectPackages(
-                      context, {{"Record", "DummyModule"}, {"Record::field", "DummyModule"}, {"Record::plain", ""}, {"Expanded", ""}, {"Tail", ""}});
-                  // A whole declaration expanded from one invocation has a zero-width
-                  // expansion range; ReflectionDb deliberately cannot associate it.
-              });
+            [](clang::ASTContext& context) {
+                expectPackages(
+                    context,
+                    {{"Record", "DummyModule"}, {"Record::field", "DummyModule"}, {"Record::plain", ""}, {"Expanded", "DummyModule"}, {"Tail", ""}});
+            });
     }
 
-    TEST_F(ReflectionDbTest, IgnoredMacroDeclarationsDoNotDonateAnnotationsToTheFollowingDeclaration) {
+    TEST_F(ReflectionDbTest, MacroGeneratedDeclarationsAreReflectedWithoutDonatingAnnotationsToTheFollowingDeclaration) {
         parse(R"cpp(
             #define DECLARE_RECORD(Name) struct Name {}
             #define DECLARE_ENUM(Name) enum class Name { Value }
@@ -491,15 +491,95 @@ namespace {
             };
         )cpp",
               [](clang::ASTContext& context) {
-                  expectPackages(context, {{"GeneratedRecord", ""},
+                  auto* generated = find<clang::RecordDecl>(context, "GeneratedRecord");
+                  ASSERT_NE(generated, nullptr);
+                  const auto& source = context.getSourceManager();
+                  ASSERT_TRUE(generated->getBeginLoc().isMacroID());
+                  ASSERT_EQ(source.getDecomposedExpansionLoc(generated->getBeginLoc()),
+                            source.getDecomposedExpansionLoc(generated->getBraceRange().getBegin()));
+                  expectPackages(context, {{"GeneratedRecord", "DummyModule"},
                                            {"PlainRecord", ""},
-                                           {"GeneratedEnum", ""},
+                                           {"GeneratedEnum", "DummyModule"},
                                            {"PlainEnum", ""},
                                            {"Owner", ""},
-                                           {"Owner::generatedMethod", ""},
+                                           {"Owner::generatedMethod", "DummyModule"},
                                            {"Owner::plainMethod", ""},
-                                           {"Owner::generatedField", ""},
+                                           {"Owner::generatedField", "DummyModule"},
                                            {"Owner::plainField", ""}});
+              });
+    }
+
+    TEST_F(ReflectionDbTest, OneAnnotationDoesNotReflectEveryDeclarationInTheSameMacroExpansion) {
+        parse(R"cpp(
+            #define DECLARE_RECORDS() struct First { int field; void method(); struct Nested {}; }; struct Second {};
+            #define DECLARE_ENUMS() enum class FirstEnum { Value }; enum class SecondEnum { Value };
+            #define DECLARE_METHODS() void firstMethod(); void secondMethod();
+            #define DECLARE_FIELDS() int firstField; int secondField;
+            USTRUCT() DECLARE_RECORDS()
+            struct Tail {};
+            UENUM() DECLARE_ENUMS()
+            struct Owner {
+                UFUNCTION() DECLARE_METHODS()
+                UPROPERTY() DECLARE_FIELDS()
+            };
+        )cpp",
+              [](clang::ASTContext& context) {
+                  auto* first  = find<clang::RecordDecl>(context, "First");
+                  auto* second = find<clang::RecordDecl>(context, "Second");
+                  ASSERT_NE(first, nullptr);
+                  ASSERT_NE(second, nullptr);
+                  const auto& source = context.getSourceManager();
+                  ASSERT_EQ(source.getDecomposedExpansionLoc(first->getBeginLoc()), source.getDecomposedExpansionLoc(second->getBeginLoc()));
+                  expectPackages(context, {{"First", "DummyModule"},
+                                           {"First::field", ""},
+                                           {"First::method", ""},
+                                           {"First::Nested", ""},
+                                           {"Second", ""},
+                                           {"Tail", ""},
+                                           {"FirstEnum", "DummyModule"},
+                                           {"SecondEnum", ""},
+                                           {"Owner", ""},
+                                           {"Owner::firstMethod", "DummyModule"},
+                                           {"Owner::secondMethod", ""},
+                                           {"Owner::firstField", "DummyModule"},
+                                           {"Owner::secondField", ""}});
+                  // Revisiting the first declaration still returns its cached result.
+                  EXPECT_EQ(ReflectionDb::registerReflectable(first), "DummyModule");
+              });
+    }
+
+    TEST_F(ReflectionDbTest, MacroGeneratedDeclarationsWithoutAnnotationsRemainUnreflected) {
+        parse(R"cpp(
+            #define DECLARE_RECORD(Name) struct Name {}
+            #define DECLARE_ENUM(Name) enum class Name { Value }
+            #define DECLARE_METHOD(Name) void Name()
+            #define DECLARE_FIELD(Name) int Name
+            DECLARE_RECORD(Record);
+            DECLARE_ENUM(Enum);
+            struct Owner {
+                DECLARE_METHOD(method);
+                DECLARE_FIELD(field);
+            };
+        )cpp",
+              [](clang::ASTContext& context) {
+                  expectPackages(context, {{"Record", ""}, {"Enum", ""}, {"Owner", ""}, {"Owner::method", ""}, {"Owner::field", ""}});
+              });
+    }
+
+    TEST_F(ReflectionDbTest, MacroGeneratedDeclarationsStillRejectIncompatibleAnnotations) {
+        parse(R"cpp(
+            #define DECLARE_RECORD(Name) struct Name {}
+            UENUM() DECLARE_RECORD(Record);
+            struct Tail {};
+        )cpp",
+              [](clang::ASTContext& context) {
+                  auto* record = find<clang::RecordDecl>(context, "Record");
+                  ASSERT_NE(record, nullptr);
+                  EXPECT_THROW((void)ReflectionDb::registerReflectable(record), UEMeta::DeclException<>);
+                  // The same declaration can be retried after an exception; it must not
+                  // be confused with a different declaration at the same expansion offset.
+                  EXPECT_THROW((void)ReflectionDb::registerReflectable(record), UEMeta::DeclException<>);
+                  expectPackages(context, {{"Tail", ""}});
               });
     }
 
@@ -651,7 +731,7 @@ namespace {
         });
     }
 
-    TEST_F(ReflectionDbTest, InvalidDegenerateAndCrossFileDeclarationRangesAreNotReflected) {
+    TEST_F(ReflectionDbTest, InvalidAndCrossFileDeclarationRangesAreNotReflected) {
         parse("USTRUCT() struct Target {};", [](clang::ASTContext& context) {
             auto* target = find<clang::RecordDecl>(context, "Target");
             ASSERT_NE(target, nullptr);
@@ -662,9 +742,6 @@ namespace {
             ReflectionDb::reset();
             target->setLocStart(begin);
             target->setBraceRange({{}, braces.getEnd()});
-            EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
-            ReflectionDb::reset();
-            target->setBraceRange({begin, braces.getEnd()});
             EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
             ReflectionDb::reset();
             auto&      source     = context.getSourceManager();

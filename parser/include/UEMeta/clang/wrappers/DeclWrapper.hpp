@@ -25,11 +25,18 @@ namespace UEMeta {
             static uint64_t allocateDeclOccurrence();
             static void     awaitPendingSerializations();
 
-#ifdef UEM_TESTING
+            static void saveToFile(const ParserTypes::ForwardDeclarationList* fwd, const std::shared_ptr<google::protobuf::Arena>& arena) {
+                return saveToFile<ParserTypes::ForwardDeclarationList>(fwd, arena);
+            }
+
+            static void saveToString(const ParserTypes::ForwardDeclarationList* msg, std::string& out) {
+                return saveToString<ParserTypes::ForwardDeclarationList>(msg, out);
+            }
+
             static void resetDeclOccurrences();
-#endif
+
         protected:
-            template <TopLevelProto PT>
+            template <ProtoMessage PT>
             static void saveToFile(const PT* msg, const std::shared_ptr<google::protobuf::Arena>& arena) {
                 if (!msg)
                     throw std::invalid_argument("Failed to serialize because msg is null!");
@@ -39,23 +46,30 @@ namespace UEMeta {
                 static const auto&                                    cfg       = Config::getConfig();
                 static const auto                                     is_json   = cfg.getFormat() == Config::SerializationFormat::Json;
                 static const auto                                     open_mode = (is_json ? std::ios::out : std::ios::binary) | std::ios::trunc;
-                static constexpr google::protobuf::json::PrintOptions json_options{.add_whitespace                       = true,
-                                                                                   .always_print_fields_with_no_presence = true};
-                static const std::string_view                         type    = is_json ? "json" : "bin";
-                static const auto&                                    out_dir = cfg.getOutputDirectory().getUnderlyingPath();
+                static constexpr google::protobuf::json::PrintOptions json_options{
+                    .add_whitespace                       = true,
+                    .always_print_fields_with_no_presence = true
+                };
+                static const std::string_view type    = is_json ? "json" : "bin";
+                static const auto&            out_dir = cfg.getOutputDirectory().getUnderlyingPath();
 
                 auto serialize_fn = [msg, arena] {
                     std::filesystem::path                   out_file_path;
-                    const ParserTypes::DeclarationMetadata& metadata = msg->metadata();
-                    if (cfg.prefersFullNameInFileName()) {
-                        auto name = std::string_view{metadata.qualified_name()} | std::views::split(std::string_view{"::"}) |
-                                    std::views::join_with(std::string_view{"."}) | std::ranges::to<std::string>();
-                        out_file_path = out_dir / fmtquill::format("{}-{}.{}{}", name, metadata.occurrence_index().versions(0).value(),
-                                                                   UEMeta::TOP_LEVEL_EXT<PT>, type);
+                    if constexpr(TopLevelProto<PT>) {
+                        const ParserTypes::DeclarationMetadata& metadata = msg->metadata();
+                        if (cfg.prefersFullNameInFileName()) {
+                            auto name = std::string_view{metadata.qualified_name()} | std::views::split(std::string_view{"::"}) |
+                                        std::views::join_with(std::string_view{"."}) | std::ranges::to<std::string>();
+                            out_file_path = out_dir / fmtquill::format("{}-{}.{}{}", name, metadata.occurrence_index().versions(0).value(),
+                                                                       UEMeta::TOP_LEVEL_EXT<PT>, type);
+                        }
+                        else {
+                            out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(),
+                                                                       metadata.occurrence_index().versions(0).value(), UEMeta::TOP_LEVEL_EXT<PT>, type);
+                        }
                     }
-                    else {
-                        out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(),
-                                                                   metadata.occurrence_index().versions(0).value(), UEMeta::TOP_LEVEL_EXT<PT>, type);
+                    else if constexpr(std::same_as<PT, ParserTypes::ForwardDeclarationList>) {
+                        out_file_path = out_dir / (is_json ? "fwd.decljson" : "fwd.declbin");
                     }
 
                     std::ofstream out_file(out_file_path, open_mode);
@@ -91,12 +105,23 @@ namespace UEMeta {
                             serialize_fn();
                         }
                         catch (const std::exception& e) {
-                            UEM_ERROR("Failed to toIntermediateRepresentation declaration: {}", e.what());
+                            UEM_ERROR("Failed to serialize declaration: {}", e.what());
                         }
                         catch (...) {
-                            UEM_ERROR("Failed to toIntermediateRepresentation declaration with unknown exception!");
+                            UEM_ERROR("Failed to serialize declaration with unknown exception!");
                         }
                     });
+                }
+            }
+
+            template <ProtoMessage PT>
+            static void saveToString(const PT* msg, std::string& out) {
+                static constexpr google::protobuf::json::PrintOptions json_options{
+                    .add_whitespace                       = true,
+                    .always_print_fields_with_no_presence = true
+                };
+                if (!google::protobuf::util::MessageToJsonString(*msg, &out, json_options).ok()) {
+                    UEM_ERROR("Failed to convert serialized output to string!");
                 }
             }
 
@@ -107,12 +132,14 @@ namespace UEMeta {
 
     template <WrapableDecl T>
     class DeclWrapper : public Detail::DeclWrapperStatics {
+    public:
+        using WrappedDeclType = T;
     protected:
         // ReSharper disable once CppNonExplicitConvertingConstructor
         DeclWrapper(const T* decl, const std::shared_ptr<google::protobuf::Arena>& arena) : decl(decl), arena(arena) {}
 
         void putMetadata(ParserTypes::DeclarationMetadata* metadata, const bool has_identity, std::string_view fqn = "",
-                         const Hash& decl_id = {}) const {
+                         const Hash&                       decl_id                                                 = {}) const {
             const clang::SourceManager& source_manager = getASTContext().getSourceManager();
             setVersionedString(metadata->mutable_file_path(), source_manager.getFilename(source_manager.getExpansionLoc(decl->getLocation())));
             if (const clang::RawComment* comment = getASTContext().getRawCommentForAnyRedecl(decl)) {
@@ -155,9 +182,10 @@ namespace UEMeta {
         }
 
         void putTemplateDetails(
-            const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails* p_msg,
-            const clang::TemplateArgumentList* specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false},
-            std::vector<AnyString>* id_out_ptr = nullptr) const { // potential optimization: bool template param to prevent append_out calls
+            const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails*            p_msg,
+            const clang::TemplateArgumentList*  specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false},
+            std::vector<AnyString>*             id_out_ptr          = nullptr) const {
+            // potential optimization: bool template param to prevent append_out calls
             const auto append_out = [&](const AnyString& str) -> const AnyString& {
                 if (id_out_ptr) {
                     id_out_ptr->push_back(str);
@@ -185,14 +213,14 @@ namespace UEMeta {
 
             // recursively parses template params through any nested params
             const auto put_params = [&append_out, &put_generic_type_ref, id_out_ptr, this](this auto self, const clang::TemplateParameterList* params,
-                                                                                           auto* p_details_or_param) {
+                                                                                           auto*     p_details_or_param) {
                 if (params->empty())
                     return;
                 append_out(std::string_view{"<"});
 
                 for (const clang::NamedDecl* param : *params) {
                     ParserTypes::TemplateParameter* p_param = p_details_or_param->add_parameters();
-                    const std::string param_name            = param->getDeclName().isIdentifier() ? param->getName().str() : param->getNameAsString();
+                    const std::string param_name = param->getDeclName().isIdentifier() ? param->getName().str() : param->getNameAsString();
 
                     if (const auto* type_param = llvm::dyn_cast<clang::TemplateTypeParmDecl>(param)) {
                         p_param->set_kind(type_param->hasTypeConstraint() || type_param->wasDeclaredWithTypename()
@@ -226,8 +254,9 @@ namespace UEMeta {
                         }
                     }
                     else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
-                        p_param->set_kind(template_param->wasDeclaredWithTypename() ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
-                                                                                    : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
+                        p_param->set_kind(template_param->wasDeclaredWithTypename()
+                                              ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
+                                              : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                         put_generic_type_ref(param_name, p_param->mutable_type());
                         append_out(std::string_view{"typename"});
                         if (template_param->isParameterPack()) {
@@ -298,8 +327,8 @@ namespace UEMeta {
                 };
 
                 const auto put_specialization_argument = [&append_out, &classify_specialization_argument, &get_carried_generic, &print_argument,
-                                                          &put_generic_type_ref, id_out_ptr,
-                                                          this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
+                        &put_generic_type_ref, id_out_ptr,
+                        this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
                     if (argument.getKind() == clang::TemplateArgument::Null) {
                         throw DeclException(decl, "Encountered a null template specialization argument!");
                     }
@@ -462,7 +491,7 @@ namespace UEMeta {
         }
 
         void putTemplateRef(const clang::TemplateArgument& argument, ParserTypes::TypeRef* p_ref,
-                            std::vector<AnyString>* id_out_ptr = nullptr) const {
+                            std::vector<AnyString>*        id_out_ptr = nullptr) const {
             if (argument.getKind() != clang::TemplateArgument::Template && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
                 throw DeclException(decl, "Template argument is not a template name!");
             }
@@ -493,7 +522,7 @@ namespace UEMeta {
         }
 
         void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def,
-                            std::vector<AnyString>* id_out_ptr = nullptr) const {
+                            std::vector<AnyString>*        id_out_ptr = nullptr) const {
             ParserTypes::VersionedTypeRef_VersionItem* p_version = p_def->add_versions();
             p_version->add_source_versions(Config::getConfig().getVersion());
             ParserTypes::TypeRef* p_type_ref = p_version->mutable_value();

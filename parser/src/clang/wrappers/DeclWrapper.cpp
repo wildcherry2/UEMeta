@@ -9,8 +9,6 @@ uint64_t UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() {
 
 void UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations() { serialization_pool.wait(); }
 
-#ifdef UEM_TESTING
 void UEMeta::Detail::DeclWrapperStatics::resetDeclOccurrences() {
     value = 0;
 }
-#endif
