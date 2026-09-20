@@ -224,7 +224,6 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
     auto [end_file, end_offset]     = decl->getASTContext().getSourceManager().getDecomposedExpansionLoc(end);
 
     if (begin_file != end_file) return {};
-    if (begin_offset == end_offset) return {};
 
     // add this decl's source location and get the previous decl from the result
     const DeclWithSource* previous_decl = nullptr;
@@ -238,6 +237,10 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
                                                       DeclWithSource{.decl = decl, .begin_offset = begin_offset, .end_offset = end_offset}
                                                   }));
     }
+
+    // An entire declaration can expand at one location. It still separates
+    // surrounding declarations, even though its range cannot be reflected.
+    if (begin_offset == end_offset) return {};
 
     // Macro end offsets are exclusive: a macro may end exactly where the declaration begins.
     const ReflectionMacro* previous_macro = nullptr;
@@ -267,6 +270,7 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
 
 #ifdef UEM_TESTING
 void UEMeta::ReflectionDb::reset() {
+    decl_to_package_name_map.clear();
     file_to_reflection_macro_map.clear();
     file_to_decl_source_map.clear();
     file_to_reflected_package_map.clear();

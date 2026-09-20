@@ -66,6 +66,7 @@ namespace UEMeta {
 
 #ifdef UEM_TESTING
         void setFormatForTesting(SerializationFormat value) noexcept { format = value; }
+        void setUnrealExtensionsForTesting(bool value) noexcept { enable_unreal_extensions = value; }
 #endif
 
         /**
