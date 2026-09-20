@@ -218,7 +218,6 @@ int UEMeta::Config::initialize(int argc, char** argv) {
     parser->add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
     parser->add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
     parser->add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)->default_val(false);
-    // todo direct file support
     parser->add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
         ->required()
         ->transform(loadCompileCommandsString);

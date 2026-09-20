@@ -26,9 +26,9 @@ namespace UEMeta {
      */
     class Config {
     public:
-        enum class SerializationFormat { Json, Binary };
+        enum class SerializationFormat : uint8_t { Json, Binary };
 
-        enum class Mode { Parser, Repl };
+        enum class Mode : uint8_t { Parser, Repl };
 
         /**
          * @brief Returns the normalized compile_commands.json content.
@@ -171,6 +171,8 @@ namespace UEMeta {
         bool                               prefer_full_name_in_file_name{};
         bool                               enable_unreal_extensions{};
         SerializationFormat                format = SerializationFormat::Json; // will be manipulated in initialize
+        Mode                               mode{};
+        quill::LogLevel                    log_level{};
         std::unordered_set<std::string>    strip_commands{};
         std::unordered_set<std::string>    additional_clang_args{};
         StablePath                         log{};
@@ -179,8 +181,6 @@ namespace UEMeta {
         std::filesystem::path::string_type file_delimiter{std::filesystem::path{"UnrealEngine"}.native()};
         std::string                        version{};
         std::atomic_flag                   initialized{};
-        Mode                               mode{};
-        quill::LogLevel                    log_level{};
 
         inline static const std::map<std::string, SerializationFormat> string_format_map = {
             {"json", SerializationFormat::Json},
@@ -193,21 +193,21 @@ namespace UEMeta {
         };
 
         inline static const std::map<std::string, quill::LogLevel> string_loglevel_map = {
-            { "info", quill::LogLevel::Info },
-            { "debug", quill::LogLevel::Debug },
-            { "error", quill::LogLevel::Error },
-            { "warn", quill::LogLevel::Warning },
-            { "trace", quill::LogLevel::TraceL1 },
-            { "disabled", quill::LogLevel::None }
+            {"info", quill::LogLevel::Info},
+            {"debug", quill::LogLevel::Debug},
+            {"error", quill::LogLevel::Error},
+            {"warn", quill::LogLevel::Warning},
+            {"trace", quill::LogLevel::TraceL1},
+            {"disabled", quill::LogLevel::None}
         };
 
         inline static const std::map<quill::LogLevel, std::string> log_level_map = {
-            { quill::LogLevel::Info, "info" },
-            { quill::LogLevel::Debug, "debug" },
-            { quill::LogLevel::Error, "error" },
-            { quill::LogLevel::Warning, "warn" },
-            { quill::LogLevel::TraceL1, "trace" },
-            { quill::LogLevel::None, "disabled" }
+            {quill::LogLevel::Info, "info"},
+            {quill::LogLevel::Debug, "debug"},
+            {quill::LogLevel::Error, "error"},
+            {quill::LogLevel::Warning, "warn"},
+            {quill::LogLevel::TraceL1, "trace"},
+            {quill::LogLevel::None, "disabled"}
         };
     };
 
