@@ -18,6 +18,13 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::MetaFrontendAction::CreateASTConsume
 
 bool UEMeta::MetaFrontendAction::PrepareToExecuteAction(clang::CompilerInstance& compiler) {
     compiler.getLangOpts().CommentOpts.ParseAllComments = true;
+    return true;
+}
+
+bool UEMeta::MetaFrontendAction::BeginSourceFileAction(clang::CompilerInstance& compiler) {
+    if (!clang::ASTFrontendAction::BeginSourceFileAction(compiler))
+        return false;
+    // The preprocessor is available only once Clang starts the source file.
     if (Config::getConfig().unrealExtensionsEnabled()) {
         compiler.getPreprocessor().addPPCallbacks(std::make_unique<MetaPreprocessor>(compiler.getSourceManager(), compiler.getLangOpts()));
     }

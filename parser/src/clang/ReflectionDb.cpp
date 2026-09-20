@@ -71,7 +71,7 @@ std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::CXXMetho
 
 std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::EnumDecl* decl) {
     REFL_PRED;
-    if (!decl->isThisDeclarationADefinition()) return {};;
+    if (!decl->isThisDeclarationADefinition()) return {};
     const std::string_view package = getPackageIfReflected(decl, decl->getBeginLoc(), decl->getBraceRange().getBegin(), ParserTypes::REFLECTION_KIND_UENUM);
 
     // we intentionally map a potentially empty string view so that duplicate calls don't go through tryGetPackage
@@ -118,17 +118,17 @@ void UEMeta::ReflectionDb::computePackageIfNeeded(clang::FileID file_id, clang::
 
     const auto pathStringToPackage = []<typename T = std::filesystem::path::string_type>(const T& path) -> std::optional<std::string> {
         if constexpr (std::same_as<T, std::wstring>) {
-            const auto index = path.rfind(L"Build.cs"); //todo take filesystem path and get it from the parent directory filename instead
-            if (index == std::wstring::npos)
+            constexpr std::wstring_view suffix = L".Build.cs";
+            if (path.size() <= suffix.size() || !path.ends_with(suffix))
                 return std::nullopt;
             static std::wstring_convert<std::codecvt_utf8<std::wstring::value_type>> converter;
-            return converter.to_bytes(&path.front(), &path[index]);
+            return converter.to_bytes(path.data(), path.data() + path.size() - suffix.size());
         }
         else {
-            const auto index = path.rfind("Build.cs");
-            if (index == std::string::npos)
+            constexpr std::string_view suffix = ".Build.cs";
+            if (path.size() <= suffix.size() || !path.ends_with(suffix))
                 return std::nullopt;
-            return path.substr(0, index);
+            return path.substr(0, path.size() - suffix.size());
         }
     };
 
@@ -173,7 +173,7 @@ void UEMeta::ReflectionDb::computePackageIfNeeded(clang::FileID file_id, clang::
                 // if it is what we're looking for, map this directory and any child directories we've gone through,
                 // as well as any discovered FileIDs and the passed in FileID, to the package
                 if (auto package_name = pathStringToPackage(entry.path().filename().native())) {
-                    package = package_root_to_package_name_map.emplace(entry.path(), std::move(*package_name)).first->second;
+                    package = package_root_to_package_name_map.emplace(current_path, std::move(*package_name)).first->second;
                     for (const auto& pending_root : pending_roots) {
                         package_root_to_package_name_map.emplace(pending_root, std::string{package});
                     }
@@ -201,8 +201,11 @@ void UEMeta::ReflectionDb::computePackageIfNeeded(clang::FileID file_id, clang::
 
         if (!package.empty())
             return;
+        const auto parent_path = current_path.parent_path();
+        if (parent_path == current_path)
+            break;
         pending_roots.push_back(current_path);
-        current_path = current_path.parent_path();
+        current_path = parent_path;
     }
 
 #if defined(NDEBUG) && !defined(UEM_TESTING)
@@ -227,8 +230,8 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
     const DeclWithSource* previous_decl = nullptr;
     if (auto src_set_it = file_to_decl_source_map.find(begin_file); src_set_it != file_to_decl_source_map.end()) {
         auto empl_result = src_set_it->second.emplace(decl, begin_offset, end_offset);
-        previous_decl    = &*std::prev(empl_result.first);
-        // there are no non-empty sets in the map, so emplacing one means size >=2 and std::prev always works
+        if (empl_result.first != src_set_it->second.begin())
+            previous_decl = &*std::prev(empl_result.first);
     }
     else {
         file_to_decl_source_map.emplace_or_assign(begin_file, std::set<DeclWithSource, std::less<>>({
@@ -236,34 +239,26 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
                                                   }));
     }
 
-    // get the last reflecton macro immediately before this
+    // Macro end offsets are exclusive: a macro may end exactly where the declaration begins.
     const ReflectionMacro* previous_macro = nullptr;
     if (auto refl_macro_it = file_to_reflection_macro_map.find(begin_file); refl_macro_it != file_to_reflection_macro_map.end()) {
-        if (auto previous_refl_macro_it = refl_macro_it->second.lower_bound(begin_offset); previous_refl_macro_it != refl_macro_it->second.end()) {
-            if (previous_refl_macro_it != refl_macro_it->second.begin()) {
-                previous_refl_macro_it = std::prev(previous_refl_macro_it);
-                previous_macro         = &*previous_refl_macro_it;
-                if (!(previous_macro->kind & assert_refl_kind)) {
-                    throw DeclException(decl, "Reflection macro found, but it was recorded as type {}!", static_cast<FlagT>(previous_macro->kind));
-                }
-            }
+        const auto next_macro = refl_macro_it->second.upper_bound(begin_offset);
+        if (next_macro != refl_macro_it->second.begin()) {
+            previous_macro = &*std::prev(next_macro);
         }
     }
 
     // if there aren't any macros before this declaration, then it's definitely not reflected
     if (!previous_macro) return {};
 
-    // if we have a previous macro and decl, then we resolve whichever one is closer to this decl
-    if (previous_macro && previous_decl) {
-        if (previous_macro->end_offset > previous_decl->end_offset) {
-            return getPackageOrThrow(decl, begin_file);
-        }
-
+    // A macro preceding another declaration does not annotate this one, regardless of its kind.
+    if (previous_decl && previous_macro->end_offset <= previous_decl->end_offset)
         return {};
+
+    if (!(previous_macro->kind & assert_refl_kind)) {
+        throw DeclException(decl, "Reflection macro found, but it was recorded as type {}!", static_cast<FlagT>(previous_macro->kind));
     }
 
-    // if this is at the top of the file (or at least there aren't any reflectable decls before it), and we have a macro,
-    // then it's also reflected
     return getPackageOrThrow(decl, begin_file);
 }
 

@@ -14,5 +14,6 @@ namespace UEMeta {
         std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(clang::CompilerInstance& compiler, llvm::StringRef file) override;
 
         bool PrepareToExecuteAction(clang::CompilerInstance& CI) override;
+        bool BeginSourceFileAction(clang::CompilerInstance& CI) override;
     };
 } // namespace UEMeta

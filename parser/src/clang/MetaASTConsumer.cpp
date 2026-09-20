@@ -39,8 +39,7 @@ bool UEMeta::MetaASTConsumer::VisitVarDecl(clang::VarDecl* decl) {
 }
 
 bool UEMeta::MetaASTConsumer::VisitNamespaceDecl(clang::NamespaceDecl* decl) {
-    if (!Config::getConfig().unrealExtensionsEnabled()) return true;
-
+    DeclDb::serializeIfNeeded(decl);
     return true;
 }
 
