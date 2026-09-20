@@ -54,7 +54,6 @@ namespace UEMeta {
         static bool                            unrealEnabled();
         static std::string_view                getPackageIfReflected(const clang::Decl* decl, clang::SourceLocation begin, clang::SourceLocation end,
                                                                      FlagT assert_refl_kind);
-        static std::string_view                getPackageOrThrow(const clang::Decl* decl, clang::FileID file_id);
 
         struct ReflectionMacro final {
             clang::FileID               file_id;

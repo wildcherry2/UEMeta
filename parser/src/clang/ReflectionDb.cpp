@@ -259,14 +259,9 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
         throw DeclException(decl, "Reflection macro found, but it was recorded as type {}!", static_cast<FlagT>(previous_macro->kind));
     }
 
-    return getPackageOrThrow(decl, begin_file);
-}
-
-std::string_view UEMeta::ReflectionDb::getPackageOrThrow(const clang::Decl* decl, clang::FileID file_id) {
-    if (const auto pkg_name_it = file_to_reflected_package_map.find(file_id); pkg_name_it != file_to_reflected_package_map.end()) {
+    if (const auto pkg_name_it = file_to_reflected_package_map.find(begin_file); pkg_name_it != file_to_reflected_package_map.end()) {
         return pkg_name_it->second;
     }
-
     throw DeclException(decl, "Failed to find unreal package for declaration!");
 }
 
