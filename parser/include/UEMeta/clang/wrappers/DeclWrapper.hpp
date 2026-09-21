@@ -64,8 +64,7 @@ namespace UEMeta {
                                                                        UEMeta::TOP_LEVEL_EXT<PT>, type);
                         }
                         else {
-                            out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(),
-                                                                       metadata.occurrence_index().versions(0).value(), UEMeta::TOP_LEVEL_EXT<PT>, type);
+                            out_file_path = out_dir / fmtquill::format("{}{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(), UEMeta::TOP_LEVEL_EXT<PT>, type);
                         }
                     }
                     else if constexpr(std::same_as<PT, ParserTypes::ForwardDeclarationList>) {
