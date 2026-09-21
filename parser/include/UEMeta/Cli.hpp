@@ -19,7 +19,6 @@
  */
 int main(int argc, char** argv);
 
-// todo make getters lazy initialize cfg?
 namespace UEMeta {
     /**
      * @brief Process-wide CLI configuration used by tool setup.

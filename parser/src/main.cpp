@@ -16,6 +16,10 @@ int main(int argc, char** argv) {
             return log_init_result;
         }
 
+        if (!UEMeta::Config::getConfig().getOutputDirectory().isEmptyPath()) {
+            std::filesystem::create_directories(UEMeta::Config::getConfig().getOutputDirectory().getUnderlyingPath());
+        }
+
         if (UEMeta::Config::getConfig().getMode() == UEMeta::Config::Mode::Parser) {
             UEM_INFO("Using config:\n{}", UEMeta::Config::getConfig().toString());
 
