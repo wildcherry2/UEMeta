@@ -1,5 +1,5 @@
 #include "CallableTest.hpp"
-#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 
 namespace {
     using namespace UEMeta::Testing;
@@ -27,13 +27,12 @@ namespace {
             long compute(int count, const char* label = "result");
         })cpp");
         ASSERT_EQ(functions.size(), 1u);
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        const auto* message    = serialize(functions[0]);
+        const auto* message = serialize(functions[0]);
         EXPECT_EQ(message->GetArena(), arena.get());
         auto traits              = common(ParserTypes::FUNCTION_KIND_FREE, "long");
         *traits.add_parameters() = parameter("count", "int");
         *traits.add_parameters() = parameter("label", "const char *", "\"result\"");
-        expectProto(*message, expectedFunction("::Outer::Inner::compute", "intconst char *", occurrence, traits, "/// Function documentation."));
+        expectProto(*message, expectedFunction("::Outer::Inner::compute", "intconst char *", 0, traits, "/// Function documentation."));
         const auto id       = functionId("::Outer::Inner::compute", "intconst char *");
         const auto resolved = UEMeta::DeclDb::queryDeclIdentity(functions[0]);
         ASSERT_TRUE(std::holds_alternative<UEMeta::Hash>(resolved));
@@ -58,11 +57,10 @@ namespace {
             ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::FUN_VAR_STORAGE_CLASS_STATIC,
             ParserTypes::FUN_VAR_STORAGE_CLASS_EXTERN,      ParserTypes::FUN_VAR_STORAGE_CLASS_EXTERN_C,
             ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED};
-        const auto occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(names[index]);
             expectProto(*serialize(functions[index]),
-                        expectedFunction(names[index], "", occurrence + index, common(ParserTypes::FUNCTION_KIND_FREE, "void", storage[index])));
+                        expectedFunction(names[index], "", index, common(ParserTypes::FUNCTION_KIND_FREE, "void", storage[index])));
         }
     }
 
@@ -72,12 +70,11 @@ namespace {
         const std::vector<ParserTypes::ConstantEvaluationKind> kinds{
             ParserTypes::CONSTANT_EVALUATION_NONE, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, ParserTypes::CONSTANT_EVALUATION_CONSTEVAL};
         const std::vector<std::string> names{"::ordinary", "::constant", "::immediate"};
-        const auto                     occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(names[index]);
             auto traits = common(ParserTypes::FUNCTION_KIND_FREE, "int", ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED, kinds[index]);
             *traits.mutable_inline_definition() = versioned<ParserTypes::VersionedString>("{\n    return " + std::to_string(index + 1) + ";\n}\n");
-            expectProto(*serialize(functions[index]), expectedFunction(names[index], "", occurrence + index, traits));
+            expectProto(*serialize(functions[index]), expectedFunction(names[index], "", index, traits));
         }
     }
 
@@ -155,12 +152,11 @@ namespace {
     TEST_F(FunctionDeclWrapperTest, FriendDefinitionIsAFreeFunctionInItsNamespace) {
         const auto functions = parse("namespace N { struct Owner { friend int friend_function(int x) { return x; } }; }");
         ASSERT_EQ(functions.size(), 1u);
-        const auto occurrence               = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        auto       traits                   = common(ParserTypes::FUNCTION_KIND_FREE, "int");
+        auto traits                         = common(ParserTypes::FUNCTION_KIND_FREE, "int");
         *traits.mutable_is_friend()         = boolean(true);
         *traits.add_parameters()            = parameter("x", "int");
         *traits.mutable_inline_definition() = versioned<ParserTypes::VersionedString>("{\n    return x;\n}\n");
-        expectProto(*serialize(functions[0]), expectedFunction("::N::friend_function", "int", occurrence, traits));
+        expectProto(*serialize(functions[0]), expectedFunction("::N::friend_function", "int", 0, traits));
     }
 
     TEST_F(FunctionDeclWrapperTest, DeletedFreeFunctionsAndDefaultedFriendComparisonsRetainDefinitionKind) {
@@ -280,7 +276,6 @@ namespace {
         ASSERT_EQ(functions.size(), 8u);
         const std::vector<std::string> names{"Owner", "~Owner", "operator bool", "create", "cv", "move", "choose", "choose"};
         const std::vector<std::string> signatures{"", "", " const", "", " const volatile &", " &&", "T<typename>", "int<int>"};
-        const auto                     occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
             auto traits = common(ParserTypes::FUNCTION_KIND_MEMBER);
@@ -320,7 +315,7 @@ namespace {
                 )pb");
             }
             // serialize accepts FunctionDecl*, so this exercises the base-pointer instantiation, not MethodDeclWrapper.
-            expectProto(*serialize(functions[index]), expectedFunction("::Owner::" + names[index], signatures[index], occurrence + index, traits));
+            expectProto(*serialize(functions[index]), expectedFunction("::Owner::" + names[index], signatures[index], index, traits));
             expectUnregistered(functions[index]);
         }
     }
@@ -374,11 +369,12 @@ namespace {
         UEMeta::DeclDb::addForwardDeclaration(record);
         const auto reference = UEMeta::DeclDb::queryDeclIdentity(record);
         ASSERT_TRUE(std::holds_alternative<uint64_t>(reference));
+        EXPECT_EQ(std::get<uint64_t>(reference), 0u);
         auto traits              = common(ParserTypes::FUNCTION_KIND_FREE, "::Node *");
         *traits.add_parameters() = parameter("input", "::Node &");
-        traits.mutable_return_type()->mutable_versions(0)->mutable_value()->set_forward_decl_index(std::get<uint64_t>(reference));
-        traits.mutable_parameters(0)->mutable_type_ref()->set_forward_decl_index(std::get<uint64_t>(reference));
-        expectProto(serialize(functions[0])->common(), traits);
+        traits.mutable_return_type()->mutable_versions(0)->mutable_value()->set_forward_decl_index(0);
+        traits.mutable_parameters(0)->mutable_type_ref()->set_forward_decl_index(0);
+        expectProto(*serialize(functions[0]), expectedFunction("::forward", "::Node &", 1, traits));
     }
 
     TEST_F(FunctionDeclWrapperTest, StaticAndMemberToFileWriteOnlyFunctionFilesWithoutReadingThemBack) {

@@ -1,4 +1,4 @@
-#include "UEMeta/HeartbeatLogger.hpp"
+#include "UEMeta/utility/HeartbeatLogger.hpp"
 #include <condition_variable>
 #include <mutex>
 #include <utility>

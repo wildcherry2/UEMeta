@@ -1,4 +1,4 @@
-#include "UEMeta/MetaTool.hpp"
+#include "UEMeta/clang/MetaTool.hpp"
 
 #include <algorithm>
 #include <clang/Tooling/ArgumentsAdjusters.h>
@@ -10,7 +10,7 @@
 #include <utility>
 
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/MetaFrontendAction.hpp"
+#include "UEMeta/clang/MetaFrontendAction.hpp"
 
 using namespace clang::tooling;
 

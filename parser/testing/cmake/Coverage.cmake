@@ -36,3 +36,29 @@ add_custom_target(uemeta-test-coverage
     USES_TERMINAL
     VERBATIM
 )
+
+# Reflection tests exercise only synthetic inputs and the detection database.
+# Report their coverage separately: defensive failures and platform-specific
+# filesystem paths are not all reachable in a single host's valid ASTs.
+set(_reflection_sources_file "${CMAKE_CURRENT_BINARY_DIR}/ReflectionCoverageSources.cmake")
+file(WRITE "${_reflection_sources_file}"
+    "set(sources\n"
+    "    [==[${PROJECT_SOURCE_DIR}/src/clang/ReflectionDb.cpp]==]\n"
+    "    [==[${PROJECT_SOURCE_DIR}/include/UEMeta/clang/ReflectionDb.hpp]==]\n"
+    ")\n"
+)
+add_custom_target(uemeta-reflection-coverage
+    COMMAND "${CMAKE_COMMAND}"
+        "-DTEST_EXECUTABLE=$<TARGET_FILE:uemeta-parser-tests>"
+        "-DTEST_FILTER=*Reflection*"
+        "-DREQUIRE_FULL_COVERAGE=OFF"
+        "-DLLVM_COV=${UEMETA_LLVM_COV}"
+        "-DLLVM_PROFDATA=${UEMETA_LLVM_PROFDATA}"
+        "-DCOVERAGE_SOURCES_FILE=${_reflection_sources_file}"
+        "-DCOVERAGE_DIR=${PROJECT_BINARY_DIR}/reflection-coverage"
+        -P "${CMAKE_CURRENT_LIST_DIR}/RunCoverage.cmake"
+    DEPENDS uemeta-parser-tests
+    COMMENT "Running synthetic reflection detection tests and reporting coverage"
+    USES_TERMINAL
+    VERBATIM
+)

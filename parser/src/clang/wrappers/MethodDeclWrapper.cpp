@@ -1,9 +1,11 @@
-#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 
+#include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/GlobalDecl.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/VTableBuilder.h"
 #include "clang/Basic/TargetInfo.h"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known_layout) const {
     // Allocate the method beside its owning record and populate shared function details.
@@ -28,6 +30,10 @@ ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known
     // Only materialized layouts can supply ABI-dependent vtable locations.
     if (has_known_layout && decl->isVirtual()) {
         putVTableDetails(p_msg);
+    }
+
+    if (!ReflectionDb::registerReflectable(decl).empty()) {
+        setVersionedBool(p_msg->mutable_is_reflected(), true);
     }
     return p_msg;
 }

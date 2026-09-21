@@ -7,7 +7,8 @@
 
 #include <gtest/gtest.h>
 #include "ProtoAssertions.hpp"
-#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "WrapperTest.hpp"
 
 namespace {
@@ -67,8 +68,7 @@ namespace {
             };
         })cpp");
         ASSERT_EQ(enums.size(), 1u);
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        const auto* message    = asEnum(enums[0]);
+        const auto* message = asEnum(enums[0]);
         ASSERT_NE(message, nullptr);
         EXPECT_EQ(message->GetArena(), arena.get());
         expectMetadata(message->metadata(), "::Example::State");
@@ -106,7 +106,7 @@ namespace {
             enumerators { name: "Alias" value { versions { source_versions: "test-version" value: "1" } } }
             enumerators { name: "Maximum" value { versions { source_versions: "test-version" value: "9223372036854775807" } } }
         )pb");
-        *expected.mutable_metadata() = metadata("::Example::State", enumId("::Example::State"), occurrence, "/// Enum documentation.");
+        *expected.mutable_metadata() = metadata("::Example::State", enumId("::Example::State"), 0, "/// Enum documentation.");
         expectProto(*message, expected);
     }
 
@@ -215,7 +215,9 @@ namespace {
         EXPECT_EQ(a->metadata().decl_id().a(), b->metadata().decl_id().a());
         EXPECT_EQ(a->metadata().decl_id().b(), b->metadata().decl_id().b());
         EXPECT_TRUE(a->metadata().decl_id().a() != c->metadata().decl_id().a() || a->metadata().decl_id().b() != c->metadata().decl_id().b());
-        EXPECT_LT(a->metadata().occurrence_index().versions(0).value(), b->metadata().occurrence_index().versions(0).value());
+        expectVersioned(a->metadata().occurrence_index(), 0u);
+        expectVersioned(b->metadata().occurrence_index(), 1u);
+        expectVersioned(c->metadata().occurrence_index(), 2u);
     }
 
     TEST_F(EnumDeclWrapperTest, SourceFileAndDocumentationChangeMetadataButNotIdentity) {
@@ -223,9 +225,8 @@ namespace {
         const auto second = parse("/// Later enum.\nenum class Relocated : short { Value = 2 };", "after.hpp");
         ASSERT_EQ(first.size(), 1u);
         ASSERT_EQ(second.size(), 1u);
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        const auto* earlier    = asEnum(first[0]);
-        const auto* later      = asEnum(second[0]);
+        const auto* earlier = asEnum(first[0]);
+        const auto* later   = asEnum(second[0]);
         ASSERT_NE(earlier, nullptr);
         ASSERT_NE(later, nullptr);
         auto expected                = proto<EnumMessage>(R"pb(
@@ -233,9 +234,9 @@ namespace {
             underlying_type { versions { source_versions: "test-version" value: "short" } }
             enumerators { name: "Value" value { versions { source_versions: "test-version" value: "1" } } }
         )pb");
-        *expected.mutable_metadata() = metadata("::Relocated", enumId("::Relocated"), occurrence, "/// Earlier enum.", "before.hpp");
+        *expected.mutable_metadata() = metadata("::Relocated", enumId("::Relocated"), 0, "/// Earlier enum.", "before.hpp");
         expectProto(*earlier, expected);
-        *expected.mutable_metadata() = metadata("::Relocated", enumId("::Relocated"), occurrence + 1, "/// Later enum.", "after.hpp");
+        *expected.mutable_metadata() = metadata("::Relocated", enumId("::Relocated"), 1, "/// Later enum.", "after.hpp");
         expected.mutable_enumerators(0)->mutable_value()->mutable_versions(0)->set_value("2");
         expectProto(*later, expected);
     }
@@ -243,8 +244,7 @@ namespace {
     TEST_F(EnumDeclWrapperTest, AnonymousEnumeratorsBecomeOrderedStaticConstexprGlobalsWithCanonicalTypes) {
         const auto enums = parse("namespace Outer::Inner { using Word = long long; enum : Word { Negative = -8, Next, Alias = Next }; }");
         ASSERT_EQ(enums.size(), 1u);
-        const auto occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        auto       ir         = EnumDeclWrapper{enums[0], arena}.toIntermediateRepresentation();
+        auto ir = EnumDeclWrapper{enums[0], arena}.toIntermediateRepresentation();
         ASSERT_TRUE(std::holds_alternative<Variables>(ir));
         const auto& variables = std::get<Variables>(ir);
         ASSERT_EQ(variables.size(), 3u);
@@ -273,12 +273,10 @@ namespace {
                 default_value { versions { source_versions: "test-version" value: "" } }
             )pb");
             const auto name              = "::Outer::Inner::" + names[index];
-            *expected.mutable_metadata() = metadata(name, variableId(name), occurrence + index);
+            *expected.mutable_metadata() = metadata(name, variableId(name), index);
             expected.mutable_default_value()->mutable_versions(0)->set_value(values[index]);
             expectProto(variable, expected);
             if (index > 0) {
-                EXPECT_LT(variables[index - 1]->metadata().occurrence_index().versions(0).value(),
-                          variable.metadata().occurrence_index().versions(0).value());
                 EXPECT_TRUE(variables[index - 1]->metadata().decl_id().a() != variable.metadata().decl_id().a() ||
                             variables[index - 1]->metadata().decl_id().b() != variable.metadata().decl_id().b());
             }

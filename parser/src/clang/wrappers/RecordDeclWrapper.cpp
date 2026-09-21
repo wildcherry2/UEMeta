@@ -1,9 +1,11 @@
-#include "UEMeta/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 
-#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
-#include "UEMeta/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "clang/AST/DeclTemplate.h"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 /*
  * Clang's AST (abstract syntax tree) contains both source declarations and compiler-created
@@ -141,6 +143,10 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
         setVersioned(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
     }
 
+    if (const std::string_view package = ReflectionDb::registerReflectable(decl); !package.empty()) {
+        setVersionedString(p_msg->mutable_reflected_package(), package);
+    }
+
     // Clang stores bases outside decls(), so only base specifiers require their own loop.
     if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
         for (const auto& base : cxx->bases()) {
@@ -160,6 +166,17 @@ void UEMeta::RecordDeclWrapper::toFile(IntermediateRepresentation&& ir, const st
     else if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
         for (const auto* p_var : *vec) {
             saveToFile(p_var, arena);
+        }
+    }
+}
+
+void UEMeta::RecordDeclWrapper::toString(const IntermediateRepresentation& ir, std::string& out) {
+    if (const auto* p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
+        saveToString(*p_record, out);
+    }
+    else if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
+        for (const auto* p_var : *vec) {
+            saveToString(p_var, out);
         }
     }
 }
@@ -355,6 +372,9 @@ void UEMeta::RecordDeclWrapper::handleField(const clang::FieldDecl* field, Parse
     setVersionedBool(p_msg->mutable_is_bitfield(), field->isBitField());
     setVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
     setVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
+    if (!ReflectionDb::registerReflectable(field).empty()) {
+        setVersionedBool(p_msg->mutable_is_reflected(), true);
+    }
 
     // Bit widths can be known even when the enclosing record's layout remains dependent.
     if (field->isBitField()) {

@@ -8,7 +8,8 @@
 
 #include <gtest/gtest.h>
 #include "ProtoAssertions.hpp"
-#include "UEMeta/wrappers/VarDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/VarDeclWrapper.hpp"
+#include "UEMeta/utility/DeclException.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 
@@ -49,7 +50,7 @@ namespace {
         }
 
         VariableMessage* serialize(const clang::VarDecl* declaration) const {
-            return VarDeclWrapper{declaration, arena}.toIntermediateSerialization();
+            return VarDeclWrapper{declaration, arena}.toIntermediateRepresentation();
         }
 
         static auto identity(const VariableMessage* message) {
@@ -102,8 +103,7 @@ namespace {
             int answer = 6 * 7;
         })cpp");
         ASSERT_EQ(variables.size(), 1u);
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        const auto* message    = serialize(variables[0]);
+        const auto* message = serialize(variables[0]);
         ASSERT_NE(message, nullptr);
         EXPECT_EQ(message->GetArena(), arena.get());
         expectMetadata(message->metadata(), "::Outer::Inner::answer");
@@ -115,7 +115,7 @@ namespace {
         EXPECT_FALSE(message->has_template_details());
         EXPECT_FALSE(message->has_is_anon_enum_value());
         EXPECT_FALSE(message->has_is_anon_union_value());
-        expectProto(*message, builtinVariable("::Outer::Inner::answer", "int", occurrence, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
+        expectProto(*message, builtinVariable("::Outer::Inner::answer", "int", 0, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                               ParserTypes::CONSTANT_EVALUATION_NONE, "6 * 7", "/// Variable documentation."));
     }
 
@@ -123,7 +123,6 @@ namespace {
         const auto variables = parse("int global; namespace N { struct Owner { static int member; }; }");
         ASSERT_EQ(variables.size(), 2u);
         const std::vector<std::string> names{"::global", "::N::Owner::member"};
-        const auto                     occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         for (std::size_t index = 0; index < variables.size(); ++index) {
             SCOPED_TRACE(index);
             const auto* message = serialize(variables[index]);
@@ -131,7 +130,7 @@ namespace {
             expectBuiltinType(message->type_ref(), "int");
             EXPECT_FALSE(message->metadata().has_documentation());
             EXPECT_FALSE(message->has_default_value());
-            expectProto(*message, builtinVariable(names[index], "int", occurrence + index,
+            expectProto(*message, builtinVariable(names[index], "int", index,
                                                   index == 0 ? ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED : ParserTypes::VAR_STORAGE_CLASS_STATIC));
         }
     }
@@ -148,7 +147,6 @@ namespace {
             extern "C" { extern thread_local int local_c; }
         )cpp");
         ASSERT_EQ(variables.size(), 9u);
-        const auto                     occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         const std::vector<std::string> names{"::ordinary", "::internal",     "::external",       "::c_external", "::c_definition",
                                              "::local",    "::local_static", "::local_external", "::local_c"};
         const std::vector<ParserTypes::VariableStorageClass> classes{
@@ -158,7 +156,7 @@ namespace {
         for (std::size_t index = 0; index < variables.size(); ++index) {
             SCOPED_TRACE(variables[index]->getNameAsString());
             const auto* message = serialize(variables[index]);
-            expectProto(*message, builtinVariable(names[index], "int", occurrence + index, classes[index]));
+            expectProto(*message, builtinVariable(names[index], "int", index, classes[index]));
         }
     }
 
@@ -167,7 +165,6 @@ namespace {
         ASSERT_EQ(variables.size(), 3u);
         const std::vector<std::string> initializers{"1 + 2", "3", "4"};
         const std::vector<std::string> names{"::evaluated", "::constant", "::initialized"};
-        const auto                     occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         for (std::size_t index = 0; index < variables.size(); ++index) {
             SCOPED_TRACE(index);
             const auto* message = serialize(variables[index]);
@@ -175,8 +172,7 @@ namespace {
                             index == 0 ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE);
             expectVersioned(message->default_value(), initializers[index]);
             expectBuiltinType(message->type_ref(), index == 2 ? "int" : "const int");
-            expectProto(*message, builtinVariable(names[index], index == 2 ? "int" : "const int", occurrence + index,
-                                                  ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
+            expectProto(*message, builtinVariable(names[index], index == 2 ? "int" : "const int", index, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                                   index == 0 ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE,
                                                   initializers[index]));
         }
@@ -195,13 +191,12 @@ namespace {
         const std::vector<std::string> types{"::N::Word", "const ::N::Word *", "::N::Word &", "int[2]", "long long"};
         const std::vector<std::string> initializers{"1", "nullptr", "word", "{1, 2}", "42LL"};
         const std::vector<std::string> names{"::N::word", "::N::pointer", "::N::reference", "::N::array", "::N::deduced"};
-        const auto                     occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         for (std::size_t index = 0; index < variables.size(); ++index) {
             SCOPED_TRACE(index);
             const auto* message = serialize(variables[index]);
             expectBuiltinType(message->type_ref(), types[index]);
             expectVersioned(message->default_value(), initializers[index]);
-            expectProto(*message, builtinVariable(names[index], types[index], occurrence + index, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
+            expectProto(*message, builtinVariable(names[index], types[index], index, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                                   ParserTypes::CONSTANT_EVALUATION_NONE, initializers[index]));
         }
     }
@@ -222,7 +217,8 @@ namespace {
         EXPECT_EQ(identity(original), identity(modified));
         EXPECT_NE(identity(original), identity(serialize(other_scope[0])));
         EXPECT_NE(identity(original), identity(serialize(other_name[0])));
-        EXPECT_LT(original->metadata().occurrence_index().versions(0).value(), modified->metadata().occurrence_index().versions(0).value());
+        expectVersioned(original->metadata().occurrence_index(), 0u);
+        expectVersioned(modified->metadata().occurrence_index(), 1u);
     }
 
     TEST_F(VarDeclWrapperTest, NamedTagsUseReferencesRatherThanEmbeddedDefinitions) {
@@ -268,8 +264,7 @@ namespace {
         const std::vector<std::string> names{"::object", "::pointer", "::array"};
         for (std::size_t index = 0; index < variables.size(); ++index) {
             SCOPED_TRACE(index);
-            const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-            const auto* message    = serialize(variables[index]);
+            const auto* message = serialize(variables[index]);
             ASSERT_EQ(message->type_ref().versions_size(), 1);
             const auto& version = message->type_ref().versions(0);
             ASSERT_EQ(version.source_versions_size(), 1);
@@ -310,8 +305,9 @@ namespace {
                 }
             )pb");
             expected_record.set_kind(index == 1 ? ParserTypes::RECORD_KIND_UNION : ParserTypes::RECORD_KIND_STRUCT);
-            expected_record.mutable_metadata()->mutable_occurrence_index()->mutable_versions(0)->set_value(occurrence);
-            auto expected = builtinVariable(names[index], "", occurrence + 1, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
+            // Each variable serializes its embedded record first, then its own metadata.
+            expected_record.mutable_metadata()->mutable_occurrence_index()->mutable_versions(0)->set_value(2 * index);
+            auto expected = builtinVariable(names[index], "", 2 * index + 1, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                             ParserTypes::CONSTANT_EVALUATION_NONE, index == 1 ? "nullptr" : "{}");
             *expected.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = expected_record;
             expectProto(*message, expected);
@@ -330,11 +326,13 @@ namespace {
         UEMeta::DeclDb::addForwardDeclaration(definition);
         const auto reference = UEMeta::DeclDb::queryDeclIdentity(definition);
         ASSERT_TRUE(std::holds_alternative<uint64_t>(reference));
+        EXPECT_EQ(std::get<uint64_t>(reference), 0u);
         const auto* message = serialize(variables[0]);
         ASSERT_NO_FATAL_FAILURE(expectTypeName(message, "::N::Alias *"));
         const auto& type = message->type_ref().versions(0).value().type_ref();
         ASSERT_TRUE(type.has_forward_decl_index());
-        EXPECT_EQ(type.forward_decl_index(), std::get<uint64_t>(reference));
+        EXPECT_EQ(type.forward_decl_index(), 0u);
+        expectVersioned(message->metadata().occurrence_index(), 1u);
     }
 
     TEST_F(VarDeclWrapperTest, StandaloneAnonymousEnumsAreReferencedRatherThanEmbeddedAgain) {
@@ -389,8 +387,7 @@ namespace {
     TEST_F(VarDeclWrapperTest, PrimaryTemplatePreservesTypeAndOrderedParametersWithDefaults) {
         const auto variables = parse("template<typename T = long, int Count = 3> constexpr T value = Count;");
         ASSERT_EQ(variables.size(), 1u);
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        const auto* message    = serialize(variables[0]);
+        const auto* message = serialize(variables[0]);
         expectMetadata(message->metadata(), "::value");
         expectBuiltinType(message->type_ref(), "const T");
         expectVersioned(message->default_value(), "Count");
@@ -411,9 +408,9 @@ namespace {
         expectVersioned(count.name(), "Count");
         expectVersioned(count.type().type_name(), "int");
         expectVersioned(count.value(), "3");
-        auto expected                        = builtinVariable("::value", "const T", occurrence, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
-                                                               ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "Count");
-        *expected.mutable_metadata()         = metadata("::value", variableId("::valueconst T<typenameint>"), occurrence);
+        auto expected =
+            builtinVariable("::value", "const T", 0, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "Count");
+        *expected.mutable_metadata()         = metadata("::value", variableId("::valueconst T<typenameint>"), 0);
         *expected.mutable_template_details() = proto<ParserTypes::TemplateDetails>(R"pb(
             specialization_kind: TEMPLATE_SPECIALIZATION_NONE
             parameters {
@@ -444,7 +441,6 @@ namespace {
         ASSERT_NE(variables[0]->getDescribedVarTemplate(), nullptr);
         ASSERT_TRUE(llvm::isa<clang::VarTemplatePartialSpecializationDecl>(variables[1]));
         ASSERT_TRUE(llvm::isa<clang::VarTemplateSpecializationDecl>(variables[2]));
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
         const auto* primary    = serialize(variables[0]);
         const auto  primary_id = variableId("::selectedconst int<typenameint>");
         expectId(primary->metadata().decl_id(), primary_id);
@@ -493,9 +489,9 @@ namespace {
             primary_template_decl_id { type_name { versions { source_versions: "test-version" value: "selected" } } }
         )pb");
         primary_id.putProtoHash(partial_details.mutable_primary_template_decl_id()->mutable_decl_id());
-        auto expected_partial                = builtinVariable("::selected", "const int", occurrence + 1, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
-                                                               ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "1");
-        *expected_partial.mutable_metadata() = metadata("::selected", variableId("::selectedconst int<typename><typename2>"), occurrence + 1);
+        auto expected_partial                        = builtinVariable("::selected", "const int", 1, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
+                                                                       ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "1");
+        *expected_partial.mutable_metadata()         = metadata("::selected", variableId("::selectedconst int<typename><typename2>"), 1);
         *expected_partial.mutable_template_details() = partial_details;
         expectProto(*partial, expected_partial);
 
@@ -512,9 +508,9 @@ namespace {
             primary_template_decl_id { type_name { versions { source_versions: "test-version" value: "selected" } } }
         )pb");
         primary_id.putProtoHash(explicit_details.mutable_primary_template_decl_id()->mutable_decl_id());
-        auto expected_explicit                = builtinVariable("::selected", "const int", occurrence + 2, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
-                                                                ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "2");
-        *expected_explicit.mutable_metadata() = metadata("::selected", variableId("::selectedconst int<int3>"), occurrence + 2);
+        auto expected_explicit                        = builtinVariable("::selected", "const int", 2, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
+                                                                        ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "2");
+        *expected_explicit.mutable_metadata()         = metadata("::selected", variableId("::selectedconst int<int3>"), 2);
         *expected_explicit.mutable_template_details() = explicit_details;
         expectProto(*explicit_spec, expected_explicit);
     }
@@ -590,14 +586,13 @@ namespace {
         const auto second = parse("/// Later variable.\nint relocated = 2;", "after.hpp");
         ASSERT_EQ(first.size(), 1u);
         ASSERT_EQ(second.size(), 1u);
-        const auto  occurrence = UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence() + 1;
-        const auto* earlier    = serialize(first[0]);
-        const auto* later      = serialize(second[0]);
+        const auto* earlier = serialize(first[0]);
+        const auto* later   = serialize(second[0]);
         auto        expected =
-            builtinVariable("::relocated", "int", occurrence, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::CONSTANT_EVALUATION_NONE, "1");
-        *expected.mutable_metadata() = metadata("::relocated", variableId("::relocated"), occurrence, "/// Earlier variable.", "before.hpp");
+            builtinVariable("::relocated", "int", 0, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::CONSTANT_EVALUATION_NONE, "1");
+        *expected.mutable_metadata() = metadata("::relocated", variableId("::relocated"), 0, "/// Earlier variable.", "before.hpp");
         expectProto(*earlier, expected);
-        *expected.mutable_metadata() = metadata("::relocated", variableId("::relocated"), occurrence + 1, "/// Later variable.", "after.hpp");
+        *expected.mutable_metadata() = metadata("::relocated", variableId("::relocated"), 1, "/// Later variable.", "after.hpp");
         expected.mutable_default_value()->mutable_versions(0)->set_value("2");
         expectProto(*later, expected);
     }
@@ -654,7 +649,7 @@ namespace {
         const auto           before    = std::distance(std::filesystem::directory_iterator{directory}, std::filesystem::directory_iterator{});
         const VarDeclWrapper wrapper{variables[0], arena};
         using InvalidEnum = UEMeta::DeclException<clang::EnumDecl>;
-        EXPECT_THROW((void)wrapper.toIntermediateSerialization(), InvalidEnum);
+        EXPECT_THROW((void)wrapper.toIntermediateRepresentation(), InvalidEnum);
         EXPECT_THROW(wrapper.toFile(), InvalidEnum);
         EXPECT_EQ(std::distance(std::filesystem::directory_iterator{directory}, std::filesystem::directory_iterator{}), before);
     }

@@ -1,4 +1,4 @@
-#include "UEMeta/StablePath.hpp"
+#include "UEMeta/utility/StablePath.hpp"
 #include "UEMeta/Cli.hpp"
 
 /// @brief Best-effort logging for failures that happen while normalizing a StablePath.

@@ -1,4 +1,8 @@
 add_executable(uemeta-parser-tests harness/src/TestMain.cpp)
+target_sources(uemeta-parser-tests PRIVATE
+    harness/src/DeclDbTests.cpp
+    harness/src/ReflectionDbTests.cpp
+)
 set_target_properties(uemeta-parser-tests PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
@@ -17,11 +21,11 @@ target_link_libraries(uemeta-parser-tests PRIVATE uemeta-parser-core GTest::gtes
 function(uemeta_add_wrapper_tests wrapper)
     target_sources(uemeta-parser-tests PRIVATE "harness/src/wrappers/${wrapper}Tests.cpp")
     set(sources)
-    if(EXISTS "${PROJECT_SOURCE_DIR}/include/UEMeta/wrappers/${wrapper}.hpp")
-        list(APPEND sources "${PROJECT_SOURCE_DIR}/include/UEMeta/wrappers/${wrapper}.hpp")
+    if(EXISTS "../include/UEMeta/clang/wrappers/${wrapper}.hpp")
+        list(APPEND sources "../include/UEMeta/clang/wrappers/${wrapper}.hpp")
     endif()
-    if(EXISTS "${PROJECT_SOURCE_DIR}/src/wrappers/${wrapper}.cpp")
-        list(APPEND sources "${PROJECT_SOURCE_DIR}/src/wrappers/${wrapper}.cpp")
+    if(EXISTS "../src/clang/wrappers/${wrapper}.cpp")
+        list(APPEND sources "../src/clang/wrappers/${wrapper}.cpp")
     endif()
     set(UEMETA_COVERAGE_SOURCES ${UEMETA_COVERAGE_SOURCES} ${sources} PARENT_SCOPE)
 endfunction()

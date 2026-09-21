@@ -1,10 +1,12 @@
-#include "UEMeta/wrappers/EnumDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 
-#include "UEMeta/wrappers/Utility.hpp"
+#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"
 #include "llvm/ADT/StringExtras.h"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toIntermediateRepresentation() const {
     clang::QualType underlying = decl->getIntegerType();
@@ -38,6 +40,10 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
             }
 
             setVersionedString(p_enumerator->mutable_value(), llvm::toString(enumerator->getInitVal(), 10));
+        }
+        std::string_view package = ReflectionDb::registerReflectable(decl);
+        if (!package.empty()) {
+            setVersionedString(out_msg->mutable_reflected_package(), package);
         }
         return out_msg;
     }
@@ -77,6 +83,17 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
 }
 
 void UEMeta::EnumDeclWrapper::toFile() const { return toFile(toIntermediateRepresentation(), arena); }
+
+void UEMeta::EnumDeclWrapper::toString(const IntermediateRepresentation& ir, std::string& out) {
+    if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
+        for (const auto* p_var : *vec) {
+            saveToString(p_var, out);
+        }
+    }
+    else {
+        saveToString(std::get<ParserTypes::TLEnumDeclaration*>(ir), out);
+    }
+}
 
 void UEMeta::EnumDeclWrapper::toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {

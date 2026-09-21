@@ -1,6 +1,7 @@
 #pragma once
 #include <variant>
-#include "Utility.hpp"
+
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "absl/container/flat_hash_map.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"
@@ -25,6 +26,7 @@ namespace UEMeta {
         // A registered definition's identity takes precedence over its forward-declaration history.
         static QueryResult queryDeclIdentity(const clang::Decl* decl);
 
+        // Returns the Decl* associated with the Hash, or nullptr if no such Decl exists.
         static const clang::Decl* queryDecl(const Hash& hash);
 
         // Query the declaration referenced by a type, resolving aliases and peeling pointers,
@@ -51,6 +53,7 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::VarDecl* decl);
         static void serializeIfNeeded(clang::RecordDecl* decl);
         static void serializeIfNeeded(clang::FunctionDecl* decl);
+        static void serializeIfNeeded(clang::NamespaceDecl* decl); // for unreal extensions; effectively disabled in repl
 
         // Adds a forward occurrence keyed by the given record, enum or function definition.
         // Throws if for_decl is null, another declaration kind, or not a definition.
@@ -69,14 +72,11 @@ namespace UEMeta {
         // Serializes known forward declarations to a ForwardDeclarationList and saves it.
         static void serializeForwardDeclarations();
 
-#ifdef UEM_TESTING
         static void reset();
-#endif
     private:
         DeclDb() = default;
 
         // maps non-forward, non-alias declarations to their serialized identity
-        // also doubles as a way to check if we've visited the decl before
         static llvm::DenseMap<const clang::Decl*, Hash> decl_to_identity_map;
 
         static absl::flat_hash_map<Hash, const clang::Decl*> identity_to_decl_map;
