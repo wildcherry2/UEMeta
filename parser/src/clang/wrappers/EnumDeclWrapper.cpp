@@ -72,11 +72,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
         setVersionedString(p_variable->mutable_default_value(), llvm::toString(enumerator->getInitVal(), 10));
         setVersioned(p_variable->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_STATIC);
 
-        auto* version = p_variable->mutable_type_ref()->add_versions();
-        version->add_source_versions(Config::getConfig().getVersion());
-        auto* type_ref = version->mutable_value()->mutable_type_ref();
-        setVersionedString(type_ref->mutable_type_name(), type_name);
-        type_ref->set_is_builtin_or_template(true);
+        putTypeRef(type_name, DeclDb::QueryResult{true}, p_variable->mutable_type_ref()->mutable_type_ref());
         variables.push_back(p_variable);
     }
     return variables;
@@ -125,11 +121,7 @@ void UEMeta::EnumDeclWrapper::serializeAsFields(ParserTypes::AccessSpecifier acc
         }
 
         // Every synthesized field shares the enum's underlying integer type.
-        auto* version = p_field->mutable_type_ref()->add_versions();
-        version->add_source_versions(Config::getConfig().getVersion());
-        auto* type_ref = version->mutable_value()->mutable_type_ref();
-        setVersionedString(type_ref->mutable_type_name(), type_name);
-        type_ref->set_is_builtin_or_template(true);
+        putTypeRef(type_name, DeclDb::QueryResult{true}, p_field->mutable_type_ref()->mutable_type_ref());
 
         p_field->set_is_anon_enum_value(true);
         setVersionedBool(p_field->mutable_is_mutable(), false);

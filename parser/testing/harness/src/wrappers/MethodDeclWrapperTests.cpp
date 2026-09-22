@@ -130,7 +130,7 @@ namespace {
             parse("namespace A { struct Result {}; using Alias = Result; } namespace B { struct Source { operator A::Alias() const; }; }");
         ASSERT_EQ(functions.size(), 1u);
         auto traits = methodCommon(ParserTypes::FUNCTION_KIND_MEMBER_CONVERSION, "::A::Alias");
-        traits.mutable_return_type()->mutable_versions(0)->mutable_value()->set_is_builtin_or_template(false);
+        *traits.mutable_return_type()->mutable_is_builtin_or_template() = boolean(false);
         *traits.mutable_is_explicit() = boolean(false);
         const auto expected           = expectedMethod("operator ::A::Result", functionId("::B::Source::operator ::A::Result", " const"), traits,
                                                        ParserTypes::ACCESS_SPECIFIER_PUBLIC, true);

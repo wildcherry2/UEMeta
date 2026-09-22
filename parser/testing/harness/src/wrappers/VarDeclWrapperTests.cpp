@@ -17,6 +17,7 @@ namespace {
     using UEMeta::VarDeclWrapper;
     using UEMeta::Testing::expectBuiltinType;
     using UEMeta::Testing::expectId;
+    using UEMeta::Testing::expectFalse;
     using UEMeta::Testing::expectMetadata;
     using UEMeta::Testing::expectProto;
     using UEMeta::Testing::expectVersioned;
@@ -62,17 +63,15 @@ namespace {
                                                ParserTypes::ConstantEvaluationKind evaluation = ParserTypes::CONSTANT_EVALUATION_NONE,
                                                std::optional<std::string_view> initializer = std::nullopt, std::string_view documentation = "") {
             auto expected                = proto<VariableMessage>(R"pb(
-                type_ref { versions { source_versions: "test-version" value { type_ref {
+                type_ref { type_ref {
                     type_name { versions { source_versions: "test-version" value: "" } }
-                    is_builtin_or_template: true
-                } } } }
+                    is_builtin_or_template { true_versions: "test-version" }
+                } }
                 storage_class { versions { source_versions: "test-version" value: VAR_STORAGE_CLASS_UNSPECIFIED } }
                 constant_evaluation_kind { versions { source_versions: "test-version" value: CONSTANT_EVALUATION_NONE } }
             )pb");
             *expected.mutable_metadata() = metadata(name, variableId(name), occurrence, documentation);
             expected.mutable_type_ref()
-                ->mutable_versions(0)
-                ->mutable_value()
                 ->mutable_type_ref()
                 ->mutable_type_name()
                 ->mutable_versions(0)
@@ -88,12 +87,9 @@ namespace {
         }
 
         static void expectTypeName(const VariableMessage* message, std::string_view name) {
-            ASSERT_EQ(message->type_ref().versions_size(), 1);
-            const auto& version = message->type_ref().versions(0);
-            ASSERT_EQ(version.source_versions_size(), 1);
-            EXPECT_EQ(version.source_versions(0), "test-version");
-            ASSERT_TRUE(version.value().has_type_ref());
-            expectVersioned(version.value().type_ref().type_name(), name);
+            const auto& type = message->type_ref();
+            ASSERT_TRUE(type.has_type_ref());
+            expectVersioned(type.type_ref().type_name(), name);
         }
     };
 
@@ -236,10 +232,9 @@ namespace {
             UEMeta::DeclDb::addDeclIdentity(tag, known);
             const auto* message = serialize(variables[index]);
             ASSERT_NO_FATAL_FAILURE(expectTypeName(message, names[index]));
-            const auto& reference = message->type_ref().versions(0).value().type_ref();
+            const auto& reference = message->type_ref().type_ref();
             ASSERT_TRUE(reference.has_decl_id());
-            EXPECT_EQ(reference.decl_id().a(), known.a);
-            EXPECT_EQ(reference.decl_id().b(), known.b);
+            expectId(reference.decl_id(), known);
         }
     }
 
@@ -251,9 +246,12 @@ namespace {
             SCOPED_TRACE(index);
             const auto* message = serialize(variables[index]);
             ASSERT_NO_FATAL_FAILURE(expectTypeName(message, names[index]));
-            const auto& reference = message->type_ref().versions(0).value().type_ref();
-            EXPECT_EQ(reference.id_case(), ParserTypes::TypeRef::kIsBuiltinOrTemplate);
-            EXPECT_FALSE(reference.is_builtin_or_template());
+            const auto& reference = message->type_ref().type_ref();
+            ASSERT_TRUE(reference.has_is_builtin_or_template());
+            EXPECT_FALSE(reference.has_decl_id());
+            EXPECT_FALSE(reference.has_forward_decl_index());
+            EXPECT_FALSE(reference.has_header());
+            expectFalse(reference.is_builtin_or_template());
         }
     }
 
@@ -265,12 +263,11 @@ namespace {
         for (std::size_t index = 0; index < variables.size(); ++index) {
             SCOPED_TRACE(index);
             const auto* message = serialize(variables[index]);
-            ASSERT_EQ(message->type_ref().versions_size(), 1);
-            const auto& version = message->type_ref().versions(0);
-            ASSERT_EQ(version.source_versions_size(), 1);
-            EXPECT_EQ(version.source_versions(0), "test-version");
-            ASSERT_TRUE(version.value().has_anon_record());
-            const auto& record = version.value().anon_record();
+            const auto& type = message->type_ref();
+            ASSERT_TRUE(type.has_anon_record());
+            EXPECT_FALSE(type.has_type_ref());
+            EXPECT_FALSE(type.has_anon_enum());
+            const auto& record = type.anon_record();
             EXPECT_EQ(record.GetArena(), arena.get());
             EXPECT_TRUE(record.metadata().is_anonymous());
             EXPECT_EQ(record.kind(), index == 1 ? ParserTypes::RECORD_KIND_UNION : ParserTypes::RECORD_KIND_STRUCT);
@@ -292,10 +289,10 @@ namespace {
                 fields {
                     name: "field"
                     access { versions { source_versions: "test-version" value: ACCESS_SPECIFIER_PUBLIC } }
-                    type_ref { versions { source_versions: "test-version" value { type_ref {
+                    type_ref { type_ref {
                         type_name { versions { source_versions: "test-version" value: "long" } }
-                        is_builtin_or_template: true
-                    } } } }
+                        is_builtin_or_template { true_versions: "test-version" }
+                    } }
                     bit_width { versions { source_versions: "test-version" value: 32 } }
                     offset_bits { versions { source_versions: "test-version" value: 0 } }
                     is_mutable { false_versions: "test-version" }
@@ -309,7 +306,8 @@ namespace {
             expected_record.mutable_metadata()->mutable_occurrence_index()->mutable_versions(0)->set_value(2 * index);
             auto expected = builtinVariable(names[index], "", 2 * index + 1, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                             ParserTypes::CONSTANT_EVALUATION_NONE, index == 1 ? "nullptr" : "{}");
-            *expected.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = expected_record;
+            expected.mutable_type_ref()->clear_type_ref();
+            *expected.mutable_type_ref()->mutable_anon_record() = expected_record;
             expectProto(*message, expected);
         }
     }
@@ -329,9 +327,9 @@ namespace {
         EXPECT_EQ(std::get<uint64_t>(reference), 0u);
         const auto* message = serialize(variables[0]);
         ASSERT_NO_FATAL_FAILURE(expectTypeName(message, "::N::Alias *"));
-        const auto& type = message->type_ref().versions(0).value().type_ref();
+        const auto& type = message->type_ref().type_ref();
         ASSERT_TRUE(type.has_forward_decl_index());
-        EXPECT_EQ(type.forward_decl_index(), 0u);
+        expectVersioned(type.forward_decl_index(), 0u);
         expectVersioned(message->metadata().occurrence_index(), 1u);
     }
 
@@ -344,11 +342,13 @@ namespace {
         ASSERT_FALSE(enumeration->isEmbeddedInDeclarator());
         const auto* message = serialize(variables[0]);
         expectMetadata(message->metadata(), "::value");
-        ASSERT_EQ(message->type_ref().versions_size(), 1);
-        ASSERT_TRUE(message->type_ref().versions(0).value().has_type_ref());
-        const auto& type = message->type_ref().versions(0).value().type_ref();
-        EXPECT_EQ(type.id_case(), ParserTypes::TypeRef::kIsBuiltinOrTemplate);
-        EXPECT_FALSE(type.is_builtin_or_template());
+        ASSERT_TRUE(message->type_ref().has_type_ref());
+        const auto& type = message->type_ref().type_ref();
+        ASSERT_TRUE(type.has_is_builtin_or_template());
+        EXPECT_FALSE(type.has_decl_id());
+        EXPECT_FALSE(type.has_forward_decl_index());
+        EXPECT_FALSE(type.has_header());
+        expectFalse(type.is_builtin_or_template());
         expectVersioned(type.type_name(), "decltype(First)");
         expectVersioned(message->default_value(), "First");
     }
@@ -358,12 +358,11 @@ namespace {
         ASSERT_EQ(variables.size(), 1u);
         const auto* message = serialize(variables[0]);
         expectMetadata(message->metadata(), "::N::value");
-        ASSERT_EQ(message->type_ref().versions_size(), 1);
-        const auto& version = message->type_ref().versions(0);
-        ASSERT_EQ(version.source_versions_size(), 1);
-        EXPECT_EQ(version.source_versions(0), "test-version");
-        ASSERT_TRUE(version.value().has_anon_enum());
-        const auto& enumeration = version.value().anon_enum();
+        const auto& type = message->type_ref();
+        ASSERT_TRUE(type.has_anon_enum());
+        EXPECT_FALSE(type.has_type_ref());
+        EXPECT_FALSE(type.has_anon_record());
+        const auto& enumeration = type.anon_enum();
         EXPECT_EQ(enumeration.GetArena(), arena.get());
         EXPECT_TRUE(enumeration.has_scope());
         EXPECT_EQ(enumeration.scope(), ParserTypes::ENUM_SCOPE_UNSCOPED);
@@ -401,8 +400,8 @@ namespace {
         EXPECT_EQ(type.kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME);
         expectVersioned(type.type().type_name(), "T");
         EXPECT_TRUE(type.type().is_builtin_or_template());
-        ASSERT_EQ(type.default_type().versions_size(), 1);
-        expectVersioned(type.default_type().versions(0).value().type_name(), "long");
+        ASSERT_TRUE(type.has_default_type());
+        expectVersioned(type.default_type().type_name(), "long");
         const auto& count = details.parameters(1);
         EXPECT_EQ(count.kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_NON_TYPE);
         expectVersioned(count.name(), "Count");
@@ -416,10 +415,10 @@ namespace {
             parameters {
                 kind: TEMPLATE_PARAMETER_KIND_TYPENAME
                 type { type_name { versions { source_versions: "test-version" value: "T" } } is_builtin_or_template: true }
-                default_type { versions { source_versions: "test-version" value {
+                default_type {
                     type_name { versions { source_versions: "test-version" value: "long" } }
-                    is_builtin_or_template: true
-                } } }
+                    is_builtin_or_template { true_versions: "test-version" }
+                }
             }
             parameters {
                 kind: TEMPLATE_PARAMETER_KIND_NON_TYPE
@@ -600,7 +599,7 @@ namespace {
     TEST_F(VarDeclWrapperTest, TemplateTemplateParametersKeepNestedParametersAndConcreteTemplateArguments) {
         const auto variables = parse(R"cpp(
             template<class T> struct Box {};
-            template<template<class> class Container, class... Types> int factory = 0;
+            template<template<class> class Container = Box, class... Types> int factory = 0;
             template<> int factory<Box, int, long> = 1;
         )cpp");
         ASSERT_EQ(variables.size(), 2u);
@@ -609,6 +608,9 @@ namespace {
         ASSERT_EQ(parameters.size(), 2);
         EXPECT_EQ(parameters[0].kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
         expectVersioned(parameters[0].type().type_name(), "Container");
+        ASSERT_TRUE(parameters[0].has_default_type());
+        expectVersioned(parameters[0].default_type().type_name(), "::Box");
+        expectFalse(parameters[0].default_type().is_builtin_or_template());
         ASSERT_EQ(parameters[0].parameters_size(), 1);
         EXPECT_EQ(parameters[0].parameters(0).kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS);
         EXPECT_TRUE(parameters[1].is_parameter_pack());
@@ -623,6 +625,81 @@ namespace {
         EXPECT_EQ(arguments[2].kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TYPE);
         expectVersioned(arguments[2].type().type_name(), "long");
         EXPECT_NE(identity(primary), identity(specialization));
+    }
+
+    TEST_F(VarDeclWrapperTest, ConcreteTypeAndTemplateArgumentsUseTheirFullyQualifiedNames) {
+        const auto variables = parse(R"cpp(
+            namespace Lib {
+                struct Item {};
+                template<class> struct Box {};
+                template<class> struct Outer { template<class> struct Inner {}; };
+            }
+            namespace Usage {
+                using Lib::Item;
+                using Lib::Box;
+                template<class T = Item, template<class> class C = Box> int defaults = 0;
+                template<template<class> class C = Lib::Outer<Lib::Item>::Inner> int nested = 0;
+                template<template<class> class C> int selected = 0;
+                template<> int selected<Box> = 1;
+            }
+        )cpp");
+        ASSERT_EQ(variables.size(), 4u);
+        for (bool fully_qualified_policy : {false, true}) {
+            SCOPED_TRACE(fully_qualified_policy);
+            auto& context = variables[0]->getASTContext();
+            auto policy = context.getPrintingPolicy();
+            policy.FullyQualifiedName = fully_qualified_policy;
+            context.setPrintingPolicy(policy);
+            const auto* defaults = serialize(variables[0]);
+            const auto& parameters = defaults->template_details().parameters();
+            ASSERT_EQ(parameters.size(), 2);
+            expectVersioned(parameters[0].default_type().type_name(), "::Lib::Item");
+            expectVersioned(parameters[1].default_type().type_name(), "::Lib::Box");
+            expectFalse(parameters[0].default_type().is_builtin_or_template());
+            expectFalse(parameters[1].default_type().is_builtin_or_template());
+
+            const auto* nested = serialize(variables[1]);
+            expectVersioned(nested->template_details().parameters(0).default_type().type_name(), "::Lib::Outer< ::Lib::Item>::Inner");
+            const auto* specialization = serialize(variables[3]);
+            const auto& argument = specialization->template_details().specialized_parameters(0);
+            EXPECT_EQ(argument.kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TEMPLATE);
+            expectVersioned(argument.type().type_name(), "::Lib::Box");
+        }
+    }
+
+    TEST_F(VarDeclWrapperTest, DependentTypeAndTemplateDefaultsRetainOnlyTheirRequiredQualifications) {
+        const auto variables = parse(R"cpp(
+            namespace N {
+                template<class> struct Outer { template<class> struct Inner {}; };
+                struct Owner {
+                    template<class T, class U = T> static int type;
+                    template<class T, class U = typename T::type> static int member_type;
+                    template<class T, class U = N::Outer<T>> static int dependent_type;
+                    template<template<class> class C, template<class> class D = C> static int parameter;
+                    template<class T, template<class> class C = T::template Inner> static int dependent;
+                    template<class T, template<class> class C = N::Outer<T>::template Inner> static int nested;
+                };
+            }
+        )cpp");
+        ASSERT_EQ(variables.size(), 6u);
+        const std::vector<std::string> names{"T", "typename T::type", "N::Outer<T>", "C", "T::template Inner", "N::Outer<T>::template Inner"};
+        for (bool fully_qualified_policy : {false, true}) {
+            SCOPED_TRACE(fully_qualified_policy);
+            auto& context = variables[0]->getASTContext();
+            auto policy = context.getPrintingPolicy();
+            policy.FullyQualifiedName = fully_qualified_policy;
+            context.setPrintingPolicy(policy);
+            for (size_t i = 0; i < variables.size(); ++i) {
+                SCOPED_TRACE(names[i]);
+                const auto* message = serialize(variables[i]);
+                const auto& default_type = message->template_details().parameters(1).default_type();
+                expectVersioned(default_type.type_name(), names[i]);
+                expectProto(default_type.is_builtin_or_template(), UEMeta::Testing::boolean(true));
+                EXPECT_FALSE(default_type.has_decl_id());
+                EXPECT_FALSE(default_type.has_forward_decl_index());
+                EXPECT_FALSE(default_type.has_header());
+            }
+        }
     }
 
     TEST_F(VarDeclWrapperTest, SpecializationIdentityIncludesConcreteArgumentValues) {

@@ -67,10 +67,7 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
         if (get_if<std::monostate>(&type_query)) {
             throw DeclException(decl, "Failed to query global variable type (exception)!");
         }
-        ParserTypes::VersionedTypeRefOrAnon_VersionItem* type_ref_or_anon_version = p_msg->mutable_type_ref()->add_versions();
-
-        type_ref_or_anon_version->add_source_versions(Config::getConfig().getVersion());
-        ParserTypes::TypeRefOrAnon* type_ref_or_anon = type_ref_or_anon_version->mutable_value();
+        ParserTypes::VersionedTypeRefOrAnon* type_ref_or_anon = p_msg->mutable_type_ref();
 
         // Use DeclDb's unwrapped type to embed unnamed definitions in the variable's arena.
         if (auto* tag = underlying.isNull() ? nullptr : underlying->getAsTagDecl();
@@ -94,7 +91,7 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
         }
 
         std::string type_name = clang::TypeName::getFullyQualifiedName(declared_type, getASTContext(), getASTContext().getPrintingPolicy(), true);
-        if (type_ref_or_anon->value_case() == ParserTypes::TypeRefOrAnon::VALUE_NOT_SET) {
+        if (!type_ref_or_anon->has_anon_record() && !type_ref_or_anon->has_anon_enum()) {
             putTypeRef(type_name, type_query, type_ref_or_anon->mutable_type_ref());
         }
         if (described_template || specialization) [[unlikely]] {

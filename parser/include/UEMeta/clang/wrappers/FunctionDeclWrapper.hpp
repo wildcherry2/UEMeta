@@ -61,9 +61,7 @@ namespace UEMeta {
             }
 
             if (!llvm::isa<clang::CXXConstructorDecl, clang::CXXDestructorDecl>(Super::decl)) {
-                ParserTypes::VersionedTypeRef_VersionItem* return_type_version = p_msg->mutable_return_type()->add_versions();
-                return_type_version->add_source_versions(Config::getConfig().getVersion());
-                putFunctionTypeRef(Super::decl->getReturnType(), return_type_version->mutable_value());
+                putFunctionTypeRef(Super::decl->getReturnType(), p_msg->mutable_return_type());
             }
 
             setVersioned(p_msg->mutable_storage_class(),
@@ -201,7 +199,9 @@ namespace UEMeta {
 
     private:
         // Keep function/method type spelling here; DeclDb owns declaration and pattern lookup.
-        void putFunctionTypeRef(clang::QualType declared_type, ParserTypes::TypeRef* p_type_ref) const {
+        template <typename Ref>
+            requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
+        void putFunctionTypeRef(clang::QualType declared_type, Ref* p_type_ref) const {
             Super::putTypeRef(
                 clang::TypeName::getFullyQualifiedName(declared_type, Super::getASTContext(), Super::getASTContext().getPrintingPolicy(), true),
                 DeclDb::queryType(declared_type), p_type_ref);

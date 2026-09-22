@@ -27,8 +27,8 @@ int main(int argc, char** argv) {
     const auto version_directory = output.path / "test-version";
     std::filesystem::create_directory(version_directory);
 
-    // Occurrences restart at zero, so output names can repeat across tests and
-    // --gtest_repeat iterations. Clear only this process's private output folder.
+    // Declaration IDs can repeat across tests and --gtest_repeat iterations.
+    // Clear only this process's private output folder.
     struct FreshTestOutput : ::testing::EmptyTestEventListener {
         std::filesystem::path directory;
         explicit FreshTestOutput(std::filesystem::path directory) : directory(std::move(directory)) {}
@@ -42,11 +42,12 @@ int main(int argc, char** argv) {
 
     // Config already grants main bootstrap access. Initialize only the settings
     // these tests need; CLI11's Windows UTF-8 conversion reads the OS command line.
-    auto& config              = UEMeta::Config::getConfig();
-    config.output_directory   = UEMeta::StablePath{version_directory};
-    config.version            = "test-version";
-    config.format             = UEMeta::Config::SerializationFormat::Binary;
-    config.sync_serialization = true;
+    auto& config                         = UEMeta::Config::getConfig();
+    config.output_directory              = UEMeta::StablePath{version_directory};
+    config.version                       = "test-version";
+    config.format                        = UEMeta::Config::SerializationFormat::Binary;
+    config.sync_serialization            = true;
+    config.prefer_full_name_in_file_name = false;
     config.initialized.test_and_set();
 
     return RUN_ALL_TESTS();

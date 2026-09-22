@@ -36,6 +36,36 @@ namespace UEMeta::Testing {
         return message;
     }
 
+    inline ParserTypes::VersionedHash versionedHash(const ParserTypes::Hash& value) {
+        ParserTypes::VersionedHash message;
+        auto* version = message.add_versions();
+        version->add_source_versions("test-version");
+        *version->mutable_value() = value;
+        return message;
+    }
+
+    inline ParserTypes::VersionedTypeRef versionedRef(const ParserTypes::TypeRef& type) {
+        ParserTypes::VersionedTypeRef message;
+        *message.mutable_type_name() = type.type_name();
+        switch (type.id_case()) {
+            case ParserTypes::TypeRef::kDeclId:
+                *message.mutable_decl_id() = versionedHash(type.decl_id());
+                break;
+            case ParserTypes::TypeRef::kForwardDeclIndex:
+                *message.mutable_forward_decl_index() = versioned<ParserTypes::VersionedUint64>(type.forward_decl_index());
+                break;
+            case ParserTypes::TypeRef::kHeader:
+                *message.mutable_header() = versioned<ParserTypes::VersionedString>(type.header());
+                break;
+            case ParserTypes::TypeRef::kIsBuiltinOrTemplate:
+                *message.mutable_is_builtin_or_template() = boolean(type.is_builtin_or_template());
+                break;
+            case ParserTypes::TypeRef::ID_NOT_SET:
+                break;
+        }
+        return message;
+    }
+
     // Expected messages are written by the test, not serialized by another wrapper.
     // Compare all fields, including optional presence, oneof alternatives and repeated-field order.
     template <typename Message>
@@ -68,6 +98,14 @@ namespace UEMeta::Testing {
     inline void expectId(const ParserTypes::Hash& actual, const Hash& expected) {
         EXPECT_EQ(actual.a(), expected.a);
         EXPECT_EQ(actual.b(), expected.b);
+    }
+
+    inline void expectId(const ParserTypes::VersionedHash& actual, const Hash& expected) {
+        ASSERT_EQ(actual.versions_size(), 1);
+        const auto& version = actual.versions(0);
+        ASSERT_EQ(version.source_versions_size(), 1);
+        EXPECT_EQ(version.source_versions(0), "test-version");
+        expectId(version.value(), expected);
     }
 
     inline ParserTypes::DeclarationMetadata metadata(std::string_view name, const Hash& identity, uint64_t occurrence,
@@ -106,15 +144,10 @@ namespace UEMeta::Testing {
     }
 
     inline void expectBuiltinType(const ParserTypes::VersionedTypeRefOrAnon& message, std::string_view name) {
-        ASSERT_EQ(message.versions_size(), 1);
-        const auto& version = message.versions(0);
-        ASSERT_EQ(version.source_versions_size(), 1);
-        EXPECT_EQ(version.source_versions(0), "test-version");
-        ASSERT_TRUE(version.value().has_type_ref());
-        const auto& type = version.value().type_ref();
-        EXPECT_EQ(type.id_case(), ParserTypes::TypeRef::kIsBuiltinOrTemplate);
-        EXPECT_TRUE(type.is_builtin_or_template());
-        expectVersioned(type.type_name(), name);
+        ASSERT_TRUE(message.has_type_ref());
+        EXPECT_FALSE(message.has_anon_record());
+        EXPECT_FALSE(message.has_anon_enum());
+        expectProto(message.type_ref(), versionedRef(builtin(name)));
     }
 
     inline void expectMetadata(const ParserTypes::DeclarationMetadata& metadata, std::string_view name,

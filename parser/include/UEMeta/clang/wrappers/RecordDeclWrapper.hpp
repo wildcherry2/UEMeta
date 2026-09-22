@@ -14,7 +14,7 @@ namespace UEMeta {
      * The implementation's opening comments explain the AST shapes and anonymous-member walk.
      *
      * Ownership follows TopLevel.proto: named nested types have separate identities; an
-     * unnamed type declared with a field belongs inside that field's TypeRefOrAnon; members
+     * unnamed type declared with a field belongs inside that field's VersionedTypeRefOrAnon; members
      * of anonymous storage with no source declarator are raised into the containing record.
      * A file-scope anonymous union instead produces a vector of global variables.
      *
