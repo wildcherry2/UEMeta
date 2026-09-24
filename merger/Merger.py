@@ -33,8 +33,9 @@ class Merger:
                 Merger.__merge_impl(dest, version_message_list)
 
             # note: if we add back occurrence indices to file names, we'll need to regex them out before saving
-            out_path = output_dir / version_file_list[0]
-            out_path.with_suffix("m" + out_path.suffix)
+            out_path = output_dir / Path(version_file_list[0]).name
+            out_path = out_path.with_suffix(".m" + out_path.suffix[1:])
+            output_dir.mkdir(parents=True, exist_ok=True)
             with open(out_path, "wb") as out_file:
                 out_file.write(dest.SerializeToString())
 
@@ -45,25 +46,27 @@ class Merger:
 
     @staticmethod
     def __merge_impl(dest: Message, messages: list[Message]):
-        if dest.DESCRIPTOR is None: return
+        descriptor = getattr(dest, "DESCRIPTOR", None)
+        if descriptor is None: return
 
-        for field in dest.DESCRIPTOR.fields:
+        for field in descriptor.fields:
             if field is None or field.message_type is None: continue # null field or field is scalar/enum leaf
             type_name = field.message_type.name
             field_name = field.name
-            if not hasattr(dest, field_name):
+            dest_field = Merger.__getattr(dest, field_name)
+            if dest_field is None:
                 # find first non-null field value and move it to dest
-                found = False
                 for message in messages:
-                    new_attr_value = getattr(message, field_name, None)
+                    new_attr_value = Merger.__getattr(message, field_name)
                     if new_attr_value is None: continue
-                    found = True
-                    setattr(dest, field_name, new_attr_value)
-                    delattr(message, field_name)
-                if not found: continue
+                    dest_field = getattr(dest, field_name)
+                    dest_field.CopyFrom(new_attr_value)
+                    message.ClearField(field_name)
+                    break
+                else:
+                    continue
 
-            dest_field = getattr(dest, field_name)
-            src_list = [attr for message in messages if (attr := getattr(message, field_name, None)) is not None]
+            src_list = [attr for message in messages if (attr := Merger.__getattr(message, field_name)) is not None]
             if type_name == "VersionedBool":
                 Merger.__merge_versioned_bool(dest_field, src_list)
             elif type_name == "VersionedHash" or (type_name.startswith("Versioned") and type_name.endswith("List")):
@@ -72,6 +75,7 @@ class Merger:
                 Merger.__merge_versioned(dest_field, src_list)
             else:
                 Merger.__merge_impl(dest_field, src_list)
+            #todo handle repeated fields
 
     @staticmethod
     def __merge_versioned_bool(dest: VersionedBool, versioned_bools: list[VersionedBool]):
@@ -95,7 +99,7 @@ class Merger:
                 else:
                     # pyrefly: ignore [bad-argument-type]
                     dest.versions.append(version)
-                    default_dict[as_set] = version.source_versions
+                    default_dict[as_set] = dest.versions[-1].source_versions
 
     @staticmethod
     def __merge_versioned(dest: OutVersioned, versions: InVersioned):
@@ -110,12 +114,15 @@ class Merger:
                 else:
                     # pyrefly: ignore [bad-argument-type]
                     dest.versions.append(version_item)
-                    default_dict[version_item.value] = version_item.source_versions
+                    default_dict[version_item.value] = dest.versions[-1].source_versions
 
     @staticmethod
     def __to_hashable(value: RepeatedScalarFieldContainer[int] | RepeatedScalarFieldContainer[str] | RepeatedCompositeFieldContainer[Hash] | Hash):
         if isinstance(value, Hash):
             return value.a << 64 | value.b
+
+        if not value:
+            return frozenset()
 
         if isinstance(value[0], int):
             return frozenset(value)
@@ -126,8 +133,12 @@ class Merger:
         return frozenset([(hsh.a << 64 | hsh.b) for hsh in value])
 
     @staticmethod
-    def __getattr[T](obj: T, name: str) -> Any:
-        if hasattr(obj, name):
+    def __getattr(obj: Message, name: str) -> Any:
+        field = obj.DESCRIPTOR.fields_by_name.get(name)
+        if field is None:
+            return None
+        # Repeated fields have no presence; singular message fields use HasField.
+        if field.is_repeated or obj.HasField(name):
             return getattr(obj, name)
         return None
 
