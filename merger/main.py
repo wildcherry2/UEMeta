@@ -52,6 +52,8 @@ if __name__== "__main__":
 
     bound_merge = partial(merge, args.output)
     with Pool() as pool:
-        results = pool.imap_unordered(bound_merge, version_map.values(), max(1, int(len(version_map) / os.process_cpu_count())))
+        cpu_count = os.process_cpu_count()
+        if cpu_count is None: cpu_count = 1
+        results = pool.imap_unordered(bound_merge, version_map.values(), max(1, int(len(version_map) / cpu_count)))
         from collections import deque
         deque(results, maxlen=0)
