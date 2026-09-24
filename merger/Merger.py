@@ -86,7 +86,6 @@ class Merger:
         default_dict = {Merger.__to_hashable(version.value) : version.source_versions for version in dest.versions if version is not None}
 
         for versioned_list in versioned_list_list:
-            if versioned_list is None: continue
             for version in versioned_list.versions:
                 as_set = Merger.__to_hashable(version.value)
                 existing = default_dict.get(as_set)
@@ -103,7 +102,6 @@ class Merger:
         default_dict = { version.value : version.source_versions for version in dest.versions if version is not None}
 
         for version in versions:
-            if version is None: continue
             for version_item in version.versions:
                 existing = default_dict.get(version_item.value)
                 if existing is not None:
