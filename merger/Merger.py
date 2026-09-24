@@ -73,9 +73,11 @@ class Merger:
                 Merger.__merge_versioned_list_or_hash(dest_field, src_list)
             elif type_name != "VersionedTypeRefOrAnon" and type_name != "VersionedTypeRef" and type_name.startswith("Versioned"):
                 Merger.__merge_versioned(dest_field, src_list)
+            elif field.is_repeated:
+                # todo handle repeated fields; some fields are 'keyed' by a name or ID, others are positional
+                pass
             else:
                 Merger.__merge_impl(dest_field, src_list)
-            #todo handle repeated fields
 
     @staticmethod
     def __merge_versioned_bool(dest: VersionedBool, versioned_bools: list[VersionedBool]):
@@ -155,8 +157,6 @@ class Merger:
                 fn = TLEnumDeclaration
             case ".varbin":
                 fn = TLGlobalVariableDeclaration
-            case ".declbin":
-                fn = ForwardDeclarationList
             case _:
                 raise Exception("Unknown file type " + test_path.suffix)
 
@@ -164,8 +164,6 @@ class Merger:
             out = ctor()
             with open(path, "rb") as f:
                 out.ParseFromString(f.read())
-            if out is None:
-                print("Failed to parse path: " + path)
             return out
 
         return [proto for path in path_strs if (proto := toParsed(fn, path)) is not None]
