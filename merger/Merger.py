@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from google.protobuf.internal.containers import RepeatedCompositeFieldContainer, RepeatedScalarFieldContainer
 from google.protobuf.message import Message
@@ -12,70 +13,82 @@ from proto.TopLevel_pb2 import (TLFreeFunctionDeclaration, TLRecordDeclaration, 
 from proto.VersionedPrimitives_pb2 import (VersionedBool, VersionedUint64List, VersionedStringList,
                                            VersionedString, VersionedUint64, VersionedUint32, VersionedInt64)
 
-type InVersionedList = list[VersionedUint64List | None] | list[VersionedStringList | None] | list[VersionedHashList | None]
-type OutVersionedList = VersionedUint64List | VersionedStringList | VersionedHashList | None
+type InVersionedList = list[VersionedUint64List] | list[VersionedStringList] | list[VersionedHashList]
+type OutVersionedList = VersionedUint64List | VersionedStringList | VersionedHashList
 
-type InVersioned = (list[VersionedString | None] | list[VersionedUint64 | None] | list[VersionedUint32 | None] | list[VersionedInt64 | None] | list[VersionedAccessSpecifier | None]
-                     | list[VersionedConstantEvaluationKind | None] | list[VersionedEnumScope | None] | list[VersionedFunctionDefinitionKind | None]
-                     | list[VersionedFunctionStorageClass | None] | list[VersionedFunctionVirtualityKind | None] | list[VersionedVariableStorageClass | None])
+type InVersioned = (list[VersionedString] | list[VersionedUint64] | list[VersionedUint32] | list[VersionedInt64] | list[VersionedAccessSpecifier]
+                     | list[VersionedConstantEvaluationKind] | list[VersionedEnumScope] | list[VersionedFunctionDefinitionKind]
+                     | list[VersionedFunctionStorageClass] | list[VersionedFunctionVirtualityKind] | list[VersionedVariableStorageClass])
 type OutVersioned = (VersionedString | VersionedUint64 | VersionedUint32 | VersionedInt64 | VersionedAccessSpecifier
                      | VersionedConstantEvaluationKind | VersionedEnumScope | VersionedFunctionDefinitionKind
                      | VersionedFunctionStorageClass | VersionedFunctionVirtualityKind | VersionedVariableStorageClass)
 
 class Merger:
-    def __init__(self, output_dir: Path, version_file_list: list[str]):
-        self.version_file_list = Merger.__toProto(version_file_list)
-        self.output_dir = output_dir
-
-    def merge(self) -> bool:
+    @staticmethod
+    def merge(output_dir: Path, version_file_list: list[str]) -> bool:
         try:
-            # pyrefly: ignore [bad-argument-type]
-            self.__merge_impl(self.version_file_list)
-        except Exception:
+            version_message_list = Merger.__toProto(version_file_list)
+            dest = version_message_list.pop()
+            if len(version_message_list) > 0:
+                Merger.__merge_impl(dest, version_message_list)
+
+            # note: if we add back occurrence indices to file names, we'll need to regex them out before saving
+            out_path = output_dir / version_file_list[0]
+            out_path.with_suffix("m" + out_path.suffix)
+            with open(out_path, "wb") as out_file:
+                out_file.write(dest.SerializeToString())
+
+        except Exception as e:
+            print(f"Error merging {version_file_list}: {e}")
             return False
         return True
 
-    def __merge_impl(self, messages: list[Message]):
-        for field in messages[0].DESCRIPTOR.fields:
+    @staticmethod
+    def __merge_impl(dest: Message, messages: list[Message]):
+        if dest.DESCRIPTOR is None: return
+
+        for field in dest.DESCRIPTOR.fields:
             if field is None or field.message_type is None: continue # null field or field is scalar/enum leaf
             type_name = field.message_type.name
+            field_name = field.name
+            if not hasattr(dest, field_name):
+                # find first non-null field value and move it to dest
+                found = False
+                for message in messages:
+                    new_attr_value = getattr(message, field_name, None)
+                    if new_attr_value is None: continue
+                    found = True
+                    setattr(dest, field_name, new_attr_value)
+                    delattr(message, field_name)
+                if not found: continue
+
+            dest_field = getattr(dest, field_name)
+            src_list = [attr for message in messages if (attr := getattr(message, field_name, None)) is not None]
             if type_name == "VersionedBool":
-                setattr(messages[0], field.name, self.__merge_versioned_bool([self.__getattr(message, field.name) for message in messages]))
-            elif type_name == "VersionedHash":
-                setattr(messages[0], field.name, self.__merge_versioned_list_or_hash([self.__getattr(message, field.name) for message in messages]))
-            elif type_name.startswith("Versioned") and type_name.endswith("List"):
-                setattr(messages[0], field.name, self.__merge_versioned_list_or_hash([self.__getattr(message, field.name) for message in messages]))
+                Merger.__merge_versioned_bool(dest_field, src_list)
+            elif type_name == "VersionedHash" or (type_name.startswith("Versioned") and type_name.endswith("List")):
+                Merger.__merge_versioned_list_or_hash(dest_field, src_list)
             elif type_name != "VersionedTypeRefOrAnon" and type_name != "VersionedTypeRef" and type_name.startswith("Versioned"):
-                setattr(messages[0], field.name, self.__merge_versioned([self.__getattr(message, field.name) for message in messages]))
+                Merger.__merge_versioned(dest_field, src_list)
             else:
-                self.__merge_impl([nonnull_message for message in messages if (nonnull_message := self.__getattr(message, field.name)) is not None])
+                Merger.__merge_impl(dest_field, src_list)
 
-    def __merge_versioned_bool(self, versioned_bools: list[VersionedBool | None]):
-        dest = None
-        while dest is None and len(versioned_bools) > 0:
-            dest = versioned_bools.pop(0)
-        if dest is None: return None
-
+    @staticmethod
+    def __merge_versioned_bool(dest: VersionedBool, versioned_bools: list[VersionedBool]):
         for versioned_bool in versioned_bools:
-            if versioned_bool is None: continue
             for true_version in versioned_bool.true_versions:
                 dest.true_versions.append(true_version)
             for false_version in versioned_bool.false_versions:
                 dest.false_versions.append(false_version)
-        return dest
 
-    def __merge_versioned_list_or_hash(self, versioned_list_list: InVersionedList | list[VersionedHash | None]) -> OutVersionedList | VersionedHash:
-        dest = None
-        while dest is None and len(versioned_list_list) > 0:
-            dest = versioned_list_list.pop(0)
-        if dest is None: return None
-
-        default_dict = {self.__to_hashable(version.value) : version.source_versions for version in dest.versions if version is not None}
+    @staticmethod
+    def __merge_versioned_list_or_hash(dest: OutVersionedList | VersionedHash, versioned_list_list: InVersionedList | list[VersionedHash]):
+        default_dict = {Merger.__to_hashable(version.value) : version.source_versions for version in dest.versions if version is not None}
 
         for versioned_list in versioned_list_list:
             if versioned_list is None: continue
             for version in versioned_list.versions:
-                as_set = self.__to_hashable(version.value)
+                as_set = Merger.__to_hashable(version.value)
                 existing = default_dict.get(as_set)
                 if existing is not None:
                     for this_src_version in version.source_versions:
@@ -85,14 +98,10 @@ class Merger:
                     dest.versions.append(version)
                     default_dict[as_set] = version.source_versions
 
-        return dest
-
-    def __merge_versioned(self, versions: InVersioned) -> OutVersioned | None:
-        dest = None
-        while dest is None and len(versions) > 0:
-            dest = versions.pop(0)
-        if dest is None: return None
+    @staticmethod
+    def __merge_versioned(dest: OutVersioned, versions: InVersioned):
         default_dict = { version.value : version.source_versions for version in dest.versions if version is not None}
+
         for version in versions:
             if version is None: continue
             for version_item in version.versions:
@@ -105,9 +114,8 @@ class Merger:
                     dest.versions.append(version_item)
                     default_dict[version_item.value] = version_item.source_versions
 
-        return dest
-
-    def __to_hashable(self, value: RepeatedScalarFieldContainer[int] | RepeatedScalarFieldContainer[str] | RepeatedCompositeFieldContainer[Hash] | Hash):
+    @staticmethod
+    def __to_hashable(value: RepeatedScalarFieldContainer[int] | RepeatedScalarFieldContainer[str] | RepeatedCompositeFieldContainer[Hash] | Hash):
         if isinstance(value, Hash):
             return value.a << 64 | value.b
 
@@ -119,7 +127,8 @@ class Merger:
 
         return frozenset([(hsh.a << 64 | hsh.b) for hsh in value])
 
-    def __getattr[T, V](self, obj: T, name: str) -> V | None:
+    @staticmethod
+    def __getattr[T](obj: T, name: str) -> Any:
         if hasattr(obj, name):
             return getattr(obj, name)
         return None

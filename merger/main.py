@@ -2,7 +2,7 @@ from pathlib import Path
 
 def merge(out_path: str, proto_paths: list[str]) -> bool:
     from Merger import Merger # we import here because this is called from worker processes; we don't need to import in the main process
-    return Merger(Path(out_path), proto_paths).merge()
+    return Merger.merge(Path(out_path), proto_paths)
 
 if __name__== "__main__":
     import os
@@ -35,20 +35,15 @@ if __name__== "__main__":
     run(["python", str(proto_build), "--language", "python", "--output", str(proto_dir)])
     sys.path.append(str(proto_dir))
 
-    versions: list[str] = []
-
-    with os.scandir(str(args.input)) as entries:
-        for entry in entries:
-            if entry.is_dir():
-                versions.append(entry.name) # todo combine with below for loop
-
     version_map: dict[str, list[str]] = defaultdict(list)
+    with os.scandir(str(args.input)) as version_dirs:
+        for version_dir in version_dirs:
+            if version_dir.is_dir():
+                with os.scandir(version_dir) as versions:
+                    for version in versions:
+                        if version.is_file():
+                            version_map[version.name].append(version.path)
 
-    for version in versions:
-        with os.scandir(str(args.input / version)) as entries:
-            for entry in entries:
-                if entry.is_file():
-                    version_map[entry.name].append(entry.path)
 
     bound_merge = partial(merge, args.output)
     with Pool() as pool:
