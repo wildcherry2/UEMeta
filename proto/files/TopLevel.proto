@@ -253,6 +253,7 @@ message BaseSpecifier {
   VersionedBool is_virtual = 2;
   VersionedUint64 offset = 3;
   TypeRef type_ref = 4;
+  VersionedUint64 occurrence_index = 5;
 }
 
 message TypeRef {
@@ -263,7 +264,7 @@ message TypeRef {
     // identifier for the type; points to a serialized TL* type
     Hash decl_id = 2;
 
-    // if the type derives froma forward declaration, this is the occurrence index of that forward declaration
+    // if the type derives from a forward declaration, this is the occurrence index of that forward declaration
     uint64 forward_decl_index = 3;
 
     // if the type is std:: or platform-specific, this is the #include that defines the type
