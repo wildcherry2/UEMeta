@@ -10,9 +10,5 @@ def generate_proto():
 
     with open(dest / "__init__.py", "w") as mod:
         mod.write(
-            """
-                from . import TopLevel_pb2
-                from . import Enums_pb2
-                from . import VersionedPrimitives_pb2
-            """
+            "from . import TopLevel_pb2\nfrom . import Enums_pb2\nfrom . import VersionedPrimitives_pb2"
         )
