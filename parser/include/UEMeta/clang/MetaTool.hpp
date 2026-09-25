@@ -6,19 +6,19 @@
 
 namespace UEMeta {
     /**
-     * @brief Owns the Clang tooling state needed to parse the configured translation unit.
+     * @brief Loads a cached AST or owns the Clang tooling state needed to parse source files.
      */
     class MetaTool {
     public:
         /**
-         * @brief Builds the Clang tool from the initialized CLI configuration.
+         * @brief Builds the Clang tool when the initialized CLI configuration selects source input.
          *
          * @throws std::runtime_error When compile command loading or validation fails.
          */
         MetaTool();
 
         /**
-         * @brief Runs the Clang tool with UEMeta's AST frontend action.
+         * @brief Extracts metadata from the configured AST cache or source files.
          *
          * @return Clang's run result.
          */
@@ -39,6 +39,6 @@ namespace UEMeta {
         /**
          * @brief Clang tool configured with the filtered compilation database and source file list.
          */
-        clang::tooling::ClangTool clang_tool;
+        std::unique_ptr<clang::tooling::ClangTool> clang_tool;
     };
 } // namespace UEMeta

@@ -334,3 +334,22 @@ message VersionedHashList {
 
   repeated VersionItem versions = 1;
 }
+
+message ReflectionCache {
+  message EnumReflectionInfo {
+    string reflected_package = 1;
+    optional bool reflected_namespace = 2;
+  }
+
+  message CacheItem {
+    oneof item {
+      string reflected_package = 1;
+      EnumReflectionInfo enum_refl_info = 2;
+      bool reflected_name_or_field = 3;
+    }
+
+    Hash decl_id = 4;
+  }
+
+  repeated CacheItem cache = 1;
+}

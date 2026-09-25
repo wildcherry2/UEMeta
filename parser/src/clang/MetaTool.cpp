@@ -1,6 +1,8 @@
 #include "UEMeta/clang/MetaTool.hpp"
 
 #include <algorithm>
+#include <clang/Frontend/ASTUnit.h>
+#include <clang/Frontend/CompilerInstance.h>
 #include <clang/Tooling/ArgumentsAdjusters.h>
 #include <clang/Tooling/CompilationDatabase.h>
 #include <clang/Tooling/JSONCompilationDatabase.h>
@@ -10,6 +12,7 @@
 #include <utility>
 
 #include "UEMeta/Cli.hpp"
+#include "UEMeta/clang/MetaASTConsumer.hpp"
 #include "UEMeta/clang/MetaFrontendAction.hpp"
 
 using namespace clang::tooling;
@@ -83,11 +86,14 @@ std::unique_ptr<CompilationDatabase> UEMeta::MetaTool::loadCompileDatabase(const
     return db;
 }
 
-/// @brief Creates the ClangTool and argument adjusters for the configured compile commands.
-UEMeta::MetaTool::MetaTool() :
-    compilation_database(loadCompileDatabase(Config::getConfig().getCompileCommands())),
-    clang_tool(*compilation_database, compilation_database->getAllFiles()) {
-    clang_tool.appendArgumentsAdjuster([](const CommandLineArguments& args, llvm::StringRef) {
+/// @brief Creates the ClangTool only when source files are selected instead of an AST cache.
+UEMeta::MetaTool::MetaTool() {
+    if (!Config::getConfig().getInputASTFile().isEmptyPath())
+        return;
+
+    compilation_database = loadCompileDatabase(Config::getConfig().getCompileCommands());
+    clang_tool = std::make_unique<ClangTool>(*compilation_database, compilation_database->getAllFiles());
+    clang_tool->appendArgumentsAdjuster([](const CommandLineArguments& args, llvm::StringRef) {
         auto adjusted = args;
         if (adjusted.empty()) {
             UEM_WARN("Selected compile command has no arguments.");
@@ -100,9 +106,34 @@ UEMeta::MetaTool::MetaTool() :
         out.insert_range(out.end(), cfg.getAdditionalClangArgs());
         return out;
     });
-    clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-fparse-all-comments"));
-    clang_tool.appendArgumentsAdjuster(getInsertArgumentAdjuster("-w"));
+    clang_tool->appendArgumentsAdjuster(getInsertArgumentAdjuster("-fparse-all-comments"));
+    clang_tool->appendArgumentsAdjuster(getInsertArgumentAdjuster("-w"));
 }
 
-/// @brief Runs Clang with MetaFrontendAction.
-int UEMeta::MetaTool::runClangTool() { return clang_tool.run(newFrontendActionFactory<MetaFrontendAction>().get()); }
+/// @brief Runs the metadata consumer against the cached AST or a freshly parsed translation unit.
+int UEMeta::MetaTool::runClangTool() {
+    const auto& ast_file = Config::getConfig().getInputASTFile();
+    if (ast_file.isEmptyPath())
+        return clang_tool->run(newFrontendActionFactory<MetaFrontendAction>().get());
+
+    const auto ast_path = ast_file.getUnderlyingPath().string();
+    UEM_INFO("Loading AST cache '{}'", ast_path);
+
+    // The diagnostics and container reader must outlive the loaded AST.
+    clang::CompilerInstance compiler;
+    compiler.createVirtualFileSystem();
+    compiler.createDiagnostics();
+    auto ast = clang::ASTUnit::LoadFromASTFile(
+        ast_path, compiler.getPCHContainerReader(), clang::ASTUnit::LoadEverything,
+        compiler.getVirtualFileSystemPtr(), nullptr, compiler.getDiagnosticsPtr(),
+        compiler.getFileSystemOpts(), compiler.getHeaderSearchOpts());
+    if (!ast || ast->getDiagnostics().hasErrorOccurred()) {
+        UEM_ERROR("Failed to load AST cache '{}'", ast_path);
+        return 1;
+    }
+
+    MetaASTConsumer consumer(ast->getOriginalSourceFileName().str());
+    consumer.Initialize(ast->getASTContext());
+    consumer.HandleTranslationUnit(ast->getASTContext());
+    return ast->getDiagnostics().hasErrorOccurred() ? 1 : 0;
+}
