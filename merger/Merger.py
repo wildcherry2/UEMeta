@@ -9,7 +9,8 @@ from proto.Enums_pb2 import (VersionedAccessSpecifier, VersionedConstantEvaluati
                              VersionedFunctionVirtualityKind, VersionedVariableStorageClass)
 from proto.TopLevel_pb2 import (TLFreeFunctionDeclaration, TLRecordDeclaration, TLEnumDeclaration,
                                 TLGlobalVariableDeclaration, ForwardDeclarationList, VersionedHashList,
-                                Hash, VersionedHash)
+                                Hash, VersionedHash, TemplateParameter, Parameter, Field, BaseSpecifier, MemberFunction,
+                                Enumerator, )
 from proto.VersionedPrimitives_pb2 import (VersionedBool, VersionedUint64List, VersionedStringList,
                                            VersionedString, VersionedUint64, VersionedUint32, VersionedInt64)
 
@@ -60,7 +61,7 @@ class Merger:
                     new_attr_value = Merger.__getattr(message, field_name)
                     if new_attr_value is None: continue
                     dest_field = getattr(dest, field_name)
-                    dest_field.CopyFrom(new_attr_value)
+                    dest_field.CopyFrom(new_attr_value) #todo is copying necessary
                     message.ClearField(field_name)
                     break
                 else:
@@ -74,8 +75,12 @@ class Merger:
             elif type_name != "VersionedTypeRefOrAnon" and type_name != "VersionedTypeRef" and type_name.startswith("Versioned"):
                 Merger.__merge_versioned(dest_field, src_list)
             elif field.is_repeated:
-                # todo handle repeated fields; some fields are 'keyed' by a name or ID, others are positional
-                pass
+                if type_name == "TemplateParameter" or type_name == "Parameter":
+                    Merger.__merge_repeated_positional(dest_field, src_list)
+                elif type_name == "Field" or type_name == "BaseSpecifier" or type_name == "MemberFunction" or type_name == "Enumerator":
+                    Merger.__merge_repeated_keyed(dest_field, src_list)
+                else:
+                    print(f"Warning: unhandled repeated type {type_name}")
             else:
                 Merger.__merge_impl(dest_field, src_list)
 
@@ -117,6 +122,45 @@ class Merger:
                     # pyrefly: ignore [bad-argument-type]
                     dest.versions.append(version_item)
                     default_dict[version_item.value] = dest.versions[-1].source_versions
+
+    @staticmethod
+    def __merge_repeated_positional[T: (TemplateParameter, Parameter)](dest: RepeatedCompositeFieldContainer[T], container_list: list[RepeatedCompositeFieldContainer[T]]):
+        dest_len = len(dest)
+
+        # remap container_list such that the 0th index of mapped_container_list contains the 0th T from each list in the container list
+        mapped_container_list: list[list[T]] = [[] for _ in range(dest_len)]
+        for container in container_list:
+            if len(container) != dest_len:
+                raise ValueError("Container list must have the same length as dest list!")
+            for index, item in enumerate(container):
+                mapped_container_list[index].append(item)
+
+        for index, item in enumerate(dest):
+            Merger.__merge_impl(item, mapped_container_list[index])
+
+    @staticmethod
+    def __merge_repeated_keyed[T: (Field, BaseSpecifier, MemberFunction, Enumerator)](dest: RepeatedCompositeFieldContainer[T], container_list: list[RepeatedCompositeFieldContainer[T]]):
+        keyed_src_dict: dict[int | str, list[T]] = dict()
+        keyed_dest_dict: dict[int | str, T] = dict()
+        for container in container_list:
+            for src_item in container:
+                keyed_src_dict.setdefault(Merger.__get_key(src_item), []).append(src_item)
+
+        for src_item in dest:
+            keyed_dest_dict[Merger.__get_key(src_item)] = src_item
+
+        only_in_srcs = keyed_src_dict.keys() - keyed_dest_dict.keys()
+        for exclusive_src in only_in_srcs:
+            src_list = keyed_src_dict[exclusive_src]
+            if len(src_list) != 1:
+                Merger.__merge_impl(src_list[0], src_list[1:])
+            dest.append(src_list[0])
+            # we don't need to update the dest_dict
+
+        for key, value in keyed_dest_dict.items():
+            src_list = keyed_src_dict.get(key, None)
+            if src_list is not None:
+                Merger.__merge_impl(value, src_list)
 
     @staticmethod
     def __to_hashable(value: RepeatedScalarFieldContainer[int] | RepeatedScalarFieldContainer[str] | RepeatedCompositeFieldContainer[Hash] | Hash):
@@ -167,3 +211,15 @@ class Merger:
             return out
 
         return [proto for path in path_strs if (proto := toParsed(fn, path)) is not None]
+
+    @staticmethod
+    def __get_key[T : (Field, BaseSpecifier, MemberFunction, Enumerator)](message: T) -> int | str:
+        if isinstance(message, Field):
+            return message.name #todo unnamed bitfields
+        if isinstance(message, MemberFunction):
+            return message.func_id.a << 64 | message.func_id.b
+        if isinstance(message, Enumerator):
+            return message.name
+        if isinstance(message, BaseSpecifier):
+            return message.type_ref.type_name.versions[0].value #__get_key calls happen before any merging
+        raise Exception(f"Can't get key for message {message}")
