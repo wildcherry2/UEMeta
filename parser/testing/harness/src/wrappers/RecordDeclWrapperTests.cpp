@@ -31,9 +31,7 @@ namespace {
 
     ParserTypes::VersionedTypeRefOrAnon fieldType(const ParserTypes::TypeRef& type) {
         ParserTypes::VersionedTypeRefOrAnon result;
-        auto*                               version = result.add_versions();
-        version->add_source_versions("test-version");
-        *version->mutable_value()->mutable_type_ref() = type;
+        *result.mutable_type_ref() = versionedRef(type);
         return result;
     }
 
@@ -319,12 +317,13 @@ namespace {
         *embedded.add_fields() = field("tag", "char", 8, 0);
         *embedded.add_fields() = field("x", "int", 32, 32);
         *embedded.add_fields() = field("y", "float", 32, 32);
-        *value.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = embedded;
+        value.mutable_type_ref()->clear_type_ref();
+        *value.mutable_type_ref()->mutable_anon_record() = embedded;
         *expected.add_fields()                                                                 = value;
         const auto  before                                                                     = outputFiles();
         const auto* actual                                                                     = serialize(records[0]);
         expectProto(*actual, expected);
-        EXPECT_EQ(actual->fields(1).type_ref().versions(0).value().anon_record().GetArena(), arena.get());
+        EXPECT_EQ(actual->fields(1).type_ref().anon_record().GetArena(), arena.get());
         for (size_t i = 1; i < records.size(); ++i)
             UEMeta::DeclDb::serializeIfNeeded(records[i]);
         EXPECT_EQ(outputFiles(), before);
@@ -368,7 +367,8 @@ namespace {
             auto item              = field(names[i], "", widths[i], i * 64);
             auto embedded          = anonymousRecord(1 + i, ParserTypes::RECORD_KIND_STRUCT, sizes[i], sizes[i]);
             *embedded.add_fields() = field(leaf_names[i], types[i], sizes[i] * 8, 0);
-            *item.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = embedded;
+            item.mutable_type_ref()->clear_type_ref();
+            *item.mutable_type_ref()->mutable_anon_record() = embedded;
             *expected.add_fields()                                                                = item;
         }
         expectProto(*serialize(records[0]), expected);
@@ -450,7 +450,7 @@ namespace {
         *late.mutable_type_ref()  = fieldType(reference("::Outer::Later *", recordId("::Outer::Later")));
         *expected.add_fields()    = late;
         auto unknown              = field("unknown", "::Outer::Missing *", 64, 128);
-        unknown.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_type_ref()->set_is_builtin_or_template(false);
+        *unknown.mutable_type_ref()->mutable_type_ref()->mutable_is_builtin_or_template() = boolean(false);
         *expected.add_fields() = unknown;
         early                  = field("early", "::Outer::Mode", 32, 192);
         early_type             = builtin("::Outer::Mode");
@@ -508,13 +508,14 @@ namespace {
         // EnumDeclWrapper's current embedded representation includes Clang's source-qualified anonymous spelling.
         const std::string name                                                               = "::Owner::(unnamed enum at wrapper_fixture.cpp:1:16)";
         *embedded.mutable_metadata()                                                         = metadata(name, enumId(name), 1);
-        *value.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_enum() = embedded;
+        value.mutable_type_ref()->clear_type_ref();
+        *value.mutable_type_ref()->mutable_anon_enum() = embedded;
         *expected.add_fields()                                                               = value;
         const auto  before                                                                   = outputFiles();
         const auto* actual                                                                   = serialize(records[0]);
         expectProto(*actual, expected);
         ASSERT_EQ(actual->fields_size(), 1);
-        EXPECT_EQ(actual->fields(0).type_ref().versions(0).value().anon_enum().GetArena(), arena.get());
+        EXPECT_EQ(actual->fields(0).type_ref().anon_enum().GetArena(), arena.get());
         for (auto* member : records[0]->decls())
             if (auto* e = llvm::dyn_cast<clang::EnumDecl>(member))
                 UEMeta::DeclDb::serializeIfNeeded(e);
@@ -578,13 +579,13 @@ namespace {
         expectProto(values[0]->metadata(), metadata("::value", variableId("::value"), 0));
         auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *embedded.add_fields() = field("x", "int", 32, 0);
-        ASSERT_EQ(values[0]->type_ref().versions_size(), 1);
-        ASSERT_TRUE(values[0]->type_ref().versions(0).value().has_anon_record());
-        expectProto(values[0]->type_ref().versions(0).value().anon_record(), embedded);
+
+        ASSERT_TRUE(values[0]->type_ref().has_anon_record());
+        expectProto(values[0]->type_ref().anon_record(), embedded);
         expectProto(values[1]->metadata(), metadata("::mode", variableId("::mode"), 2));
-        ASSERT_EQ(values[1]->type_ref().versions_size(), 1);
-        ASSERT_TRUE(values[1]->type_ref().versions(0).value().has_anon_enum());
-        const auto& enumeration = values[1]->type_ref().versions(0).value().anon_enum();
+
+        ASSERT_TRUE(values[1]->type_ref().has_anon_enum());
+        const auto& enumeration = values[1]->type_ref().anon_enum();
         ASSERT_EQ(enumeration.enumerators_size(), 1);
         EXPECT_EQ(enumeration.enumerators(0).name(), "A");
         expectVersioned(enumeration.enumerators(0).value(), "1");
@@ -639,7 +640,8 @@ namespace {
         ASSERT_EQ(records.size(), 2u);
         auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
         auto pointer  = field("pointer", "::std::External *", 64, 0);
-        pointer.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_type_ref()->set_header("wrapper_fixture.cpp");
+        pointer.mutable_type_ref()->mutable_type_ref()->clear_is_builtin_or_template();
+        *pointer.mutable_type_ref()->mutable_type_ref()->mutable_header() = versioned<ParserTypes::VersionedString>("wrapper_fixture.cpp");
         *expected.add_fields() = pointer;
         expectProto(*serialize(records[1]), expected);
     }
@@ -649,7 +651,7 @@ namespace {
         ASSERT_EQ(records.size(), 1u);
         auto expected = record("::Owner", 0, ParserTypes::RECORD_KIND_STRUCT, 1, 1);
         auto callback = field("callback", "::Owner::(lambda at wrapper_fixture.cpp:1:25)", 8, 0);
-        callback.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_type_ref()->set_is_builtin_or_template(false);
+        *callback.mutable_type_ref()->mutable_type_ref()->mutable_is_builtin_or_template() = boolean(false);
         *expected.add_fields() = callback;
         expectProto(*serialize(records[0]), expected);
     }
@@ -683,7 +685,8 @@ namespace {
         auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         *embedded.add_fields() = field("retained", "type-parameter-0-0", std::nullopt, std::nullopt);
         value                  = field("embedded", "", std::nullopt, std::nullopt);
-        *value.mutable_type_ref()->mutable_versions(0)->mutable_value()->mutable_anon_record() = embedded;
+        value.mutable_type_ref()->clear_type_ref();
+        *value.mutable_type_ref()->mutable_anon_record() = embedded;
         *expected.add_fields()                                                                 = value;
         auto constant = staticField("Count", "int", std::nullopt, ParserTypes::VAR_STORAGE_CLASS_STATIC, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
         constant.set_is_anon_enum_value(true);
@@ -852,8 +855,8 @@ namespace {
             if (i == 3)
                 EXPECT_FALSE(method.common().has_return_type());
             else {
-                ASSERT_EQ(method.common().return_type().versions_size(), 1);
-                expectProto(method.common().return_type().versions(0).value(), builtin(i == 0 ? "int" : "void"));
+                ASSERT_TRUE(method.common().has_return_type());
+                expectProto(method.common().return_type(), versionedRef(builtin(i == 0 ? "int" : "void")));
             }
             if (i == 0 || i == 3) {
                 expectVersioned(method.vtable_offset(), 0);
@@ -881,8 +884,8 @@ namespace {
         expectId(method.func_id(), recordId("::Abstract<T>::get", " const"));
         expectVersioned(method.virtuality(), ParserTypes::FUNCTION_VIRTUALITY_PURE);
         expectProto(method.is_const(), boolean(true));
-        ASSERT_EQ(method.common().return_type().versions_size(), 1);
-        expectProto(method.common().return_type().versions(0).value(), builtin("T"));
+        ASSERT_TRUE(method.common().has_return_type());
+        expectProto(method.common().return_type(), versionedRef(builtin("T")));
         EXPECT_FALSE(method.has_vtable_index());
         EXPECT_FALSE(method.has_vtable_offset());
     }

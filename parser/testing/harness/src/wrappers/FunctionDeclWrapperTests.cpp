@@ -134,7 +134,9 @@ namespace {
         UEMeta::DeclDb::addDeclIdentity(record, type_id);
         auto traits              = common(ParserTypes::FUNCTION_KIND_FREE, "const ::N::Alias *");
         *traits.add_parameters() = parameter("value", "::N::Node &");
-        type_id.putProtoHash(traits.mutable_return_type()->mutable_versions(0)->mutable_value()->mutable_decl_id());
+        auto expected_type = builtin("const ::N::Alias *");
+        type_id.putProtoHash(expected_type.mutable_decl_id());
+        *traits.mutable_return_type() = versionedRef(expected_type);
         type_id.putProtoHash(traits.mutable_parameters(0)->mutable_type_ref()->mutable_decl_id());
         expectProto(serialize(functions[0])->common(), traits);
     }
@@ -143,7 +145,7 @@ namespace {
         const auto functions = parse("struct Unknown; Unknown* unresolved(Unknown& input);");
         ASSERT_EQ(functions.size(), 1u);
         auto traits = common(ParserTypes::FUNCTION_KIND_FREE, "::Unknown *");
-        traits.mutable_return_type()->mutable_versions(0)->mutable_value()->set_is_builtin_or_template(false);
+        *traits.mutable_return_type()->mutable_is_builtin_or_template() = boolean(false);
         *traits.add_parameters() = parameter("input", "::Unknown &");
         traits.mutable_parameters(0)->mutable_type_ref()->set_is_builtin_or_template(false);
         expectProto(serialize(functions[0])->common(), traits);
@@ -288,7 +290,7 @@ namespace {
             }
             else if (index == 2) {
                 traits.set_kind(ParserTypes::FUNCTION_KIND_MEMBER_CONVERSION);
-                *traits.mutable_return_type()->mutable_versions(0)->mutable_value() = builtin("bool");
+                *traits.mutable_return_type() = versionedRef(builtin("bool"));
                 *traits.mutable_is_explicit()                                       = boolean(true);
             }
             else if (index == 3) {
@@ -372,7 +374,8 @@ namespace {
         EXPECT_EQ(std::get<uint64_t>(reference), 0u);
         auto traits              = common(ParserTypes::FUNCTION_KIND_FREE, "::Node *");
         *traits.add_parameters() = parameter("input", "::Node &");
-        traits.mutable_return_type()->mutable_versions(0)->mutable_value()->set_forward_decl_index(0);
+        traits.mutable_return_type()->clear_is_builtin_or_template();
+        *traits.mutable_return_type()->mutable_forward_decl_index() = versioned<ParserTypes::VersionedUint64>(0);
         traits.mutable_parameters(0)->mutable_type_ref()->set_forward_decl_index(0);
         expectProto(*serialize(functions[0]), expectedFunction("::forward", "::Node &", 1, traits));
     }

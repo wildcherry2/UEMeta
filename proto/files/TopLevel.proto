@@ -207,7 +207,7 @@ message FunctionCommon {
   optional VersionedString inline_definition = 7;
   optional TemplateDetails template_details = 8;
   repeated Parameter parameters = 9;
-  optional FunctionDefinitionKind definition_kind = 10; // only set for functions that are deletable/defaultable
+  optional VersionedFunctionDefinitionKind definition_kind = 10; // only set for functions that are deletable/defaultable
 }
 
 message Parameter {
@@ -246,6 +246,8 @@ message Field {
   // if true, the field is reflected as a UProperty under the same package as the
   // owning UClass.
   optional VersionedBool is_reflected = 13;
+
+  VersionedUint64 local_occurrence_index = 14;
 }
 
 message BaseSpecifier {
@@ -253,17 +255,18 @@ message BaseSpecifier {
   VersionedBool is_virtual = 2;
   VersionedUint64 offset = 3;
   TypeRef type_ref = 4;
+  VersionedUint64 local_occurrence_index = 5;
 }
 
 message TypeRef {
   // type as declared, with qualifiers attached (including cvref, pointers, arrays, and namespace resolution)
-  VersionedString type_name = 1; //todo maybe make this nonversioned
+  VersionedString type_name = 1;
 
   oneof id {
     // identifier for the type; points to a serialized TL* type
     Hash decl_id = 2;
 
-    // if the type derives froma forward declaration, this is the occurrence index of that forward declaration
+    // if the type derives from a forward declaration, this is the occurrence index of that forward declaration
     uint64 forward_decl_index = 3;
 
     // if the type is std:: or platform-specific, this is the #include that defines the type
@@ -275,38 +278,25 @@ message TypeRef {
   }
 }
 
-message TypeRefOrAnon {
-  oneof value {
-    TypeRef type_ref = 1;
-    TLRecordDeclaration anon_record = 2;
-    TLEnumDeclaration anon_enum = 3;
-  }
+// At least one of the three will always be present.
+// We avoid `oneof` to simplify processing/avoid needing to create a different message for the merged version
+message VersionedTypeRefOrAnon {
+  optional VersionedTypeRef type_ref = 1;
+  optional TLRecordDeclaration anon_record = 2;
+  optional TLEnumDeclaration anon_enum = 3;
 }
 
 // general 'versioned' logic: if the field is part of the hashed string in the decl_id, it shouldn't be versioned,
 // otherwise it should be versioned
 
-// two versions of a TypeRef are the same if they have the same type_id; their type_name 
-// can still differ between versions, which is accounted for by the fact that type_name is versioned
+// At least one of the four optionals will always be present.
+// We avoid `oneof` to simplify processing/avoid needing to create a different message for the merged version
 message VersionedTypeRef {
-  message VersionItem {
-    repeated string source_versions = 1;
-    TypeRef value = 2;
-  }
-  repeated VersionItem versions = 1;
-}
-
-// two versions of a TypeRefOrAnon are the same if they have the same value type (TypeRef, TLRecordDeclartion, or TLEnumDeclaration).
-// however, those value types can differ between versions, so just because they have the same value type doesn't mean that they're
-// the same throughout those types. so if two versions 'A' and 'B' use an anonymous class with different methods, and then a single VersionItem with source_versions = ['A', 'B']
-// and value = TLRecordDeclaration is added, but that TLRecordDeclaration will have versioned entries for the methods. This effectively means that the max size of
-// versions is the number of types in the type union of VersionedTypeRef.versions
-message VersionedTypeRefOrAnon {
-  message VersionItem {
-    repeated string source_versions = 1;
-    TypeRefOrAnon value = 2;
-  }
-  repeated VersionItem versions = 1;
+    optional VersionedHash decl_id = 1;
+    optional VersionedUint64 forward_decl_index = 2;
+    optional VersionedString header = 3;
+    optional VersionedBool is_builtin_or_template = 4;
+    VersionedString type_name = 5;
 }
 
 message ForwardDeclarationList {
@@ -316,11 +306,24 @@ message ForwardDeclarationList {
   }
 
   repeated OccurrenceList forward_declarations = 1;
+  string version = 2;
+}
+
+message PackedForwardDeclarationList {
+  map<string, ForwardDeclarationList> forward_declaration_lists = 1;
 }
 
 message Hash {
   fixed64 a = 1;
   fixed64 b = 2;
+}
+
+message VersionedHash {
+    message VersionItem {
+        repeated string source_versions = 1;
+        Hash value = 2;
+    }
+    repeated VersionItem versions = 1;
 }
 
 message VersionedHashList {

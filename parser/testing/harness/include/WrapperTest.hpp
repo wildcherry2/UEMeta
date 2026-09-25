@@ -51,8 +51,7 @@ namespace UEMeta::Testing {
 
         static std::filesystem::path outputPath(const ParserTypes::DeclarationMetadata& metadata, std::string_view extension) {
             return Config::getConfig().getOutputDirectory().getUnderlyingPath() /
-                   (std::to_string(metadata.decl_id().a()) + std::to_string(metadata.decl_id().b()) + "-" +
-                    std::to_string(metadata.occurrence_index().versions(0).value()) + "." + std::string{extension});
+                   (std::to_string(metadata.decl_id().a()) + std::to_string(metadata.decl_id().b()) + "." + std::string{extension});
         }
 
         static void expectOutput(const std::filesystem::path& path) {

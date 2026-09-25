@@ -394,6 +394,8 @@ void UEMeta::RecordDeclWrapper::handleField(const clang::FieldDecl* field, Parse
     if (const auto* initializer = field->getInClassInitializer()) {
         putInitializer(initializer, p_msg->mutable_default_value());
     }
+
+    setVersioned(p_msg->mutable_local_occurrence_index(), field_occurrence_index++);
 }
 
 void UEMeta::RecordDeclWrapper::handleStaticField(clang::VarDecl* field, ParserTypes::Field* p_msg) const {
@@ -432,6 +434,7 @@ void UEMeta::RecordDeclWrapper::handleBase(const clang::CXXBaseSpecifier& base, 
     putTypeRef(name, DeclDb::queryType(type), p_msg->mutable_type_ref());
     setVersioned(p_msg->mutable_access(), getAccess(base.getAccessSpecifier(), decl));
     setVersionedBool(p_msg->mutable_is_virtual(), base.isVirtual());
+    setVersioned(p_msg->mutable_local_occurrence_index(), base_occurrence_index++);
 
     // Layout offsets use the actual base specialization, even when its identity refers to a template pattern.
     if (const auto* base_record = type->getAsCXXRecordDecl(); layout && base_record) {
@@ -484,7 +487,7 @@ void UEMeta::RecordDeclWrapper::handleEnum(clang::EnumDecl* enumeration, ParserT
     if (handleForwardDeclaration(enumeration))
         return;
 
-    // A syntactically anonymous enum with a declarator belongs to that declarator's TypeRefOrAnon.
+    // A syntactically anonymous enum with a declarator belongs to that declarator's VersionedTypeRefOrAnon.
     if (!enumeration->hasNameForLinkage() && enumeration->isEmbeddedInDeclarator() && !enumeration->isFreeStanding())
         return;
     if (!enumeration->hasNameForLinkage()) {
@@ -532,7 +535,7 @@ void UEMeta::RecordDeclWrapper::addNestedHash(const ParserTypes::DeclarationMeta
 // builtin/dependent versus unknown, or monostate for failure. putTypeRef encodes these
 // alternatives; a missing hash alone is not an error and must not invent a new identity.
 //
-// The other TypeRefOrAnon branch owns an entire unnamed record/enum message instead of
+// The other VersionedTypeRefOrAnon fields own an entire unnamed record/enum message instead of
 // referencing a standalone identity. It uses the same arena as the field. Peeling the
 // declarator layers below detects that case; the full-spelling TypeRef path is only used
 // when we do not select one of these embedded-message branches.
@@ -546,10 +549,6 @@ void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::
     if (std::holds_alternative<std::monostate>(query)) {
         throw DeclException(decl, "DeclDb failed to query a record member type!");
     }
-    auto* version = p_msg->add_versions();
-    version->add_source_versions(Config::getConfig().getVersion());
-    auto* value = version->mutable_value();
-
     // Anonymous embedded types belong to their field even when a dependent-type query returns true.
     clang::QualType underlying = type;
     while (true) {
@@ -567,7 +566,7 @@ void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::
             const auto* nested = std::get_if<ParserTypes::TLRecordDeclaration*>(&result);
             if (!nested)
                 throw DeclException(decl, "An embedded anonymous record did not produce a record!");
-            value->set_allocated_anon_record(*nested);
+            p_msg->set_allocated_anon_record(*nested);
             return;
         }
         if (auto* enumeration = llvm::dyn_cast_or_null<clang::EnumDecl>(tag->getDefinition())) {
@@ -576,14 +575,14 @@ void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::
             const auto* nested = std::get_if<ParserTypes::TLEnumDeclaration*>(&result);
             if (!nested)
                 throw DeclException(decl, "An embedded anonymous enum did not produce an enum!");
-            value->set_allocated_anon_enum(*nested);
+            p_msg->set_allocated_anon_enum(*nested);
             return;
         }
     }
 
     // Every remaining query alternative is preserved: hash, forward occurrence, header, builtin or unknown.
     putTypeRef(clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true), query,
-               value->mutable_type_ref());
+               p_msg->mutable_type_ref());
 }
 
 void UEMeta::RecordDeclWrapper::putFieldMetadata(const clang::NamedDecl* field, ParserTypes::Field* p_msg, clang::AccessSpecifier access) const {

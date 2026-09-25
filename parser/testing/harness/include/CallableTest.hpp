@@ -25,9 +25,7 @@ namespace UEMeta::Testing {
         ParserTypes::FunctionCommon message;
         message.set_kind(kind);
         if (return_type) {
-            auto* version = message.mutable_return_type()->add_versions();
-            version->add_source_versions("test-version");
-            *version->mutable_value() = builtin(*return_type);
+            *message.mutable_return_type() = versionedRef(builtin(*return_type));
         }
         *message.mutable_storage_class()  = versioned<ParserTypes::VersionedFunctionStorageClass>(storage);
         *message.mutable_consteval_kind() = versioned<ParserTypes::VersionedConstantEvaluationKind>(evaluation);

@@ -264,10 +264,10 @@ namespace {
             expectBuiltinType(variable.type_ref(), "long long");
             auto       expected          = proto<ParserTypes::TLGlobalVariableDeclaration>(R"pb(
                 is_anon_enum_value: true
-                type_ref { versions { source_versions: "test-version" value { type_ref {
+                type_ref { type_ref {
                     type_name { versions { source_versions: "test-version" value: "long long" } }
-                    is_builtin_or_template: true
-                } } } }
+                    is_builtin_or_template { true_versions: "test-version" }
+                } }
                 storage_class { versions { source_versions: "test-version" value: VAR_STORAGE_CLASS_STATIC } }
                 constant_evaluation_kind { versions { source_versions: "test-version" value: CONSTANT_EVALUATION_CONSTEXPR } }
                 default_value { versions { source_versions: "test-version" value: "" } }
@@ -419,10 +419,10 @@ namespace {
                 EXPECT_FALSE(field.has_offset_bits());
                 EXPECT_EQ(field.has_documentation(), index == 1);
                 auto expected = proto<ParserTypes::Field>(R"pb(
-                    type_ref { versions { source_versions: "test-version" value { type_ref {
+                    type_ref { type_ref {
                         type_name { versions { source_versions: "test-version" value: "short" } }
-                        is_builtin_or_template: true
-                    } } } }
+                        is_builtin_or_template { true_versions: "test-version" }
+                    } }
                     access { versions { source_versions: "test-version" value: ACCESS_SPECIFIER_PUBLIC } }
                     is_mutable { false_versions: "test-version" }
                     is_bitfield { false_versions: "test-version" }

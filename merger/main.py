@@ -1,24 +1,18 @@
-import os
-import re
-import sys
-from argparse import ArgumentParser
-from collections import defaultdict
-from dataclasses import dataclass
-from multiprocessing.pool import Pool
 from pathlib import Path
-from subprocess import run
 
-@dataclass
-class MergeArgs:
-    version_file_list: list[str]
-    input_dir: Path
-    output_dir: Path
-
-def merge(merge_args: MergeArgs) -> bool:
+def merge(out_path: str, proto_paths: list[str]) -> bool:
     from Merger import Merger # we import here because this is called from worker processes; we don't need to import in the main process
-    return Merger(merge_args.version_file_list, merge_args.input_dir, merge_args.output_dir).merge()
+    return Merger.merge(Path(out_path), proto_paths)
 
 if __name__== "__main__":
+    import os
+    import sys
+    from argparse import ArgumentParser
+    from collections import defaultdict
+    from functools import partial
+    from multiprocessing.pool import Pool
+    from subprocess import run
+
     parser = ArgumentParser()
     parser.add_argument("--output", type=Path, required=True,
                         help="The directory to output the generated code to.")
@@ -41,24 +35,19 @@ if __name__== "__main__":
     run(["python", str(proto_build), "--language", "python", "--output", str(proto_dir)])
     sys.path.append(str(proto_dir))
 
-    versions: list[str] = []
-
-    with os.scandir(str(args.input)) as entries:
-        for entry in entries:
-            if entry.is_dir():
-                versions.append(entry.name)
-
     version_map: dict[str, list[str]] = defaultdict(list)
-    identity_regex = re.compile(r"^(?P<hash>\d+)-.+")
 
-    for version in versions:
-        with os.scandir(str(args.input / version)) as entries:
-            for entry in entries:
-                if entry.is_file():
-                    hash_match = identity_regex.match(entry.name)
-                    # todo proper logging on error
-                    if hash_match is not None:
-                        version_map[hash_match.group("hash")].append(entry.name)
+    extensions = (".functionbin", ".recordbin", ".enumbin", ".varbin", ".declbin")
+    for root, dir, files in os.walk(args.input):
+        for file in files:
+            if file.endswith(extensions):
+                path = os.path.join(root, file)
+                version_map[file].append(path)
 
+    bound_merge = partial(merge, args.output)
     with Pool() as pool:
-        results = pool.imap_unordered(merge, version_map.values(), int(len(version_map) / os.process_cpu_count()))
+        cpu_count = os.process_cpu_count()
+        if cpu_count is None: cpu_count = 1
+        results = pool.imap_unordered(bound_merge, version_map.values(), max(1, int(len(version_map) / cpu_count)))
+        from collections import deque
+        deque(results, maxlen=0)

@@ -64,8 +64,7 @@ namespace UEMeta {
                                                                        UEMeta::TOP_LEVEL_EXT<PT>, type);
                         }
                         else {
-                            out_file_path = out_dir / fmtquill::format("{}{}-{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(),
-                                                                       metadata.occurrence_index().versions(0).value(), UEMeta::TOP_LEVEL_EXT<PT>, type);
+                            out_file_path = out_dir / fmtquill::format("{}{}.{}{}", metadata.decl_id().a(), metadata.decl_id().b(), UEMeta::TOP_LEVEL_EXT<PT>, type);
                         }
                     }
                     else if constexpr(std::same_as<PT, ParserTypes::ForwardDeclarationList>) {
@@ -178,7 +177,10 @@ namespace UEMeta {
             if (!scope_nns) {
                 throw DeclException(decl, "Failed to get scope of anonymous enumerators!");
             }
-            scope_nns.print(out_stream, decl->getASTContext().getPrintingPolicy());
+            // Print TypeName's rewritten qualifiers instead of recomputing declaration scopes.
+            auto policy = getASTContext().getPrintingPolicy();
+            policy.FullyQualifiedName = false;
+            scope_nns.print(out_stream, policy);
         }
 
         void putTemplateDetails(
@@ -456,6 +458,29 @@ namespace UEMeta {
             }
         }
 
+        // Versioned references track each identity field independently.
+        void putTypeRef(const std::string& type_name, const DeclDb::QueryResult& result, ParserTypes::VersionedTypeRef* p_ref) const {
+            if (std::get_if<std::monostate>(&result)) {
+                throw DeclException(decl, "DeclDb query returned std::monostate!");
+            }
+
+            setVersionedString(p_ref->mutable_type_name(), type_name);
+            if (const Hash* hash_ptr = get_if<Hash>(&result)) {
+                auto* version = p_ref->mutable_decl_id()->add_versions();
+                version->add_source_versions(Config::getConfig().getVersion());
+                hash_ptr->putProtoHash(version->mutable_value());
+            }
+            else if (const uint64_t* fwd_ptr = get_if<uint64_t>(&result)) {
+                setVersioned(p_ref->mutable_forward_decl_index(), *fwd_ptr);
+            }
+            else if (const llvm::StringRef* header_ptr = get_if<llvm::StringRef>(&result)) {
+                setVersionedString(p_ref->mutable_header(), *header_ptr);
+            }
+            else if (const bool* implicit_ptr = get_if<bool>(&result)) {
+                setVersionedBool(p_ref->mutable_is_builtin_or_template(), *implicit_ptr);
+            }
+        }
+
         [[nodiscard]] clang::ASTContext& getASTContext() const { return decl->getASTContext(); }
 
         const T*                                 decl;
@@ -490,7 +515,9 @@ namespace UEMeta {
             }
         }
 
-        void putTemplateRef(const clang::TemplateArgument& argument, ParserTypes::TypeRef* p_ref,
+        template <typename Ref>
+            requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
+        void putTemplateRef(const clang::TemplateArgument& argument, Ref* p_ref,
                             std::vector<AnyString>*        id_out_ptr = nullptr) const {
             if (argument.getKind() != clang::TemplateArgument::Template && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
                 throw DeclException(decl, "Template argument is not a template name!");
@@ -499,16 +526,13 @@ namespace UEMeta {
             const clang::TemplateName  template_name = argument.getAsTemplateOrTemplatePattern();
             const clang::TemplateDecl* template_decl = template_name.getAsTemplateDecl();
             std::string                fqn;
-            if (template_decl) {
-                {
-                    llvm::raw_string_ostream os{fqn};
-                    template_decl->printQualifiedName(os, getASTContext().getPrintingPolicy());
-                }
-                if (!llvm::isa<clang::TemplateTemplateParmDecl>(template_decl) && !fqn.starts_with("::")) {
-                    fqn.insert(0, "::");
-                }
+            if (!argument.isDependent() && template_decl) {
+                llvm::raw_string_ostream os{fqn};
+                putContextFQN(os, template_decl);
+                template_decl->printName(os, getASTContext().getPrintingPolicy());
             }
             else {
+                // Parameters and dependent names retain their own qualifiers, not the declaration's enclosing scope.
                 llvm::raw_string_ostream os{fqn};
                 template_name.print(os, getASTContext().getPrintingPolicy());
             }
@@ -523,28 +547,30 @@ namespace UEMeta {
 
         void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def,
                             std::vector<AnyString>*        id_out_ptr = nullptr) const {
-            ParserTypes::VersionedTypeRef_VersionItem* p_version = p_def->add_versions();
-            p_version->add_source_versions(Config::getConfig().getVersion());
-            ParserTypes::TypeRef* p_type_ref = p_version->mutable_value();
-
             if (def.getKind() == clang::TemplateArgument::Type) {
-                return putType(def.getAsType(), p_type_ref, id_out_ptr);
+                return putType(def.getAsType(), p_def, id_out_ptr);
             }
             if (def.getKind() == clang::TemplateArgument::Template || def.getKind() == clang::TemplateArgument::TemplateExpansion) {
-                return putTemplateRef(def, p_type_ref, id_out_ptr);
+                return putTemplateRef(def, p_def, id_out_ptr);
             }
 
             std::string              out;
             llvm::raw_string_ostream os{out};
             def.print(decl->getASTContext().getPrintingPolicy(), os, true);
-            setVersionedString(p_type_ref->mutable_type_name(), out);
-            p_type_ref->set_is_builtin_or_template(true);
+            putTypeRef(out, DeclDb::QueryResult{true}, p_def);
         }
 
-        void putType(const clang::QualType type, ParserTypes::TypeRef* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
-            std::string fqn = clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
+        template <typename Ref>
+            requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
+        void putType(const clang::QualType type, Ref* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
+            const bool is_dependent = type->isDependentType();
+            auto policy = getASTContext().getPrintingPolicy();
+            if (!is_dependent)
+                policy.FullyQualifiedName = false; // Preserve the qualifiers supplied by TypeName.
+            std::string fqn = is_dependent ? type.getAsString(policy)
+                                          : clang::TypeName::getFullyQualifiedName(type, getASTContext(), policy, true);
             if (id_out_ptr) {
-                if (type->isDependentType()) {
+                if (is_dependent) {
                     id_out_ptr->emplace_back(std::string_view{"typename"});
                 }
                 else {
