@@ -109,9 +109,9 @@ namespace UEMeta {
             }
 
             if (llvm::isa<clang::CXXMethodDecl>(Super::decl) || Super::decl->isDefaulted() || Super::decl->isDeleted()) {
-                p_msg->set_definition_kind(Super::decl->isDefaulted() ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED
-                                           : Super::decl->isDeleted() ? ParserTypes::FUNCTION_DEFINITION_DELETED
-                                                                      : ParserTypes::FUNCTION_DEFINITION_NORMAL);
+                setVersioned(p_msg->mutable_definition_kind(), Super::decl->isDefaulted() ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED
+                                                                   : Super::decl->isDeleted() ? ParserTypes::FUNCTION_DEFINITION_DELETED
+                                                                   : ParserTypes::FUNCTION_DEFINITION_NORMAL);
             }
         }
 

@@ -207,7 +207,7 @@ message FunctionCommon {
   optional VersionedString inline_definition = 7;
   optional TemplateDetails template_details = 8;
   repeated Parameter parameters = 9;
-  optional FunctionDefinitionKind definition_kind = 10; // only set for functions that are deletable/defaultable
+  optional VersionedFunctionDefinitionKind definition_kind = 10; // only set for functions that are deletable/defaultable
 }
 
 message Parameter {
