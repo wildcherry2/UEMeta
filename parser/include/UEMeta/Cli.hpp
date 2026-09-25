@@ -100,6 +100,8 @@ namespace UEMeta {
          */
         [[nodiscard]] const std::string& getVersion() const;
 
+        [[nodiscard]] const StablePath& getInputASTFile() const;
+
         /**
          * @brief Writes a human-readable configuration summary to a stream.
          */
@@ -176,6 +178,7 @@ namespace UEMeta {
         std::unordered_set<std::string>    additional_clang_args{};
         StablePath                         log{};
         StablePath                         output_directory{};
+        StablePath ast_file{};
         std::string                        compile_commands{};
         std::filesystem::path::string_type file_delimiter{std::filesystem::path{"UnrealEngine"}.native()};
         std::string                        version{};

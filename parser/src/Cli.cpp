@@ -142,6 +142,11 @@ const std::string& UEMeta::Config::getVersion() const {
     return version;
 }
 
+const UEMeta::StablePath& UEMeta::Config::getInputASTFile() const {
+    assertInitialized();
+    return ast_file;
+}
+
 /// @brief Returns the process-wide configuration singleton.
 UEMeta::Config& UEMeta::Config::getConfig() {
     static Config config{};
@@ -218,11 +223,14 @@ int UEMeta::Config::initialize(int argc, char** argv) {
     parser->add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
     parser->add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
     parser->add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)->default_val(false);
-    parser->add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
-        ->required()
+    auto* upg_input = parser->add_option_group("UPG input");
+    upg_input->add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
         ->transform(loadCompileCommandsString);
-    parser->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
-    parser->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
+    upg_input->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
+    upg_input->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
+    auto* cache_input = parser->add_option_group("Cache input");
+    cache_input->add_option("--ast", cfg.ast_file)
+        ->check(CLI::ExistingFile);
     parser->add_option("-l,--log", cfg.log, LOG_HELP);
     parser->add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)->default_str("UnrealEngine");
     parser->add_option("--output", parser_options.output_directory, OUTPUT_DIRECTORY_HELP)
@@ -255,8 +263,13 @@ int UEMeta::Config::initialize(int argc, char** argv) {
     cfg.log_level        = mode_options.log_level;
 
     if (cfg.mode == Mode::Parser) {
-        cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
-        cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+        if (cfg.ast_file.isEmptyPath()) {
+            if (cfg.compile_commands.empty()) {
+                throw CLI::ValidationError("Empty compile_commands when no ast file is present!", -1);
+            }
+            cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
+            cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+        }
         cfg.version = cfg.output_directory.getUnderlyingPath().filename().string();
     }
 
