@@ -10,7 +10,7 @@ from proto.Enums_pb2 import (VersionedAccessSpecifier, VersionedConstantEvaluati
 from proto.TopLevel_pb2 import (TLFreeFunctionDeclaration, TLRecordDeclaration, TLEnumDeclaration,
                                 TLGlobalVariableDeclaration, ForwardDeclarationList, VersionedHashList,
                                 Hash, VersionedHash, TemplateParameter, Parameter, Field, BaseSpecifier, MemberFunction,
-                                Enumerator, )
+                                Enumerator, PackedForwardDeclarationList)
 from proto.VersionedPrimitives_pb2 import (VersionedBool, VersionedUint64List, VersionedStringList,
                                            VersionedString, VersionedUint64, VersionedUint32, VersionedInt64)
 
@@ -29,9 +29,13 @@ class Merger:
     def merge(output_dir: Path, version_file_list: list[str]) -> bool:
         try:
             version_message_list = Merger.__toProto(version_file_list)
-            dest = version_message_list.pop()
-            if len(version_message_list) > 0:
-                Merger.__merge_impl(dest, version_message_list)
+            dest: Message
+            if isinstance(version_message_list[0], ForwardDeclarationList):
+                dest = Merger.__pack_forward_decls(version_message_list)
+            else:
+                dest = version_message_list.pop()
+                if len(version_message_list) > 0:
+                    Merger.__merge_impl(dest, version_message_list)
 
             # note: if we add back occurrence indices to file names, we'll need to regex them out before saving
             out_path = output_dir / Path(version_file_list[0]).name
@@ -214,3 +218,10 @@ class Merger:
         if isinstance(message, BaseSpecifier):
             return message.type_ref.type_name.versions[0].value #__get_key calls happen before any merging
         raise Exception(f"Can't get key for message {message}")
+
+    @staticmethod
+    def __pack_forward_decls(fwd_decls: list[ForwardDeclarationList]):
+        packed = PackedForwardDeclarationList()
+        for fwd_decl in fwd_decls:
+            packed.forward_declaration_lists[fwd_decl.version] = fwd_decl
+        return packed

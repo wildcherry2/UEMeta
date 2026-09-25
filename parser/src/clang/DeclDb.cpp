@@ -381,6 +381,7 @@ void UEMeta::DeclDb::serializeForwardDeclarations() {
             UEM_WARN("Failed to find definition hash for decl {}, but it was forward declared!", buffer);
         }
     }
+    p_msg->set_version(Config::getConfig().getVersion());
 
     if (Config::getConfig().getMode() == Config::Mode::Repl) {
         std::string out;

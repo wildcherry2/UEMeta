@@ -306,6 +306,11 @@ message ForwardDeclarationList {
   }
 
   repeated OccurrenceList forward_declarations = 1;
+  string version = 2;
+}
+
+message PackedForwardDeclarationList {
+  map<string, ForwardDeclarationList> forward_declaration_lists = 1;
 }
 
 message Hash {

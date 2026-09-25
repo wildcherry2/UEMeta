@@ -41,7 +41,7 @@ if __name__== "__main__":
             if version_dir.is_dir():
                 with os.scandir(version_dir) as versions:
                     for version in versions:
-                        if version.is_file() and not version.path.endswith("declbin"): # we don't do merging with forward declarations for now; we might pack them as extra metadata later
+                        if version.is_file():
                             version_map[version.name].append(version.path)
 
 
