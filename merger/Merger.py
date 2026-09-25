@@ -48,26 +48,29 @@ class Merger:
     @staticmethod
     def __merge_impl(dest: Message, messages: list[Message]):
         descriptor = getattr(dest, "DESCRIPTOR", None)
-        if descriptor is None: return
+        if descriptor is None:
+            return
 
         for field in descriptor.fields:
             if field is None or field.message_type is None: continue # null field or field is scalar/enum leaf
             type_name = field.message_type.name
             field_name = field.name
-            dest_field = Merger.__getattr(dest, field_name)
-            if dest_field is None:
-                # find first non-null field value and move it to dest
-                for message in messages:
-                    new_attr_value = Merger.__getattr(message, field_name)
-                    if new_attr_value is None: continue
+            is_repeated = field.is_repeated
+            dest_field: Any = getattr(dest, field_name) if is_repeated or dest.HasField(field_name) else None
+            src_list = []
+            for message in messages:
+                if not is_repeated and not message.HasField(field_name): continue
+                source_field = getattr(message, field_name)
+                if dest_field is None:
+                    # Seed dest from the first present field, then collect the remaining sources.
                     dest_field = getattr(dest, field_name)
-                    dest_field.CopyFrom(new_attr_value) #todo is copying necessary
+                    dest_field.CopyFrom(source_field)
                     message.ClearField(field_name)
-                    break
                 else:
-                    continue
+                    src_list.append(source_field)
 
-            src_list = [attr for message in messages if (attr := Merger.__getattr(message, field_name)) is not None]
+            if dest_field is None or not src_list:
+                continue
             if type_name == "VersionedBool":
                 Merger.__merge_versioned_bool(dest_field, src_list)
             elif type_name == "VersionedHash" or (type_name.startswith("Versioned") and type_name.endswith("List")):
@@ -127,16 +130,12 @@ class Merger:
     def __merge_repeated_positional[T: (TemplateParameter, Parameter)](dest: RepeatedCompositeFieldContainer[T], container_list: list[RepeatedCompositeFieldContainer[T]]):
         dest_len = len(dest)
 
-        # remap container_list such that the 0th index of mapped_container_list contains the 0th T from each list in the container list
-        mapped_container_list: list[list[T]] = [[] for _ in range(dest_len)]
         for container in container_list:
             if len(container) != dest_len:
                 raise ValueError("Container list must have the same length as dest list!")
-            for index, item in enumerate(container):
-                mapped_container_list[index].append(item)
 
-        for index, item in enumerate(dest):
-            Merger.__merge_impl(item, mapped_container_list[index])
+        for item, *sources in zip(dest, *container_list):
+            Merger.__merge_impl(item, sources)
 
     @staticmethod
     def __merge_repeated_keyed[T: (Field, BaseSpecifier, MemberFunction, Enumerator)](dest: RepeatedCompositeFieldContainer[T], container_list: list[RepeatedCompositeFieldContainer[T]]):
@@ -179,16 +178,6 @@ class Merger:
         return frozenset([(hsh.a << 64 | hsh.b) for hsh in value])
 
     @staticmethod
-    def __getattr(obj: Message, name: str) -> Any:
-        field = obj.DESCRIPTOR.fields_by_name.get(name)
-        if field is None:
-            return None
-        # Repeated fields have no presence; singular message fields use HasField.
-        if field.is_repeated or obj.HasField(name):
-            return getattr(obj, name)
-        return None
-
-    @staticmethod
     def __toProto(path_strs: list[str]) -> list[Message]:
         test_path = Path(path_strs[0])
         fn = None
@@ -215,7 +204,7 @@ class Merger:
     @staticmethod
     def __get_key[T : (Field, BaseSpecifier, MemberFunction, Enumerator)](message: T) -> int | str:
         if isinstance(message, Field):
-            if message.name:
+            if message.HasField("name"):
                 return message.name
             return message.local_occurrence_index.versions[0].value
         if isinstance(message, MemberFunction):
