@@ -80,5 +80,8 @@ namespace UEMeta {
         // Collect a global anonymous union's variables, including recursively injected fields.
         [[nodiscard]] std::vector<ParserTypes::TLGlobalVariableDeclaration*> serializeGlobalUnion() const;
         void extractGlobalUnionFields(const clang::RecordDecl* record, std::vector<ParserTypes::TLGlobalVariableDeclaration*>& variables) const;
+
+        mutable uint64_t field_occurrence_index = 0;
+        mutable uint64_t base_occurrence_index = 0;
     };
 } // namespace UEMeta

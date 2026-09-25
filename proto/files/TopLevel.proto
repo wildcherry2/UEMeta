@@ -246,6 +246,8 @@ message Field {
   // if true, the field is reflected as a UProperty under the same package as the
   // owning UClass.
   optional VersionedBool is_reflected = 13;
+
+  VersionedUint64 local_occurrence_index = 14;
 }
 
 message BaseSpecifier {
@@ -253,7 +255,7 @@ message BaseSpecifier {
   VersionedBool is_virtual = 2;
   VersionedUint64 offset = 3;
   TypeRef type_ref = 4;
-  VersionedUint64 occurrence_index = 5;
+  VersionedUint64 local_occurrence_index = 5;
 }
 
 message TypeRef {

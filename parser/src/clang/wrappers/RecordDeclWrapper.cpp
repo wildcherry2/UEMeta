@@ -394,6 +394,8 @@ void UEMeta::RecordDeclWrapper::handleField(const clang::FieldDecl* field, Parse
     if (const auto* initializer = field->getInClassInitializer()) {
         putInitializer(initializer, p_msg->mutable_default_value());
     }
+
+    setVersioned(p_msg->mutable_local_occurrence_index(), field_occurrence_index++);
 }
 
 void UEMeta::RecordDeclWrapper::handleStaticField(clang::VarDecl* field, ParserTypes::Field* p_msg) const {
@@ -432,7 +434,7 @@ void UEMeta::RecordDeclWrapper::handleBase(const clang::CXXBaseSpecifier& base, 
     putTypeRef(name, DeclDb::queryType(type), p_msg->mutable_type_ref());
     setVersioned(p_msg->mutable_access(), getAccess(base.getAccessSpecifier(), decl));
     setVersionedBool(p_msg->mutable_is_virtual(), base.isVirtual());
-    setVersioned(p_msg->mutable_occurrence_index(), allocateDeclOccurrence());
+    setVersioned(p_msg->mutable_local_occurrence_index(), base_occurrence_index++);
 
     // Layout offsets use the actual base specialization, even when its identity refers to a template pattern.
     if (const auto* base_record = type->getAsCXXRecordDecl(); layout && base_record) {
