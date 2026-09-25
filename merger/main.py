@@ -36,14 +36,13 @@ if __name__== "__main__":
     sys.path.append(str(proto_dir))
 
     version_map: dict[str, list[str]] = defaultdict(list)
-    with os.scandir(str(args.input)) as version_dirs:
-        for version_dir in version_dirs:
-            if version_dir.is_dir():
-                with os.scandir(version_dir) as versions:
-                    for version in versions:
-                        if version.is_file():
-                            version_map[version.name].append(version.path)
 
+    extensions = (".functionbin", ".recordbin", ".enumbin", ".varbin", ".declbin")
+    for root, dir, files in os.walk(args.input):
+        for file in files:
+            if file.endswith(extensions):
+                path = os.path.join(root, file)
+                version_map[file].append(path)
 
     bound_merge = partial(merge, args.output)
     with Pool() as pool:

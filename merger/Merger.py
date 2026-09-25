@@ -194,6 +194,8 @@ class Merger:
                 fn = TLEnumDeclaration
             case ".varbin":
                 fn = TLGlobalVariableDeclaration
+            case ".declbin":
+                fn = ForwardDeclarationList
             case _:
                 raise Exception("Unknown file type " + test_path.suffix)
 
