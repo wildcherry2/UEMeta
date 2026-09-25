@@ -165,14 +165,14 @@ namespace {
         const auto functions = parse("void removed(int) = delete; struct Equal { friend bool operator==(const Equal&, const Equal&) = default; };");
         ASSERT_EQ(functions.size(), 2u);
         auto deleted = common();
-        deleted.set_definition_kind(ParserTypes::FUNCTION_DEFINITION_DELETED);
+        *deleted.mutable_definition_kind() = versioned<ParserTypes::VersionedFunctionDefinitionKind>(ParserTypes::FUNCTION_DEFINITION_DELETED);
         *deleted.add_parameters() = parameter("", "int");
         expectProto(serialize(functions[0])->common(), deleted);
         const auto* comparison = serialize(functions[1]);
         expectMetadata(comparison->metadata(), "::operator==");
         auto traits = common(ParserTypes::FUNCTION_KIND_FREE, "bool", ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED,
                              ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
-        traits.set_definition_kind(ParserTypes::FUNCTION_DEFINITION_DEFAULTED);
+        *traits.mutable_definition_kind() = versioned<ParserTypes::VersionedFunctionDefinitionKind>(ParserTypes::FUNCTION_DEFINITION_DEFAULTED);
         *traits.mutable_is_friend() = boolean(true);
         for (int index = 0; index < 2; ++index) {
             auto* argument = traits.add_parameters();
@@ -281,7 +281,7 @@ namespace {
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
             auto traits = common(ParserTypes::FUNCTION_KIND_MEMBER);
-            traits.set_definition_kind(ParserTypes::FUNCTION_DEFINITION_NORMAL);
+            *traits.mutable_definition_kind() = versioned<ParserTypes::VersionedFunctionDefinitionKind>(ParserTypes::FUNCTION_DEFINITION_NORMAL);
             if (index < 2) {
                 traits.set_kind(index == 0 ? ParserTypes::FUNCTION_KIND_CONSTRUCTOR : ParserTypes::FUNCTION_KIND_DESTRUCTOR);
                 traits.clear_return_type();

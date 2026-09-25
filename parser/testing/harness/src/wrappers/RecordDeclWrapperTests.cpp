@@ -36,7 +36,8 @@ namespace {
     }
 
     ParserTypes::Field field(std::optional<std::string_view> name, std::string_view type, std::optional<uint64_t> width,
-                             std::optional<uint64_t> offset, ParserTypes::AccessSpecifier access = ParserTypes::ACCESS_SPECIFIER_PUBLIC) {
+                             std::optional<uint64_t> offset, uint64_t occurrence = 0,
+                             ParserTypes::AccessSpecifier access = ParserTypes::ACCESS_SPECIFIER_PUBLIC) {
         ParserTypes::Field result;
         if (name)
             result.set_name(*name);
@@ -50,6 +51,7 @@ namespace {
             *result.mutable_bit_width() = versioned<ParserTypes::VersionedUint64>(*width);
         if (offset)
             *result.mutable_offset_bits() = versioned<ParserTypes::VersionedUint64>(*offset);
+        *result.mutable_local_occurrence_index() = versioned<ParserTypes::VersionedUint64>(occurrence);
         return result;
     }
 
@@ -57,6 +59,7 @@ namespace {
                                    ParserTypes::VariableStorageClass   storage    = ParserTypes::VAR_STORAGE_CLASS_STATIC,
                                    ParserTypes::ConstantEvaluationKind evaluation = ParserTypes::CONSTANT_EVALUATION_NONE) {
         auto result                                = field(name, type, width, std::nullopt);
+        result.clear_local_occurrence_index();
         *result.mutable_storage_class()            = versioned<ParserTypes::VersionedVariableStorageClass>(storage);
         *result.mutable_constant_evaluation_kind() = versioned<ParserTypes::VersionedConstantEvaluationKind>(evaluation);
         return result;
@@ -90,11 +93,12 @@ namespace {
     }
 
     ParserTypes::BaseSpecifier base(const ParserTypes::TypeRef& type, ParserTypes::AccessSpecifier access, bool is_virtual,
-                                    std::optional<uint64_t> offset) {
+                                    std::optional<uint64_t> offset, uint64_t occurrence = 0) {
         ParserTypes::BaseSpecifier result;
         *result.mutable_type_ref()   = type;
         *result.mutable_access()     = versioned<ParserTypes::VersionedAccessSpecifier>(access);
         *result.mutable_is_virtual() = boolean(is_virtual);
+        *result.mutable_local_occurrence_index() = versioned<ParserTypes::VersionedUint64>(occurrence);
         if (offset)
             *result.mutable_offset() = versioned<ParserTypes::VersionedUint64>(*offset);
         return result;
@@ -186,16 +190,16 @@ namespace {
         };)cpp");
         ASSERT_EQ(records.size(), 1u);
         auto expected                    = record("::Layout", 0, ParserTypes::RECORD_KIND_CLASS, 24, 8);
-        *expected.add_fields()           = field("first", "char", 8, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
-        auto counter                     = field("count", "int", 32, 32, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
+        *expected.add_fields()           = field("first", "char", 8, 0, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
+        auto counter                     = field("count", "int", 32, 32, 1, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
         *counter.mutable_is_mutable()    = boolean(true);
         *counter.mutable_documentation() = versioned<ParserTypes::VersionedString>("/// Mutable counter.");
         *counter.mutable_default_value() = versioned<ParserTypes::VersionedString>("6 * 7");
         *expected.add_fields()           = counter;
-        auto value                       = field("value", "const long", 32, 64);
+        auto value                       = field("value", "const long", 32, 64, 2);
         *value.mutable_default_value()   = versioned<ParserTypes::VersionedString>("3");
         *expected.add_fields()           = value;
-        *expected.add_fields()           = field("pointer", "void *", 64, 128);
+        *expected.add_fields()           = field("pointer", "void *", 64, 128, 3);
         expectProto(*serialize(records[0]), expected);
     }
 
@@ -223,8 +227,8 @@ namespace {
         ASSERT_EQ(records.size(), 1u);
         auto expected          = record("::Value", 0, ParserTypes::RECORD_KIND_UNION, 16, 8);
         *expected.add_fields() = field("small", "char", 8, 0);
-        *expected.add_fields() = field("large", "double", 64, 0);
-        *expected.add_fields() = field("values", "int[3]", 96, 0);
+        *expected.add_fields() = field("large", "double", 64, 0, 1);
+        *expected.add_fields() = field("values", "int[3]", 96, 0, 2);
         expectProto(*serialize(records[0]), expected);
     }
 
@@ -235,13 +239,13 @@ namespace {
         const std::vector<std::optional<std::string_view>> names{std::nullopt, "a", std::nullopt, "b", std::nullopt};
         const std::vector<uint64_t>                        widths{1, 3, 2, 4, 0}, offsets{0, 1, 4, 6, 32};
         for (size_t i = 0; i < names.size(); ++i) {
-            auto expected_field                   = field(names[i], "unsigned int", widths[i], offsets[i]);
+            auto expected_field                   = field(names[i], "unsigned int", widths[i], offsets[i], i);
             *expected_field.mutable_is_bitfield() = boolean(true);
             if (i == 3)
                 *expected_field.mutable_default_value() = versioned<ParserTypes::VersionedString>("7");
             *expected.add_fields() = expected_field;
         }
-        *expected.add_fields() = field("tail", "char", 8, 32);
+        *expected.add_fields() = field("tail", "char", 8, 32, 5);
         expectProto(*serialize(records[0]), expected);
     }
 
@@ -272,7 +276,7 @@ namespace {
         // Clang prints arrays with a qualified element spelling but no leading global-scope token.
         const std::vector<std::string> names{"next", "reference", "links"}, types{"const ::N::Node *", "::N::Node &", "N::Node *[2]"};
         for (size_t i = 0; i < names.size(); ++i) {
-            auto item                = field(names[i], types[i], i == 2 ? 128 : 64, i * 64);
+            auto item                = field(names[i], types[i], i == 2 ? 128 : 64, i * 64, i);
             *item.mutable_type_ref() = fieldType(reference(types[i], recordId("::N::Node")));
             *expected.add_fields()   = item;
         }
@@ -294,12 +298,12 @@ namespace {
                                    {"-fms-extensions"});
         ASSERT_EQ(records.size(), 4u);
         auto expected          = record("::Outer", 0, ParserTypes::RECORD_KIND_CLASS, 12, 4);
-        *expected.add_fields() = field("prefix", "char", 8, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
-        *expected.add_fields() = field("first", "int", 32, 32, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
-        *expected.add_fields() = field("inner_prefix", "char", 8, 32, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
-        *expected.add_fields() = field("leaf", "short", 16, 48, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
-        *expected.add_fields() = field("other", "unsigned short", 16, 48, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
-        *expected.add_fields() = field("suffix", "char", 8, 64);
+        *expected.add_fields() = field("prefix", "char", 8, 0, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
+        *expected.add_fields() = field("first", "int", 32, 32, 1, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
+        *expected.add_fields() = field("inner_prefix", "char", 8, 32, 2, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
+        *expected.add_fields() = field("leaf", "short", 16, 48, 3, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
+        *expected.add_fields() = field("other", "unsigned short", 16, 48, 4, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
+        *expected.add_fields() = field("suffix", "char", 8, 64, 5);
         const auto before      = outputFiles();
         expectProto(*serialize(records[0]), expected);
         for (size_t i = 1; i < records.size(); ++i)
@@ -312,11 +316,11 @@ namespace {
         ASSERT_EQ(records.size(), 3u);
         auto expected          = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 12, 4);
         *expected.add_fields() = field("prefix", "char", 8, 0);
-        auto value             = field("value", "", 64, 32);
+        auto value             = field("value", "", 64, 32, 1);
         auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, 8, 4);
         *embedded.add_fields() = field("tag", "char", 8, 0);
-        *embedded.add_fields() = field("x", "int", 32, 32);
-        *embedded.add_fields() = field("y", "float", 32, 32);
+        *embedded.add_fields() = field("x", "int", 32, 32, 1);
+        *embedded.add_fields() = field("y", "float", 32, 32, 2);
         value.mutable_type_ref()->clear_type_ref();
         *value.mutable_type_ref()->mutable_anon_record() = embedded;
         *expected.add_fields()                                                                 = value;
@@ -335,11 +339,11 @@ namespace {
         ASSERT_EQ(records.size(), 2u);
         auto expected                  = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, 16, 8);
         *expected.add_fields()         = field("prefix", "long long", 64, 0);
-        *expected.add_fields()         = field("pad", "short", 16, 64);
-        auto padding                   = field(std::nullopt, "unsigned short", 3, 80);
+        *expected.add_fields()         = field("pad", "short", 16, 64, 1);
+        auto padding                   = field(std::nullopt, "unsigned short", 3, 80, 2);
         *padding.mutable_is_bitfield() = boolean(true);
         *expected.add_fields()         = padding;
-        auto leaf                      = field("leaf", "unsigned short", 4, 83);
+        auto leaf                      = field("leaf", "unsigned short", 4, 83, 3);
         *leaf.mutable_is_bitfield()    = boolean(true);
         *expected.add_fields()         = leaf;
         expectProto(*serialize(records[0]), expected);
@@ -352,8 +356,8 @@ namespace {
         auto expected          = record("::Outer", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         *expected.add_fields() = field("prefix", "char", std::nullopt, std::nullopt);
         // The valid nested union still supplies type widths, but no absolute instance offsets.
-        *expected.add_fields() = field("x", "int", 32, std::nullopt);
-        *expected.add_fields() = field("y", "short", 16, std::nullopt);
+        *expected.add_fields() = field("x", "int", 32, std::nullopt, 1);
+        *expected.add_fields() = field("y", "short", 16, std::nullopt, 2);
         expectProto(*serialize(records[0]), expected);
     }
 
@@ -364,7 +368,7 @@ namespace {
         const std::vector<std::string> names{"pointer", "reference", "array"}, leaf_names{"x", "y", "z"}, types{"int", "short", "char"};
         const std::vector<uint64_t>    widths{64, 64, 24}, sizes{4, 2, 1};
         for (size_t i = 0; i < names.size(); ++i) {
-            auto item              = field(names[i], "", widths[i], i * 64);
+            auto item              = field(names[i], "", widths[i], i * 64, i);
             auto embedded          = anonymousRecord(1 + i, ParserTypes::RECORD_KIND_STRUCT, sizes[i], sizes[i]);
             *embedded.add_fields() = field(leaf_names[i], types[i], sizes[i] * 8, 0);
             item.mutable_type_ref()->clear_type_ref();
@@ -403,7 +407,7 @@ namespace {
         auto value                = field("value", "::Outer::Inner", 8, 0);
         *value.mutable_type_ref() = fieldType(reference("::Outer::Inner", recordId("::Outer::Inner")));
         *expected.add_fields()    = value;
-        auto mode                 = field("mode", "::Outer::Mode", 8, 8);
+        auto mode                 = field("mode", "::Outer::Mode", 8, 8, 1);
         *mode.mutable_type_ref()  = fieldType(reference("::Outer::Mode", enumId("::Outer::Mode")));
         *expected.add_fields()    = mode;
         const auto before         = outputFiles();
@@ -446,18 +450,18 @@ namespace {
         early_type.set_forward_decl_index(1);
         *early.mutable_type_ref() = fieldType(early_type);
         *expected.add_fields()    = early;
-        auto late                 = field("after", "::Outer::Later *", 64, 64);
+        auto late                 = field("after", "::Outer::Later *", 64, 64, 1);
         *late.mutable_type_ref()  = fieldType(reference("::Outer::Later *", recordId("::Outer::Later")));
         *expected.add_fields()    = late;
-        auto unknown              = field("unknown", "::Outer::Missing *", 64, 128);
+        auto unknown              = field("unknown", "::Outer::Missing *", 64, 128, 2);
         *unknown.mutable_type_ref()->mutable_type_ref()->mutable_is_builtin_or_template() = boolean(false);
         *expected.add_fields() = unknown;
-        early                  = field("early", "::Outer::Mode", 32, 192);
+        early                  = field("early", "::Outer::Mode", 32, 192, 3);
         early_type             = builtin("::Outer::Mode");
         early_type.set_forward_decl_index(3);
         *early.mutable_type_ref() = fieldType(early_type);
         *expected.add_fields()    = early;
-        late                      = field("late", "::Outer::Mode", 32, 224);
+        late                      = field("late", "::Outer::Mode", 32, 224, 4);
         *late.mutable_type_ref()  = fieldType(reference("::Outer::Mode", enumId("::Outer::Mode")));
         *expected.add_fields()    = late;
         expectProto(*serialize(records[0]), expected);
@@ -477,7 +481,7 @@ namespace {
         };)cpp");
         ASSERT_EQ(records.size(), 1u);
         auto expected          = record("::Owner", 0, ParserTypes::RECORD_KIND_CLASS, 2, 1);
-        *expected.add_fields() = field("first", "char", 8, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
+        *expected.add_fields() = field("first", "char", 8, 0, 0, ParserTypes::ACCESS_SPECIFIER_PRIVATE);
         for (const auto name : {"A", "B"}) {
             auto constant =
                 staticField(name, "unsigned short", std::nullopt, ParserTypes::VAR_STORAGE_CLASS_STATIC, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR);
@@ -488,7 +492,7 @@ namespace {
                 versioned<ParserTypes::VersionedString>(std::string_view{name} == "A" ? "/// An enum value." : "/// Another enum value.");
             *expected.add_fields() = constant;
         }
-        *expected.add_fields() = field("last", "char", 8, 8);
+        *expected.add_fields() = field("last", "char", 8, 8, 1);
         const auto before      = outputFiles();
         expectProto(*serialize(records[0]), expected);
         EXPECT_EQ(outputFiles(), before);
@@ -531,7 +535,7 @@ namespace {
         *constant.mutable_access()        = versioned<ParserTypes::VersionedAccessSpecifier>(ParserTypes::ACCESS_SPECIFIER_PROTECTED);
         *constant.mutable_default_value() = versioned<ParserTypes::VersionedString>("3");
         *expected.add_fields()            = constant;
-        *expected.add_fields()            = field("value", "int", 32, 0, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
+        *expected.add_fields()            = field("value", "int", 32, 0, 0, ParserTypes::ACCESS_SPECIFIER_PROTECTED);
         expectProto(*serialize(records[0]), expected);
     }
 
@@ -603,8 +607,8 @@ namespace {
         // Windows layout: Left@0, Right@4, vbptr@8, own@16, Virtual@24; alignment 8.
         auto expected          = record("::Derived", 3, ParserTypes::RECORD_KIND_CLASS, 32, 8);
         *expected.add_bases()  = base(reference("::Left", recordId("::Left")), ParserTypes::ACCESS_SPECIFIER_PRIVATE, false, 0);
-        *expected.add_bases()  = base(reference("::Right", recordId("::Right")), ParserTypes::ACCESS_SPECIFIER_PROTECTED, false, 4);
-        *expected.add_bases()  = base(reference("::Virtual", recordId("::Virtual")), ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, 24);
+        *expected.add_bases()  = base(reference("::Right", recordId("::Right")), ParserTypes::ACCESS_SPECIFIER_PROTECTED, false, 4, 1);
+        *expected.add_bases()  = base(reference("::Virtual", recordId("::Virtual")), ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, 24, 2);
         *expected.add_fields() = field("own", "int", 32, 128);
         expectProto(*serialize(records[3]), expected);
     }
@@ -619,8 +623,8 @@ namespace {
         auto known                                             = builtin("::Known");
         known.set_is_builtin_or_template(false);
         *expected.add_bases() = base(known, ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, std::nullopt);
-        *expected.add_bases() = base(builtin("type-parameter-0-0"), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, std::nullopt);
-        *expected.add_bases() = base(builtin("type-parameter-0-1..."), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, std::nullopt);
+        *expected.add_bases() = base(builtin("type-parameter-0-0"), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, std::nullopt, 1);
+        *expected.add_bases() = base(builtin("type-parameter-0-1..."), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, std::nullopt, 2);
         expectProto(*serialize(records[1]), expected);
     }
 
@@ -674,17 +678,18 @@ namespace {
         auto value                           = field("value", "type-parameter-0-0", std::nullopt, std::nullopt);
         *value.mutable_default_value()       = versioned<ParserTypes::VersionedString>("T{}");
         *expected.add_fields()               = value;
-        auto bits                            = field("known", "unsigned int", 3, std::nullopt);
+        auto bits                            = field("known", "unsigned int", 3, std::nullopt, 1);
         *bits.mutable_is_bitfield()          = boolean(true);
         *expected.add_fields()               = bits;
         bits.set_name("dependent");
         bits.clear_bit_width();
+        *bits.mutable_local_occurrence_index() = versioned<ParserTypes::VersionedUint64>(2);
         *expected.add_fields() = bits;
-        *expected.add_fields() = field("raised", "int", std::nullopt, std::nullopt);
-        *expected.add_fields() = field("other", "type-parameter-0-0", std::nullopt, std::nullopt);
+        *expected.add_fields() = field("raised", "int", std::nullopt, std::nullopt, 3);
+        *expected.add_fields() = field("other", "type-parameter-0-0", std::nullopt, std::nullopt, 4);
         auto embedded          = anonymousRecord(1, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt);
         *embedded.add_fields() = field("retained", "type-parameter-0-0", std::nullopt, std::nullopt);
-        value                  = field("embedded", "", std::nullopt, std::nullopt);
+        value                  = field("embedded", "", std::nullopt, std::nullopt, 5);
         value.mutable_type_ref()->clear_type_ref();
         *value.mutable_type_ref()->mutable_anon_record() = embedded;
         *expected.add_fields()                                                                 = value;
@@ -842,9 +847,9 @@ namespace {
             EXPECT_EQ(method.common().kind(), i == 3   ? ParserTypes::FUNCTION_KIND_DESTRUCTOR
                                               : i == 1 ? ParserTypes::FUNCTION_KIND_STATIC_MEMBER
                                                        : ParserTypes::FUNCTION_KIND_MEMBER);
-            EXPECT_EQ(method.common().definition_kind(), i == 3   ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED
-                                                         : i == 2 ? ParserTypes::FUNCTION_DEFINITION_DELETED
-                                                                  : ParserTypes::FUNCTION_DEFINITION_NORMAL);
+            expectVersioned(method.common().definition_kind(), i == 3   ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED
+                                                              : i == 2 ? ParserTypes::FUNCTION_DEFINITION_DELETED
+                                                                       : ParserTypes::FUNCTION_DEFINITION_NORMAL);
             expectVersioned(method.common().storage_class(),
                             i == 1 ? ParserTypes::FUN_VAR_STORAGE_CLASS_STATIC : ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED);
             expectVersioned(method.common().consteval_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
@@ -898,7 +903,7 @@ namespace {
             auto expected =
                 record(i == 0 ? "::Class" : "::Struct", i, i == 0 ? ParserTypes::RECORD_KIND_CLASS : ParserTypes::RECORD_KIND_STRUCT, 4, 4);
             *expected.add_fields() =
-                field("value", "int", 32, 0, i == 0 ? ParserTypes::ACCESS_SPECIFIER_PRIVATE : ParserTypes::ACCESS_SPECIFIER_PUBLIC);
+                field("value", "int", 32, 0, 0, i == 0 ? ParserTypes::ACCESS_SPECIFIER_PRIVATE : ParserTypes::ACCESS_SPECIFIER_PUBLIC);
             expectProto(*serialize(records[i]), expected);
         }
     }
@@ -949,7 +954,7 @@ namespace {
         ASSERT_FALSE(llvm::isa<clang::CXXRecordDecl>(records[0]));
         auto expected          = record("::Packet", 0, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *expected.add_fields() = field("length", "int", 32, 0);
-        *expected.add_fields() = field("bytes", "unsigned char[]", std::nullopt, 32);
+        *expected.add_fields() = field("bytes", "unsigned char[]", std::nullopt, 32, 1);
         expectProto(*serialize(records[0]), expected);
     }
 

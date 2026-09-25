@@ -288,6 +288,7 @@ namespace {
                 align_bytes { versions { source_versions: "test-version" value: 4 } }
                 fields {
                     name: "field"
+                    local_occurrence_index { versions { source_versions: "test-version" value: 0 } }
                     access { versions { source_versions: "test-version" value: ACCESS_SPECIFIER_PUBLIC } }
                     type_ref { type_ref {
                         type_name { versions { source_versions: "test-version" value: "long" } }

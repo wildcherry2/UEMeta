@@ -76,6 +76,12 @@ namespace {
             return result;
         }
 
+        static ParserTypes::ForwardDeclarationList forwardList(std::string_view declarations = {}) {
+            auto expected = proto<ParserTypes::ForwardDeclarationList>(declarations);
+            expected.set_version("test-version");
+            return expected;
+        }
+
         // DenseMap iteration order is unspecified; order within each occurrence
         // list is part of the file contract and must remain significant.
         static void expectForwards(const ParserTypes::ForwardDeclarationList& actual, const ParserTypes::ForwardDeclarationList& expected) {
@@ -186,7 +192,7 @@ namespace {
         }
         EXPECT_EQ(outputFiles().size(), 3u);
         DeclDb::serializeForwardDeclarations();
-        expectForwards(readForwardFile(), {});
+        expectForwards(readForwardFile(), forwardList());
     }
 
     template <typename T>
@@ -233,7 +239,7 @@ namespace {
         expectProto(definition.metadata(), metadata("::Target", id, 2));
         EXPECT_EQ(files[0], this->outputPath(definition.metadata(), std::string{UEMeta::TOP_LEVEL_EXT<typename TestFixture::Message>} + "bin"));
         DeclDb::serializeForwardDeclarations();
-        auto expected = proto<ParserTypes::ForwardDeclarationList>(R"pb(
+        auto expected = this->forwardList(R"pb(
             forward_declarations { occurrence_indices: [0, 1, 3] }
         )pb");
         expected.mutable_forward_declarations(0)->mutable_type_id()->set_a(id.a);
@@ -277,7 +283,7 @@ namespace {
         expectProto(variable.metadata(), variable_metadata);
         expectVersioned(variable.storage_class(), ParserTypes::VAR_STORAGE_CLASS_EXTERN);
         DeclDb::serializeForwardDeclarations();
-        expectForwards(readForwardFile(), {});
+        expectForwards(readForwardFile(), forwardList());
     }
 
     TEST_F(DeclDbTest, SystemAndStdDeclarationsAreHeaderReferencesAndDoNotSerialize) {
@@ -567,8 +573,8 @@ namespace {
         DeclDb::serializeForwardDeclarations();
         ASSERT_TRUE(std::filesystem::is_regular_file(forwardPath()));
         EXPECT_EQ(outputFiles(), std::vector<std::filesystem::path>{forwardPath()});
-        // An empty binary protobuf is legitimately zero bytes.
-        expectForwards(readForwardFile(), {});
+        // Even an empty list carries the source version.
+        expectForwards(readForwardFile(), forwardList());
     }
 
     TEST_P(DeclDbForwardFileTest, GroupsAllOccurrencesByFullIdentityAndPreservesTheirOrder) {
@@ -593,7 +599,7 @@ namespace {
         DeclDb::addForwardDeclaration(enums[0]);
         DeclDb::addForwardDeclaration(functions[0]);
         DeclDb::serializeForwardDeclarations();
-        expectForwards(readForwardFile(), proto<ParserTypes::ForwardDeclarationList>(R"pb(
+        expectForwards(readForwardFile(), forwardList(R"pb(
             forward_declarations { type_id { a: 9007199254740993 b: 18446744073709551615 } occurrence_indices: [0, 2] }
             forward_declarations { type_id { a: 9007199254740993 b: 23 } occurrence_indices: 3 }
             forward_declarations { type_id { a: 31 b: 37 } occurrence_indices: [1, 4] }
@@ -612,13 +618,13 @@ namespace {
         DeclDb::addForwardDeclaration(records[1]);
         DeclDb::addDeclIdentity(records[0], identity(1, 2));
         DeclDb::serializeForwardDeclarations();
-        expectForwards(readForwardFile(), proto<ParserTypes::ForwardDeclarationList>(R"pb(
+        expectForwards(readForwardFile(), forwardList(R"pb(
             forward_declarations { type_id { a: 1 b: 2 } occurrence_indices: 0 }
         )pb"));
         expectQuery(DeclDb::queryDeclIdentity(records[1]), uint64_t{2});
         DeclDb::addDeclIdentity(records[1], identity(3, 4));
         DeclDb::serializeForwardDeclarations();
-        expectForwards(readForwardFile(), proto<ParserTypes::ForwardDeclarationList>(R"pb(
+        expectForwards(readForwardFile(), forwardList(R"pb(
             forward_declarations { type_id { a: 1 b: 2 } occurrence_indices: 0 }
             forward_declarations { type_id { a: 3 b: 4 } occurrence_indices: [1, 2] }
         )pb"));
@@ -632,7 +638,7 @@ namespace {
         ASSERT_EQ(records.size(), 1u);
         DeclDb::addDeclIdentity(records[0], identity(5, 6));
         DeclDb::addForwardDeclaration(records[0]);
-        const auto expected = proto<ParserTypes::ForwardDeclarationList>(R"pb(
+        const auto expected = forwardList(R"pb(
             forward_declarations { type_id { a: 5 b: 6 } occurrence_indices: 0 }
         )pb");
         DeclDb::serializeForwardDeclarations();
@@ -644,7 +650,7 @@ namespace {
         EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 1u);
         DeclDb::reset();
         DeclDb::serializeForwardDeclarations();
-        expectForwards(readForwardFile(), {});
+        expectForwards(readForwardFile(), forwardList());
         EXPECT_LT(std::filesystem::file_size(forwardPath()), size);
     }
 
@@ -654,7 +660,7 @@ namespace {
         EXPECT_THROW(DeclDb::serializeForwardDeclarations(), std::runtime_error);
         ASSERT_TRUE(std::filesystem::remove(forwardPath()));
         EXPECT_NO_THROW(DeclDb::serializeForwardDeclarations());
-        expectForwards(readForwardFile(), {});
+        expectForwards(readForwardFile(), forwardList());
     }
 
     INSTANTIATE_TEST_SUITE_P(Formats, DeclDbForwardFileTest, ::testing::Values(Format::Binary, Format::Json),

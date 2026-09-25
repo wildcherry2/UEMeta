@@ -39,7 +39,7 @@ namespace {
                                                         std::optional<std::string_view>   return_type = "void",
                                                         ParserTypes::FunctionStorageClass storage = ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED) {
             auto traits = common(kind, return_type, storage);
-            traits.set_definition_kind(ParserTypes::FUNCTION_DEFINITION_NORMAL);
+            *traits.mutable_definition_kind() = versioned<ParserTypes::VersionedFunctionDefinitionKind>(ParserTypes::FUNCTION_DEFINITION_NORMAL);
             return traits;
         }
 
@@ -164,7 +164,8 @@ namespace {
                                   ? ParserTypes::FUNCTION_KIND_DESTRUCTOR
                                   : ParserTypes::FUNCTION_KIND_MEMBER;
             auto traits = methodCommon(kind, index < 2 ? std::nullopt : std::optional<std::string_view>{"void"});
-            traits.set_definition_kind(index < 2 ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED : ParserTypes::FUNCTION_DEFINITION_DELETED);
+            *traits.mutable_definition_kind() = versioned<ParserTypes::VersionedFunctionDefinitionKind>(
+                index < 2 ? ParserTypes::FUNCTION_DEFINITION_DEFAULTED : ParserTypes::FUNCTION_DEFINITION_DELETED);
             *traits.mutable_consteval_kind() = versioned<ParserTypes::VersionedConstantEvaluationKind>(
                 index < 2 ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_NONE);
             if (index == 0)
