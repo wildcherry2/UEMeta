@@ -215,7 +215,9 @@ class Merger:
     @staticmethod
     def __get_key[T : (Field, BaseSpecifier, MemberFunction, Enumerator)](message: T) -> int | str:
         if isinstance(message, Field):
-            return message.name #todo unnamed bitfields
+            if message.name:
+                return message.name
+            return message.local_occurrence_index.versions[0].value
         if isinstance(message, MemberFunction):
             return message.func_id.a << 64 | message.func_id.b
         if isinstance(message, Enumerator):
