@@ -11,7 +11,9 @@ ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known
     // Allocate the method beside its owning record and populate shared function details.
     auto* p_msg = google::protobuf::Arena::Create<ParserTypes::MemberFunction>(arena.get());
     p_msg->set_name(computeName());
-    computeDeclIdWithTemplateDetails(computeFQN(), p_msg->mutable_common()).putProtoHash(p_msg->mutable_func_id());
+    const Hash func_id = computeDeclIdWithTemplateDetails(computeFQN(), p_msg->mutable_common());
+    func_id.putProtoHash(p_msg->mutable_func_id());
+    DeclDb::addMethodIdentity(decl, func_id); // for reflection tracking
     putFunctionCommon(p_msg->mutable_common());
 
     // Access and qualifiers are properties of the member, not independently tracked declarations.

@@ -1,5 +1,6 @@
 #pragma once
 #include <variant>
+#include <optional>
 
 #include "UEMeta/utility/DeclUtility.hpp"
 #include "absl/container/flat_hash_map.h"
@@ -72,6 +73,9 @@ namespace UEMeta {
         // Serializes known forward declarations to a ForwardDeclarationList and saves it.
         static void serializeForwardDeclarations();
 
+        static void addMethodIdentity(const clang::CXXMethodDecl* decl, const Hash& hash);
+        static std::optional<Hash> getMethodIdentity(const clang::CXXMethodDecl* decl);
+
         static void reset();
     private:
         DeclDb() = default;
@@ -80,6 +84,7 @@ namespace UEMeta {
         static llvm::DenseMap<const clang::Decl*, Hash> decl_to_identity_map;
 
         static absl::flat_hash_map<Hash, const clang::Decl*> identity_to_decl_map;
+        static llvm::DenseMap<const clang::CXXMethodDecl*, Hash> method_identity_map;
 
         // Maps definition declarations to all forward-declaration occurrence indices in visitation order.
         // Retain the full history for later consumers; identity lookup uses only the latest occurrence.

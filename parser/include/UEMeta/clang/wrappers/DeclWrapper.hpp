@@ -33,6 +33,10 @@ namespace UEMeta {
                 return saveToString<ParserTypes::ForwardDeclarationList>(msg, out);
             }
 
+            static void saveToFile(const ParserTypes::ReflectionCache* cache, const std::shared_ptr<google::protobuf::Arena>& arena) {
+                return saveToFile<ParserTypes::ReflectionCache>(cache, arena);
+            }
+
             static void resetDeclOccurrences();
 
         protected:
@@ -69,6 +73,9 @@ namespace UEMeta {
                     }
                     else if constexpr(std::same_as<PT, ParserTypes::ForwardDeclarationList>) {
                         out_file_path = out_dir / (is_json ? "fwd.decljson" : "fwd.declbin");
+                    }
+                    else if constexpr(std::same_as<PT, ParserTypes::ReflectionCache>) {
+                        out_file_path = out_dir / (is_json ? "cache.reflectionjson" : "cache.reflection");
                     }
 
                     std::ofstream out_file(out_file_path, open_mode);

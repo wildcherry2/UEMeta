@@ -16,6 +16,7 @@ llvm::DenseMap<const clang::Decl*, UEMeta::Hash>                UEMeta::DeclDb::
 absl::flat_hash_map<UEMeta::Hash, const clang::Decl*>           UEMeta::DeclDb::identity_to_decl_map;
 llvm::DenseMap<const clang::Decl*, llvm::SmallVector<uint64_t>> UEMeta::DeclDb::decl_to_forward_decl_occurrence_map;
 llvm::DenseSet<const clang::Decl*>                              UEMeta::DeclDb::visited_decls;
+llvm::DenseMap<const clang::CXXMethodDecl*, UEMeta::Hash>       UEMeta::DeclDb::method_identity_map;
 
 static bool isDeclInFunctionOrMethod(const clang::Decl* decl);
 static bool isDeclInSystemOrStdHeader(const clang::Decl* decl);
@@ -321,14 +322,15 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::NamespaceDecl* decl) {
 
         const auto  arena     = std::make_shared<google::protobuf::Arena>();
         const auto* enum_decl = llvm::dyn_cast_or_null<clang::EnumDecl>(*decl->decls_begin());
-        visited_decls.insert(enum_decl);
         if (!enum_decl) throw DeclException(decl, "Namespace picked up as reflectable, but it doesn't have an EnumDecl as the only child decl!");
+        visited_decls.insert(enum_decl);
         auto enum_ir = EnumDeclWrapper(enum_decl, arena).toIntermediateRepresentation();
         if (std::get_if<0>(&enum_ir)) {
             throw DeclException(decl, "Reflected namespaced enum is anonymous (unsupported)!");
         }
         ParserTypes::TLEnumDeclaration* p_enum = *std::get_if<1>(&enum_ir);
         p_enum->set_reflected_namespace(true);
+        ReflectionDb::markEnumAsReflectedNamespace(enum_decl);
         return EnumDeclWrapper::toFile(std::move(enum_ir), arena);
     }
     catch ([[maybe_unused]] DeclException<clang::FunctionDecl>& de) {
@@ -394,11 +396,23 @@ void UEMeta::DeclDb::serializeForwardDeclarations() {
     }
 }
 
+void UEMeta::DeclDb::addMethodIdentity(const clang::CXXMethodDecl* decl, const Hash& hash) {
+    method_identity_map.emplace_or_assign(decl, hash);
+}
+
+std::optional<UEMeta::Hash> UEMeta::DeclDb::getMethodIdentity(const clang::CXXMethodDecl* decl) {
+    if (const auto& existing = method_identity_map.find(decl); existing != method_identity_map.end()) {
+        return existing->second;
+    }
+    return std::nullopt;
+}
+
 void UEMeta::DeclDb::reset() {
     decl_to_identity_map.clear();
     decl_to_forward_decl_occurrence_map.clear();
     identity_to_decl_map.clear();
     visited_decls.clear();
+    method_identity_map.clear();
 }
 
 bool isDeclInFunctionOrMethod(const clang::Decl* decl) {

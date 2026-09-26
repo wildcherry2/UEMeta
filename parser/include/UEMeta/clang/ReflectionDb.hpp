@@ -7,10 +7,12 @@
 #include <unordered_map>
 
 #include "Enums.pb.h"
+#include "TopLevel.pb.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/DenseMap.h"
+#include "UEMeta/utility/DeclUtility.hpp"
 
 namespace UEMeta {
     /**
@@ -42,6 +44,8 @@ namespace UEMeta {
         // this can be used to both get the package name and check to see if this is the case
         static std::string_view registerReflectable(const clang::NamespaceDecl* decl);
 
+        static void markEnumAsReflectedNamespace(const clang::EnumDecl* decl);
+        static void serializeReflectionCache();
 #ifdef UEM_TESTING
         static void reset();
 #endif
@@ -96,5 +100,7 @@ namespace UEMeta {
 
         // Maps decls to their package name
         static llvm::DenseMap<const clang::Decl*, std::string_view> decl_to_package_name_map;
+
+        static llvm::DenseSet<const clang::EnumDecl*> enums_with_refl_ns;
     };
 } // namespace UEMeta

@@ -337,18 +337,33 @@ message VersionedHashList {
 
 message ReflectionCache {
   message EnumReflectionInfo {
-    string reflected_package = 1;
-    optional bool reflected_namespace = 2;
+    Hash decl_id = 1;
+    string reflected_package = 2;
+    optional bool reflected_namespace = 3;
+  }
+
+  message MethodReflectionInfo {
+    Hash decl_id = 1; // decl_id of owning record
+    Hash func_id = 2;
+  }
+
+  message FieldReflectionInfo {
+    Hash decl_id = 1; // decl_id of owning record
+    string name = 2;
+  }
+
+  message RecordReflectionInfo {
+    Hash decl_id = 1;
+    string reflected_package = 2;
   }
 
   message CacheItem {
     oneof item {
-      string reflected_package = 1;
-      EnumReflectionInfo enum_refl_info = 2;
-      bool reflected_name_or_field = 3;
+      RecordReflectionInfo record_refl_info = 1; // iff record
+      EnumReflectionInfo enum_refl_info = 2; // iff enum
+      MethodReflectionInfo method_refl_info = 3; // iff method
+      FieldReflectionInfo field_refl_info = 4; // iff field
     }
-
-    Hash decl_id = 4;
   }
 
   repeated CacheItem cache = 1;

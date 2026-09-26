@@ -147,6 +147,11 @@ const UEMeta::StablePath& UEMeta::Config::getInputASTFile() const {
     return ast_file;
 }
 
+const UEMeta::StablePath& UEMeta::Config::getInputReflFile() const {
+    assertInitialized();
+    return refl_file;
+}
+
 /// @brief Returns the process-wide configuration singleton.
 UEMeta::Config& UEMeta::Config::getConfig() {
     static Config config{};
@@ -228,8 +233,10 @@ int UEMeta::Config::initialize(int argc, char** argv) {
         ->transform(loadCompileCommandsString);
     upg_input->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
     upg_input->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
-    auto* cache_input = parser->add_option_group("Cache input");
+    auto* cache_input = parser->add_option_group("Cache input"); // todo use different subcommands instead of option groups
     cache_input->add_option("--ast", cfg.ast_file)
+        ->check(CLI::ExistingFile);
+    cache_input->add_option("--refl", cfg.refl_file)
         ->check(CLI::ExistingFile);
     parser->add_option("-l,--log", cfg.log, LOG_HELP);
     parser->add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)->default_str("UnrealEngine");

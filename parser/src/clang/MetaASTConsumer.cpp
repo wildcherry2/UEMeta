@@ -8,6 +8,7 @@
 
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/clang/DeclDb.hpp"
+#include "UEMeta/clang/ReflectionDb.hpp"
 
 UEMeta::MetaASTConsumer::MetaASTConsumer(std::string tu_name) :
     tu_name(std::move(tu_name)), parse_logger(fmtquill::format("Parsing TU {}...", this->tu_name)) {}
@@ -65,7 +66,7 @@ void UEMeta::MetaASTConsumer::HandleTranslationUnit(clang::ASTContext& context) 
     else {
         UEM_ERROR("(clang) AST traversal aborted.");
     }
-
+    ReflectionDb::serializeReflectionCache();
     DeclDb::serializeForwardDeclarations();
     DeclDb::awaitPendingSerializations();
 }
