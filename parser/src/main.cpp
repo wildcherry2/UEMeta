@@ -8,8 +8,8 @@
 /// @brief Initializes logging/configuration, builds the Clang tool, and runs the AST extraction pass.
 int main(int argc, char** argv) {
     try {
-        if (const auto cfg_init_result = UEMeta::Config::initialize(argc, argv)) {
-            return cfg_init_result;
+        if (const auto cfg_init_result = UEMeta::Config::initialize(argc, argv); cfg_init_result != UEMeta::Config::InitializationResult::Success) {
+            return cfg_init_result == UEMeta::Config::InitializationResult::Help ? 0 : 1;
         }
 
         if (const auto log_init_result = UEMeta::Logger::initialize()) {
@@ -20,7 +20,8 @@ int main(int argc, char** argv) {
             std::filesystem::create_directories(UEMeta::Config::getConfig().getOutputDirectory().getUnderlyingPath());
         }
 
-        if (UEMeta::Config::getConfig().getMode() == UEMeta::Config::Mode::Parser) {
+        if (const UEMeta::Config::Mode mode = UEMeta::Config::getConfig().getMode();
+            mode == UEMeta::Config::Mode::Parser_CC || mode == UEMeta::Config::Mode::Parser_Cache) {
             UEM_INFO("Using config:\n{}", UEMeta::Config::getConfig().toString());
 
 #if defined(DEBUG)

@@ -40,7 +40,7 @@ void UEMeta::Repl::startLoop() {
         }
 
         static std::vector<std::string> clang_args = [] -> std::vector<std::string> {
-            const std::unordered_set<std::string>& from_cli = Config::getConfig().getAdditionalClangArgs();
+            const std::vector<std::string>& from_cli = Config::getConfig().getAdditionalClangArgs();
             if (from_cli.empty()) {
                 return std::vector<std::string>{"-std=c++20", "-fparse-all-comments", "-Wno-missing-declarations", "--target=x86_64-pc-windows-msvc"};
             }

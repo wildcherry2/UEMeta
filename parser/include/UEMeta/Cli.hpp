@@ -27,7 +27,9 @@ namespace UEMeta {
     public:
         enum class SerializationFormat : uint8_t { Json, Binary };
 
-        enum class Mode : uint8_t { Parser, Repl };
+        enum class Mode : uint8_t { Parser_Cache, Parser_CC, Repl };
+
+        enum class InitializationResult : uint8_t { Success, Help, Fail };
 
         /**
          * @brief Returns the normalized compile_commands.json content.
@@ -37,7 +39,7 @@ namespace UEMeta {
         /**
          * @brief Returns compiler arguments appended after compile command filtering.
          */
-        [[nodiscard]] const std::unordered_set<std::string>& getAdditionalClangArgs() const;
+        [[nodiscard]] const std::vector<std::string>& getAdditionalClangArgs() const;
 
         /**
          * @brief Returns compile command arguments that should be stripped before invoking Clang.
@@ -65,14 +67,15 @@ namespace UEMeta {
          */
         [[nodiscard]] SerializationFormat getFormat() const;
 
+        /**
+         * @return The mode that the parser is in.
+         */
         [[nodiscard]] Mode getMode() const;
 
+        /**
+         * @return The log level
+         */
         [[nodiscard]] quill::LogLevel getLogLevel() const;
-
-#ifdef UEM_TESTING
-        void setFormatForTesting(SerializationFormat value) noexcept { format = value; }
-        void setUnrealExtensionsForTesting(bool value) noexcept { enable_unreal_extensions = value; }
-#endif
 
         /**
          * @brief Returns true when Unreal Engine-specific parsing extensions are enabled.
@@ -81,26 +84,36 @@ namespace UEMeta {
 
         /**
          * @brief Returns the directory name that bounds upward file-system searches.
+         * Only applicable to parse commands when unreal extensions are enabled
          */
         [[nodiscard]] const std::filesystem::path::string_type& getFileDelimiter() const;
 
         /**
-         * @brief Returns the path to the log file. If empty, no log file should be written to.
+         * @brief Returns the path to the log file. If empty, no log file should be written to. (all commands)
          */
         [[nodiscard]] const StablePath& getLog();
 
         /**
          * @brief Returns the directory to output serialized ASTs to.
+         * Defaulted to ./Output on parse commands; may be empty on REPL command,
+         * which indicates no output
          */
         [[nodiscard]] const StablePath& getOutputDirectory() const;
 
         /**
-         * @brief Returns the version of files that is being parsed; inferred from the directory name of the
-         * output directory.
+         * @brief Returns the version of files that is being parsed (all commands)
          */
         [[nodiscard]] const std::string& getVersion() const;
 
+        /**
+         * @brief Returns the cache.ast to use when the `parse` command is passed with its `ast` subcommand.
+         * @return The StablePath of the .ast file
+         */
         [[nodiscard]] const StablePath& getInputASTFile() const;
+        /**
+         * @brief Returns the cache.reflection to use when the `parse ast` command is passed with the optional --refl option
+         * @return The StablePath of the .reflection file
+         */
         [[nodiscard]] const StablePath& getInputReflFile() const;
 
         /**
@@ -117,6 +130,11 @@ namespace UEMeta {
                                     additional_clang_args, enable_unreal_extensions, std::filesystem::path{file_delimiter}.string(),
                                     format_string_map.at(format), log.string(), output_directory.string());
         }
+
+#ifdef UEM_TESTING
+        void setFormatForTesting(SerializationFormat value) noexcept { format = value; }
+        void setUnrealExtensionsForTesting(bool value) noexcept { enable_unreal_extensions = value; }
+#endif
 
         /**
          * @brief Returns the process-wide configuration singleton.
@@ -161,9 +179,9 @@ namespace UEMeta {
          *
          * @param argc Argument count from main.
          * @param argv Argument vector from main.
-         * @return 0 on success, otherwise a CLI or initialization error code.
+         * @return InitializationResult indicating result
          */
-        static int initialize(int argc, char** argv);
+        static InitializationResult initialize(int argc, char** argv);
 
         /// @brief Reads a compile_commands.json file or returns inline JSON unchanged.
         static std::string loadCompileCommandsString(const std::string& in);
@@ -176,7 +194,7 @@ namespace UEMeta {
         Mode                               mode{};
         quill::LogLevel                    log_level{};
         std::unordered_set<std::string>    strip_commands{};
-        std::unordered_set<std::string>    additional_clang_args{};
+        std::vector<std::string>           additional_clang_args{};
         StablePath                         log{};
         StablePath                         output_directory{};
         StablePath                         ast_file{};

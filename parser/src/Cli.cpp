@@ -76,7 +76,7 @@ const std::string& UEMeta::Config::getCompileCommands() const {
 }
 
 /// @brief Returns arguments appended to the filtered compile command before invoking Clang.
-const std::unordered_set<std::string>& UEMeta::Config::getAdditionalClangArgs() const {
+const std::vector<std::string>& UEMeta::Config::getAdditionalClangArgs() const {
     assertInitialized();
     return additional_clang_args;
 }
@@ -179,109 +179,110 @@ std::string UEMeta::Config::loadCompileCommandsString(const std::string& in) {
 }
 
 /// @brief Parses CLI arguments and commits validated values into the configuration singleton.
-int UEMeta::Config::initialize(int argc, char** argv) {
+UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char** argv) {
     auto& cfg = getConfig();
     if (cfg.initialized.test()) {
         UEM_WARN("Tried to initialize an already initialized Config!");
-        return 0;
+        return InitializationResult::Success;
     }
 
     CLI::App main_app{"Parses C++ code into a mergeable intermediate representation.", "UEMeta"};
     main_app.allow_windows_style_options();
     argv = main_app.ensure_utf8(argv);
 
-    CLI::App* parser = main_app.add_subcommand("parse", "Start the parser as a Clang tool over a translation unit.");
-    CLI::App* repl   = main_app.add_subcommand("repl", "Parse strings of C++ code in an interactive command line.");
+    CLI::App* parser       = main_app.add_subcommand("parse", "Parse files from an AST or compile_commands.json")
+        ->fallthrough();
+    CLI::App* parser_cache = parser->add_subcommand("ast", "Parse files from an .ast file with optional reflection")
+        ->fallthrough();
+    CLI::App* parser_cc    = parser->add_subcommand("cc", "Parse files from a single TU compile_commands.json")
+        ->fallthrough();
+    CLI::App* repl         = main_app.add_subcommand("repl", "Parse strings of C++ code in an interactive command line.")
+        ->fallthrough();
     main_app.require_subcommand(1);
-
-    // use locals to save per-subcommand common options and resolve them after the fact, since the CLI library doesn't.
-    struct ModeOptions {
-        StablePath          output_directory{};
-        SerializationFormat format{};
-        quill::LogLevel      log_level{};
-    } parser_options, repl_options;
+    parser->require_subcommand(1);
 
     const auto try_cli_parse = [&] {
         try {
             main_app.parse(argc, argv);
-            cfg.mode = parser->parsed() ? Mode::Parser : Mode::Repl;
+            cfg.mode = parser->parsed() ? (parser_cache->parsed() ? Mode::Parser_Cache : Mode::Parser_CC) : Mode::Repl;
         }
         catch (const CLI::CallForHelp& ex) {
             main_app.exit(ex);
-            return 0;
+            return InitializationResult::Help;
         }
         catch (const CLI::ParseError& ex) {
-            return main_app.exit(ex);
+            main_app.exit(ex);
+            return InitializationResult::Fail;
         }
         catch (const std::exception& ex) {
             UEM_ERROR("CLI parse error: {}", ex.what());
-            return -1;
+            return InitializationResult::Fail;
         }
         catch (...) {
             UEM_ERROR("Unknown CLI parse error!");
-            return -1;
+            return InitializationResult::Fail;
         }
-        return 0;
+        return InitializationResult::Success;
     };
 
-    parser->add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)->default_val(false);
-    parser->add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)->default_val(false);
-    parser->add_flag("--sync", cfg.sync_serialization, SYNC_HELP)->default_val(false);
-    parser->add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)->default_val(false);
-    auto* upg_input = parser->add_option_group("UPG input");
-    upg_input->add_option("--compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
-        ->transform(loadCompileCommandsString);
-    upg_input->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)->delimiter(',');
-    upg_input->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)->delimiter(',');
-    auto* cache_input = parser->add_option_group("Cache input"); // todo use different subcommands instead of option groups
-    cache_input->add_option("--ast", cfg.ast_file)
-        ->check(CLI::ExistingFile);
-    cache_input->add_option("--refl", cfg.refl_file)
-        ->check(CLI::ExistingFile);
-    parser->add_option("-l,--log", cfg.log, LOG_HELP);
-    parser->add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)->default_str("UnrealEngine");
-    parser->add_option("--output", parser_options.output_directory, OUTPUT_DIRECTORY_HELP)
-        ->default_val(StablePath::currentProgramDirectory() / "Output");
-    parser->add_option("-f,--format", parser_options.format, FORMAT_HELP)
+    // shared across all commands
+    main_app.add_flag("--prefer-full-name-in-file-name", cfg.prefer_full_name_in_file_name, PREFER_FULL_NAME_HELP)
+        ->default_val(false);
+    main_app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)
+        ->default_val(false);
+    main_app.add_option("-l,--log", cfg.log, LOG_HELP);
+    main_app.add_option("-f,--format", cfg.format, FORMAT_HELP)
         ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
         ->default_val(UEM_DEFAULT_FORMAT);
-    parser->add_option("--log-level", parser_options.log_level)
+    main_app.add_option("--log-level", cfg.log_level)
         ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
         ->default_val(quill::LogLevel::Info);
+    main_app.add_option("--version", cfg.version)
+        ->required();
 
-    CLI::Option* output_opt = repl->add_option("--output", repl_options.output_directory);
-    repl->add_option("--format", repl_options.format)
-        ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
-        ->default_val(SerializationFormat::Binary)
-        ->needs(output_opt);
-    repl->add_option("--clang-args", cfg.additional_clang_args)->delimiter(','); // note- must not be CL style args
-    repl->add_option("--log-level", repl_options.log_level)
-        ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
-        ->default_val(quill::LogLevel::Error);
-    repl->add_option("--version", cfg.version)
-        ->default_val("repl");
+    // parse commands - two subcommands, one for parsing compile_commands from UPG, the other from reading an .ast/.reflection cache
+    parser->add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
+        ->default_val(false);
+    parser->add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)
+        ->default_val(false);
+    parser->add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)
+        ->default_str("UnrealEngine");
+    parser->add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP);
+    parser_cc->add_option("compile-commands.json", cfg.compile_commands, COMPILE_COMMANDS_HELP)
+         ->transform(loadCompileCommandsString)
+         ->required();
+    parser_cc->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)
+        ->delimiter(',');
+    parser_cc->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)
+        ->delimiter(',');
+    parser_cache->add_option("ast", cfg.ast_file)
+        ->check(CLI::ExistingFile)
+        ->required();
+    parser_cache->add_option("--refl", cfg.refl_file)
+        ->check(CLI::ExistingFile);
 
-    if (const auto result = try_cli_parse())
+    // repl commands
+    repl->add_option("--clang-args", cfg.additional_clang_args) //semantically different from Parser_CC mode, but occupies the same space
+        ->delimiter(','); // note- must not be CL style args
+    repl->add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP);
+
+    if (const auto result = try_cli_parse(); result != InitializationResult::Success)
         return result;
 
-    auto& mode_options   = cfg.mode == Mode::Parser ? parser_options : repl_options;
-    cfg.output_directory = std::move(mode_options.output_directory);
-    cfg.format           = mode_options.format;
-    cfg.log_level        = mode_options.log_level;
-
-    if (cfg.mode == Mode::Parser) {
-        if (cfg.ast_file.isEmptyPath()) {
-            if (cfg.compile_commands.empty()) {
-                throw CLI::ValidationError("Empty compile_commands when no ast file is present!", -1);
-            }
-            cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
-            cfg.additional_clang_args.insert_range(cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+    if (cfg.mode == Mode::Parser_CC) {
+        if (cfg.compile_commands.empty()) {
+            throw CLI::ValidationError("Empty compile_commands when no ast file is present!", -1);
         }
-        cfg.version = cfg.output_directory.getUnderlyingPath().filename().string();
+        cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
+        cfg.additional_clang_args.insert_range(cfg.additional_clang_args.end(), cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+    }
+
+    if ((cfg.mode == Mode::Parser_CC || cfg.mode == Mode::Parser_Cache) && cfg.output_directory.isEmptyPath()) {
+        cfg.output_directory = StablePath::currentProgramDirectory() / "Output"; // defer default assignment so it doesn't conflict with REPL
     }
 
     cfg.initialized.test_and_set();
-    return 0;
+    return InitializationResult::Success;
 }
 
 /// @brief Returns the initialized Quill logger, falling back to a bootstrap logger during early startup.
