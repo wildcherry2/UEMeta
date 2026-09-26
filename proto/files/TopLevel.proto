@@ -357,14 +357,8 @@ message ReflectionCache {
     string reflected_package = 2;
   }
 
-  message CacheItem {
-    oneof item {
-      RecordReflectionInfo record_refl_info = 1; // iff record
-      EnumReflectionInfo enum_refl_info = 2; // iff enum
-      MethodReflectionInfo method_refl_info = 3; // iff method
-      FieldReflectionInfo field_refl_info = 4; // iff field
-    }
-  }
-
-  repeated CacheItem cache = 1;
+  repeated RecordReflectionInfo records = 1;
+  repeated EnumReflectionInfo enums = 2;
+  repeated MethodReflectionInfo methods = 3;
+  repeated FieldReflectionInfo fields = 4;
 }

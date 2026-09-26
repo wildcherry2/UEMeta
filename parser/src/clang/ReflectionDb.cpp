@@ -120,8 +120,7 @@ void UEMeta::ReflectionDb::serializeReflectionCache() {
         if (llvm::isa<clang::RecordDecl>(decl_pkg_pair.first)) {
             auto query_result = DeclDb::queryDeclIdentity(decl_pkg_pair.getFirst());
             if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_CacheItem*            cache_item  = p_msg->add_cache();
-                ParserTypes::ReflectionCache_RecordReflectionInfo* record_info = cache_item->mutable_record_refl_info();
+                ParserTypes::ReflectionCache_RecordReflectionInfo* record_info = p_msg->add_records();
                 record_info->set_reflected_package(std::string(decl_pkg_pair.getSecond()));
                 hash->putProtoHash(record_info->mutable_decl_id());
                 continue;
@@ -132,8 +131,7 @@ void UEMeta::ReflectionDb::serializeReflectionCache() {
         if (const auto* enum_decl = llvm::dyn_cast<clang::EnumDecl>(decl_pkg_pair.first)) {
             auto query_result = DeclDb::queryDeclIdentity(decl_pkg_pair.getFirst());
             if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_CacheItem*          cache_item = p_msg->add_cache();
-                ParserTypes::ReflectionCache_EnumReflectionInfo* enum_info  = cache_item->mutable_enum_refl_info();
+                ParserTypes::ReflectionCache_EnumReflectionInfo* enum_info  = p_msg->add_enums();
                 enum_info->set_reflected_package(std::string(decl_pkg_pair.getSecond()));
                 hash->putProtoHash(enum_info->mutable_decl_id());
                 enum_info->set_reflected_namespace(enums_with_refl_ns.contains(enum_decl));
@@ -145,8 +143,7 @@ void UEMeta::ReflectionDb::serializeReflectionCache() {
             const clang::RecordDecl* owner        = field_decl->getParent();
             auto                     query_result = DeclDb::queryDeclIdentity(owner);
             if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_CacheItem* cache_item = p_msg->add_cache();
-                auto*                                   field_info = cache_item->mutable_field_refl_info();
+                auto*                                   field_info = p_msg->add_fields();
                 hash->putProtoHash(field_info->mutable_decl_id());
                 field_info->set_name(field_decl->getNameAsString());
                 continue;
@@ -158,8 +155,7 @@ void UEMeta::ReflectionDb::serializeReflectionCache() {
             const auto* owner        = method_decl->getParent();
             auto        query_result = DeclDb::queryDeclIdentity(owner);
             if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_CacheItem*            cache_item  = p_msg->add_cache();
-                ParserTypes::ReflectionCache_MethodReflectionInfo* method_info = cache_item->mutable_method_refl_info();
+                ParserTypes::ReflectionCache_MethodReflectionInfo* method_info = p_msg->add_methods();
                 hash->putProtoHash(method_info->mutable_decl_id());
                 std::optional<Hash> func_id = DeclDb::getMethodIdentity(method_decl);
                 if (!func_id) {
