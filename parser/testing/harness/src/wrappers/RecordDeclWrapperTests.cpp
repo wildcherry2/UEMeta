@@ -864,12 +864,15 @@ namespace {
                 expectProto(method.common().return_type(), versionedRef(builtin(i == 0 ? "int" : "void")));
             }
             if (i == 0 || i == 3) {
-                expectVersioned(method.vtable_offset(), 0);
-                expectVersioned(method.vtable_index(), i == 0 ? 1 : 0);
+                ASSERT_TRUE(method.has_virtual_dispatch());
+                const auto& dispatch = method.virtual_dispatch();
+                ASSERT_EQ(dispatch.kind_case(), ParserTypes::VirtualDispatchInfo::kSimple);
+                EXPECT_EQ(dispatch.GetArena(), arena.get());
+                EXPECT_EQ(dispatch.simple().GetArena(), arena.get());
+                expectVersioned(dispatch.simple().vtable_index(), i == 0 ? 1 : 0);
             }
             else {
-                EXPECT_FALSE(method.has_vtable_offset());
-                EXPECT_FALSE(method.has_vtable_index());
+                EXPECT_FALSE(method.has_virtual_dispatch());
             }
             EXPECT_EQ(UEMeta::DeclDb::queryDecl(recordId("::Derived::" + names[i], i == 0 ? " const" : "")), nullptr);
         }
@@ -891,8 +894,7 @@ namespace {
         expectProto(method.is_const(), boolean(true));
         ASSERT_TRUE(method.common().has_return_type());
         expectProto(method.common().return_type(), versionedRef(builtin("T")));
-        EXPECT_FALSE(method.has_vtable_index());
-        EXPECT_FALSE(method.has_vtable_offset());
+        EXPECT_FALSE(method.has_virtual_dispatch());
     }
 
     TEST_F(RecordDeclWrapperTest, UnsetMemberAccessUsesTheOwningRecordDefault) {

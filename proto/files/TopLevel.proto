@@ -166,17 +166,64 @@ message MemberFunction {
   VersionedBool is_volatile = 4;
   VersionedFunctionVirtualityKind virtuality = 5;
   VersionedBool is_deleted = 6;
-  VersionedUint64 vtable_index = 7;
-  VersionedInt64 vtable_offset = 8;
 
   // the name of the member function; append to the owning record's FQN to get the FQN of this function
   // note the special handling for operators, documented in DeclarationMetadata.qualified_name
-  string name = 9;
+  string name = 7;
 
   // unique ID for this function, formed from the hash of the FQN, template param 'typename' and concrete types, and parameter types
   // effectively, the hash of a platform independent mangled name + template data.
   // This is not in FunctionCommon because global functions have this in their DeclarationMetadata
-  Hash func_id = 10;
+  Hash func_id = 8;
+
+  // Omitted for non-virtual methods or unknown layouts.
+  optional VirtualDispatchInfo virtual_dispatch = 9;
+}
+
+// The case describes the owning record's entire inheritance hierarchy, including
+// indirect bases. All offsets are bytes; table indexes count entries.
+// The adjusted pointer addresses the dispatch vfptr and is passed as this to the
+// selected slot. Any adjustment inside that slot's thunk is performed by the callee.
+message VirtualDispatchInfo {
+  // No bases, or a single chain of nonvirtual bases: one implied vfptr at offset zero.
+  message SimpleDispatch {
+    VersionedUint64 vtable_index = 1;
+  }
+
+  // Multiple nonvirtual inheritance, including branching in an indirect base.
+  message MultipleDispatch {
+    VersionedUint64 vtable_index = 1;
+    // Add this to the owning-record pointer to locate the vfptr and obtain dispatch_this.
+    // Present even when this method uses the primary vfptr at offset zero.
+    VersionedInt64 vtable_offset = 2;
+  }
+
+  // The owning record has virtual bases, even if this method uses a nonvirtual vfptr.
+  message ComplexDispatch {
+    VersionedUint64 vtable_index = 1;
+    // Offset of the vfptr from the owning record as a complete object, for layout inspection.
+    // For runtime dispatch, use this_delta and the optional virtual-base lookup below.
+    VersionedInt64 vtable_offset = 2;
+    // Fixed adjustment after virtual-base lookup, or directly from the owning-record
+    // pointer when no lookup is needed. Present even when zero.
+    VersionedInt64 this_delta = 3;
+    // Microsoft ABI: present together only when this method's dispatch vfptr is in a
+    // virtual base. vbptr_offset is relative to the owning-record pointer; vbtable_index
+    // is a nonzero index of a signed 32-bit displacement in that vbtable.
+    optional VersionedInt64 vbptr_offset = 4;
+    optional VersionedUint64 vbtable_index = 5;
+    // Given a byte pointer p to the owning record:
+    //   q = p + vbptr_offset
+    //   base = q + (*reinterpret_cast<int32_t**>(q))[vbtable_index]
+    //   dispatch_this = base + this_delta
+    // Without the lookup fields: dispatch_this = p + this_delta.
+  }
+
+  oneof kind {
+    SimpleDispatch simple = 1;
+    MultipleDispatch multiple = 2;
+    ComplexDispatch complex = 3;
+  }
 }
 
 // Common function traits. Some things may seem like they're better off in MemberFunction,

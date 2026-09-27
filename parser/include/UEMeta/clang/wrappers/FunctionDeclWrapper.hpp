@@ -218,6 +218,6 @@ namespace UEMeta {
         [[nodiscard]] ParserTypes::MemberFunction* serialize(bool has_known_layout, const Hash& owner_id) const;
 
     private:
-        void putVTableDetails(ParserTypes::MemberFunction* p_msg) const;
+        void putVirtualDispatchInfo(ParserTypes::MemberFunction* p_msg) const;
     };
 } // namespace UEMeta
