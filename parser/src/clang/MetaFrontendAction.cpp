@@ -17,7 +17,7 @@ std::unique_ptr<clang::ASTConsumer> UEMeta::MetaFrontendAction::CreateASTConsume
     const auto input_name = file.str();
     const auto file_name  = std::filesystem::path(input_name).filename().string();
 
-    if (Config::getConfig().getMode() == Config::Mode::Repl || !Config::getConfig().getInputASTFile().isEmptyPath()) {
+    if (Config::getConfig().getMode() != Config::Mode::Parser_CC) {
         return std::make_unique<MetaASTConsumer>(file_name.empty() ? input_name : file_name);
     }
 

@@ -46,6 +46,7 @@ int main(int argc, char** argv) {
     config.output_directory              = UEMeta::StablePath{version_directory};
     config.version                       = "test-version";
     config.format                        = UEMeta::Config::SerializationFormat::Binary;
+    config.mode                          = UEMeta::Config::Mode::Parser_CC;
     config.sync_serialization            = true;
     config.prefer_full_name_in_file_name = false;
     config.initialized.test_and_set();

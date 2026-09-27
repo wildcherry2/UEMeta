@@ -110,11 +110,6 @@ namespace UEMeta {
          * @return The StablePath of the .ast file
          */
         [[nodiscard]] const StablePath& getInputASTFile() const;
-        /**
-         * @brief Returns the cache.reflection to use when the `parse ast` command is passed with the optional --refl option
-         * @return The StablePath of the .reflection file
-         */
-        [[nodiscard]] const StablePath& getInputReflFile() const;
 
         /**
          * @brief Writes a human-readable configuration summary to a stream.
@@ -198,7 +193,6 @@ namespace UEMeta {
         StablePath                         log{};
         StablePath                         output_directory{};
         StablePath                         ast_file{};
-        StablePath                         refl_file{};
         std::string                        compile_commands{};
         std::filesystem::path::string_type file_delimiter{std::filesystem::path{"UnrealEngine"}.native()};
         std::string                        version{};

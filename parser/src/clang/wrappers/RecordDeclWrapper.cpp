@@ -143,9 +143,7 @@ UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper:
         setVersioned(p_msg->mutable_align_bytes(), layout->getAlignment().getQuantity());
     }
 
-    if (const std::string_view package = ReflectionDb::registerReflectable(decl); !package.empty()) {
-        setVersionedString(p_msg->mutable_reflected_package(), package);
-    }
+    ReflectionDb::registerReflectable(decl, Hash{p_msg->metadata().decl_id()});
 
     // Clang stores bases outside decls(), so only base specifiers require their own loop.
     if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl)) {
@@ -311,7 +309,9 @@ void UEMeta::RecordDeclWrapper::handleMembers(const clang::RecordDecl* record, P
             }
             else {
                 // Named fields and unnamed/zero-width bitfields append in the same source order.
-                handleField(field, p_msg->add_fields(), layout, offset, inherited_access);
+                auto* p_field = p_msg->add_fields();
+                handleField(field, p_field, layout, offset, inherited_access);
+                ReflectionDb::registerReflectable(field, Hash{p_msg->metadata().decl_id()}, p_field->name());
             }
             continue;
         }
@@ -372,9 +372,6 @@ void UEMeta::RecordDeclWrapper::handleField(const clang::FieldDecl* field, Parse
     setVersionedBool(p_msg->mutable_is_bitfield(), field->isBitField());
     setVersioned(p_msg->mutable_storage_class(), ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
     setVersioned(p_msg->mutable_constant_evaluation_kind(), ParserTypes::CONSTANT_EVALUATION_NONE);
-    if (!ReflectionDb::registerReflectable(field).empty()) {
-        setVersionedBool(p_msg->mutable_is_reflected(), true);
-    }
 
     // Bit widths can be known even when the enclosing record's layout remains dependent.
     if (field->isBitField()) {
@@ -421,7 +418,7 @@ void UEMeta::RecordDeclWrapper::handleStaticField(clang::VarDecl* field, ParserT
 void UEMeta::RecordDeclWrapper::handleMethod(clang::CXXMethodDecl* method, ParserTypes::TLRecordDeclaration* p_msg,
                                              const clang::ASTRecordLayout* layout) const {
     // Member functions share the record arena and are not candidates for free-function output.
-    p_msg->mutable_methods()->AddAllocated(MethodDeclWrapper(method, arena).serialize(layout != nullptr));
+    p_msg->mutable_methods()->AddAllocated(MethodDeclWrapper(method, arena).serialize(layout != nullptr, Hash{p_msg->metadata().decl_id()}));
 }
 
 void UEMeta::RecordDeclWrapper::handleBase(const clang::CXXBaseSpecifier& base, ParserTypes::BaseSpecifier* p_msg,

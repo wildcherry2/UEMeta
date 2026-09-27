@@ -39,11 +39,6 @@ bool UEMeta::MetaASTConsumer::VisitVarDecl(clang::VarDecl* decl) {
     return true;
 }
 
-bool UEMeta::MetaASTConsumer::VisitNamespaceDecl(clang::NamespaceDecl* decl) {
-    DeclDb::serializeIfNeeded(decl);
-    return true;
-}
-
 void UEMeta::MetaASTConsumer::Initialize(clang::ASTContext& context) {
     UEM_INFO("Starting TU '{}' parsing (this may take a moment)!", tu_name);
     auto policy               = context.getPrintingPolicy();

@@ -13,6 +13,8 @@
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/clang/MetaPreprocessor.hpp"
 #include "UEMeta/clang/ReflectionDb.hpp"
+#include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
+#include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclTemplate.h"
@@ -33,7 +35,8 @@ namespace {
     using Check = std::function<void(clang::ASTContext&)>;
 
     // Run the real preprocessor and ReflectionDb against disposable, standalone
-    // C++ files. No Unreal headers, wrappers, DeclDb, or serialization participate.
+    // C++ files. Inspect the emitted cache without Unreal headers; integration
+    // cases also exercise the declaration wrappers.
     class ReflectionAction final : public clang::ASTFrontendAction {
     public:
         ReflectionAction(Check check, bool record_macros) : check(std::move(check)), record_macros(record_macros) {}
@@ -165,22 +168,71 @@ namespace {
             return result;
         }
 
-        static std::string_view package(const clang::Decl* declaration) {
+        static ParserTypes::ReflectionCache readSerializedCache() {
+            const auto& cfg = Config::getConfig();
+            const auto path = cfg.getOutputDirectory().getUnderlyingPath() / "cache.reflection";
+            UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations();
+            std::filesystem::remove(path);
+            ReflectionDb::serializeReflectionCache();
+            UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations();
+
+            ParserTypes::ReflectionCache cache;
+            if (!cfg.unrealExtensionsEnabled()) {
+                EXPECT_FALSE(std::filesystem::exists(path));
+                return cache;
+            }
+            std::ifstream input{path, std::ios::binary};
+            EXPECT_TRUE(input.is_open()) << path;
+            EXPECT_TRUE(cache.ParseFromIstream(&input)) << path;
+            return cache;
+        }
+
+        // Fixture identities deliberately do not depend on DeclDb or wrappers.
+        static UEMeta::Hash identity(const clang::Decl* decl) {
+            UEMeta::Hash hash{};
+            hash.a = reinterpret_cast<uintptr_t>(decl);
+            return hash;
+        }
+
+        static std::string package(const clang::Decl* declaration) {
             if (!declaration) {
                 ADD_FAILURE() << "Missing reflection fixture declaration";
                 return {};
             }
+            auto id = identity(declaration);
             if (auto* record = llvm::dyn_cast<clang::RecordDecl>(declaration))
-                return ReflectionDb::registerReflectable(record);
-            if (auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration))
-                return ReflectionDb::registerReflectable(method);
-            if (auto* enumeration = llvm::dyn_cast<clang::EnumDecl>(declaration))
-                return ReflectionDb::registerReflectable(enumeration);
-            if (auto* field = llvm::dyn_cast<clang::FieldDecl>(declaration))
-                return ReflectionDb::registerReflectable(field);
-            if (auto* space = llvm::dyn_cast<clang::NamespaceDecl>(declaration))
-                return ReflectionDb::registerReflectable(space);
-            ADD_FAILURE() << "Unsupported reflection fixture declaration";
+                ReflectionDb::registerReflectable(record, id);
+            else if (auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration))
+                ReflectionDb::registerReflectable(method, identity(method->getParent()), id);
+            else if (auto* enumeration = llvm::dyn_cast<clang::EnumDecl>(declaration))
+                ReflectionDb::registerReflectable(enumeration, id);
+            else if (auto* field = llvm::dyn_cast<clang::FieldDecl>(declaration))
+                ReflectionDb::registerReflectable(field, identity(field->getParent()), field->getNameAsString());
+            else if (auto* space = llvm::dyn_cast<clang::NamespaceDecl>(declaration)) {
+                if (std::distance(space->decls_begin(), space->decls_end()) == 1)
+                    id = identity(*space->decls_begin());
+                ReflectionDb::registerReflectable(space, id);
+            }
+            else {
+                ADD_FAILURE() << "Unsupported reflection fixture declaration";
+                return {};
+            }
+            const auto cache = readSerializedCache();
+            for (const auto& info : cache.records())
+                if (UEMeta::Hash{info.decl_id()} == id) return info.reflected_package();
+            for (const auto& info : cache.enums())
+                if (UEMeta::Hash{info.decl_id()} == id) return info.reflected_package();
+            // Member entries carry ownership and membership, not a separate package.
+            if (const auto* field = llvm::dyn_cast<clang::FieldDecl>(declaration)) {
+                for (const auto& info : cache.fields())
+                    if (UEMeta::Hash{info.decl_id()} == identity(field->getParent()) && info.name() == field->getNameAsString())
+                        return "DummyModule";
+            }
+            if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration)) {
+                for (const auto& info : cache.methods())
+                    if (UEMeta::Hash{info.decl_id()} == identity(method->getParent()) && UEMeta::Hash{info.func_id()} == id)
+                        return "DummyModule";
+            }
             return {};
         }
 
@@ -206,9 +258,18 @@ namespace {
     TYPED_TEST_SUITE(ReflectionNullTest, DeclarationTypes);
 
     TYPED_TEST(ReflectionNullTest, NullIsNeverReflected) {
-        EXPECT_TRUE(ReflectionDb::registerReflectable(static_cast<const TypeParam*>(nullptr)).empty());
-        Config::getConfig().setUnrealExtensionsForTesting(false);
-        EXPECT_TRUE(ReflectionDb::registerReflectable(static_cast<const TypeParam*>(nullptr)).empty());
+        for (const bool enabled : {true, false}) {
+            Config::getConfig().setUnrealExtensionsForTesting(enabled);
+            const TypeParam* decl = nullptr;
+            if constexpr (std::same_as<TypeParam, clang::CXXMethodDecl>)
+                ReflectionDb::registerReflectable(decl, {}, {});
+            else if constexpr (std::same_as<TypeParam, clang::FieldDecl>)
+                ReflectionDb::registerReflectable(decl, {}, "field");
+            else
+                ReflectionDb::registerReflectable(decl, {});
+            const auto cache = this->readSerializedCache();
+            EXPECT_EQ(cache.ByteSizeLong(), 0u);
+        }
     }
 
     class ReflectionKindTest : public ReflectionDbTest, public ::testing::WithParamInterface<std::tuple<std::string, int>> {};
@@ -398,8 +459,8 @@ namespace {
                   ASSERT_NE(local, nullptr);
                   auto* record = llvm::dyn_cast<clang::RecordDecl>(local->getSingleDecl());
                   ASSERT_NE(record, nullptr);
-                  EXPECT_EQ(ReflectionDb::registerReflectable(record), "DummyModule");
-                  EXPECT_EQ(ReflectionDb::registerReflectable(*record->field_begin()), "DummyModule");
+                  EXPECT_EQ(package(record), "DummyModule");
+                  EXPECT_EQ(package(*record->field_begin()), "DummyModule");
                   expectPackages(context, {{"Owner::plain", ""},
                                            {"Owner::pure", "DummyModule"},
                                            {"Owner::deleted", "DummyModule"},
@@ -408,10 +469,10 @@ namespace {
                                            {"Owner::external", "DummyModule"}});
                   auto* definition = find<clang::CXXMethodDecl>(context, "Owner::external", 1);
                   ASSERT_NE(definition, nullptr);
-                  EXPECT_TRUE(ReflectionDb::registerReflectable(definition).empty());
+                  EXPECT_TRUE(package(definition).empty());
                   auto* statement = llvm::dyn_cast<clang::DeclStmt>(*definition->getBody()->child_begin());
                   ASSERT_NE(statement, nullptr);
-                  EXPECT_EQ(ReflectionDb::registerReflectable(llvm::cast<clang::RecordDecl>(statement->getSingleDecl())), "DummyModule");
+                  EXPECT_EQ(package(llvm::cast<clang::RecordDecl>(statement->getSingleDecl())), "DummyModule");
               });
     }
 
@@ -427,12 +488,12 @@ namespace {
                   auto* forward_enum   = find<clang::EnumDecl>(context, "Enum");
                   ASSERT_NE(forward_record, nullptr);
                   ASSERT_NE(forward_enum, nullptr);
-                  EXPECT_TRUE(ReflectionDb::registerReflectable(forward_record).empty());
-                  EXPECT_TRUE(ReflectionDb::registerReflectable(forward_enum).empty());
+                  EXPECT_TRUE(package(forward_record).empty());
+                  EXPECT_TRUE(package(forward_enum).empty());
                   EXPECT_EQ(package(find(context, "Record", 1)), "DummyModule");
                   EXPECT_EQ(package(find(context, "Enum", 1)), "DummyModule");
-                  EXPECT_TRUE(ReflectionDb::registerReflectable(forward_record).empty());
-                  EXPECT_TRUE(ReflectionDb::registerReflectable(forward_enum).empty());
+                  EXPECT_TRUE(package(forward_record).empty());
+                  EXPECT_TRUE(package(forward_enum).empty());
               });
     }
 
@@ -544,7 +605,7 @@ namespace {
                                            {"Owner::firstField", "DummyModule"},
                                            {"Owner::secondField", ""}});
                   // Revisiting the first declaration still returns its cached result.
-                  EXPECT_EQ(ReflectionDb::registerReflectable(first), "DummyModule");
+                  EXPECT_EQ(package(first), "DummyModule");
               });
     }
 
@@ -575,10 +636,10 @@ namespace {
               [](clang::ASTContext& context) {
                   auto* record = find<clang::RecordDecl>(context, "Record");
                   ASSERT_NE(record, nullptr);
-                  EXPECT_THROW((void)ReflectionDb::registerReflectable(record), UEMeta::DeclException<>);
+                  EXPECT_THROW((void)package(record), UEMeta::DeclException<>);
                   // The same declaration can be retried after an exception; it must not
                   // be confused with a different declaration at the same expansion offset.
-                  EXPECT_THROW((void)ReflectionDb::registerReflectable(record), UEMeta::DeclException<>);
+                  EXPECT_THROW((void)package(record), UEMeta::DeclException<>);
                   expectPackages(context, {{"Tail", ""}});
               });
     }
@@ -687,7 +748,7 @@ namespace {
             [](clang::ASTContext& context) {
                 auto* record = find<clang::RecordDecl>(context, "Record");
                 ASSERT_NE(record, nullptr);
-                EXPECT_TRUE(ReflectionDb::registerReflectable(record).empty());
+                EXPECT_TRUE(package(record).empty());
                 const auto end = context.getSourceManager().getFileOffset(record->getBraceRange().getBegin());
                 add(context, ParserTypes::REFLECTION_KIND_USTRUCT, 0, end);
                 // Equality must also count as consumed, avoiding an erroneous kind mismatch.
@@ -707,12 +768,12 @@ namespace {
             [](clang::ASTContext& context) {
                 auto* target = find<clang::RecordDecl>(context, "Target");
                 ASSERT_NE(target, nullptr);
-                EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
+                EXPECT_TRUE(package(target).empty());
                 add(context, ParserTypes::REFLECTION_KIND_USTRUCT, 0, 0);
-                EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
+                EXPECT_TRUE(package(target).empty());
                 ReflectionDb::reset();
                 add(context, ParserTypes::REFLECTION_KIND_USTRUCT, 0, 0);
-                EXPECT_EQ(ReflectionDb::registerReflectable(target), "DummyModule");
+                EXPECT_EQ(package(target), "DummyModule");
             },
             "Module/Cached.cpp", false);
     }
@@ -721,13 +782,13 @@ namespace {
         parse("USTRUCT() struct Target {};", [&](clang::ASTContext& context) {
             auto* target = find<clang::RecordDecl>(context, "Target");
             ASSERT_NE(target, nullptr);
-            EXPECT_EQ(ReflectionDb::registerReflectable(target), "DummyModule");
+            EXPECT_EQ(package(target), "DummyModule");
             ReflectionDb::reset();
-            EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
+            EXPECT_TRUE(package(target).empty());
             ReflectionDb::reset();
             std::filesystem::rename(root / "Module/DummyModule.Build.cs", root / "Module/Renamed.Build.cs");
             add(context, ParserTypes::REFLECTION_KIND_USTRUCT, 0, context.getSourceManager().getFileOffset(target->getBeginLoc()));
-            EXPECT_EQ(ReflectionDb::registerReflectable(target), "Renamed");
+            EXPECT_EQ(package(target), "Renamed");
         });
     }
 
@@ -738,16 +799,16 @@ namespace {
             const auto begin  = target->getBeginLoc();
             const auto braces = target->getBraceRange();
             target->setLocStart({});
-            EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
+            EXPECT_TRUE(package(target).empty());
             ReflectionDb::reset();
             target->setLocStart(begin);
             target->setBraceRange({{}, braces.getEnd()});
-            EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
+            EXPECT_TRUE(package(target).empty());
             ReflectionDb::reset();
             auto&      source     = context.getSourceManager();
             const auto other_file = source.createFileID(llvm::MemoryBuffer::getMemBuffer("{}", "Other.cpp"));
             target->setBraceRange({source.getLocForStartOfFile(other_file), braces.getEnd()});
-            EXPECT_TRUE(ReflectionDb::registerReflectable(target).empty());
+            EXPECT_TRUE(package(target).empty());
             target->setBraceRange(braces);
         });
     }
@@ -922,10 +983,106 @@ namespace {
                   ASSERT_TRUE(method->isLateTemplateParsed());
                   ASSERT_TRUE(method->doesThisDeclarationHaveABody());
                   ASSERT_EQ(method->getBody(), nullptr);
-                  EXPECT_EQ(ReflectionDb::registerReflectable(method), "DummyModule");
-                  EXPECT_EQ(ReflectionDb::registerReflectable(method), "DummyModule");
+                  EXPECT_EQ(package(method), "DummyModule");
+                  EXPECT_EQ(package(method), "DummyModule");
               },
               "Module/Delayed.cpp", true, {"-std=c++17", "-fdelayed-template-parsing"});
+    }
+
+    TEST_F(ReflectionDbTest, CacheContainsSuppliedIdentitiesAndOwnsFieldNames) {
+        parse(R"cpp(
+            USTRUCT() struct Owner { UPROPERTY() int field; UFUNCTION() void method(); };
+            UENUM() enum class Kind { Value };
+            UENUM() namespace Legacy { enum Type { Value }; }
+        )cpp", [](clang::ASTContext& context) {
+            const auto make_id = [](uint64_t value) {
+                UEMeta::Hash id{};
+                id.a = value;
+                id.b = value + 100;
+                return id;
+            };
+            const auto owner_id = make_id(1), func_id = make_id(2), enum_id = make_id(3), legacy_id = make_id(4);
+            auto* owner = find<clang::RecordDecl>(context, "Owner");
+            auto* field = find<clang::FieldDecl>(context, "Owner::field");
+            auto* method = find<clang::CXXMethodDecl>(context, "Owner::method");
+            auto* enumeration = find<clang::EnumDecl>(context, "Kind");
+            auto* space = find<clang::NamespaceDecl>(context, "Legacy");
+            auto* legacy_enum = find<clang::EnumDecl>(context, "Legacy::Type");
+            for (unsigned repeat = 0; repeat < 2; ++repeat) {
+                std::string stored_name = "serialized_field";
+                ReflectionDb::registerReflectable(owner, owner_id);
+                ReflectionDb::registerReflectable(field, owner_id, stored_name);
+                stored_name.assign("changed");
+                ReflectionDb::registerReflectable(method, owner_id, func_id);
+                ReflectionDb::registerReflectable(enumeration, enum_id);
+                ReflectionDb::registerReflectable(space, legacy_id);
+                ReflectionDb::registerReflectable(legacy_enum, legacy_id);
+            }
+            ParserTypes::ReflectionCache cache;
+            for (unsigned repeat = 0; repeat < 2; ++repeat) {
+                cache = readSerializedCache();
+                ASSERT_EQ(cache.records_size(), 1);
+                EXPECT_EQ(UEMeta::Hash{cache.records(0).decl_id()}, owner_id);
+                EXPECT_EQ(cache.records(0).reflected_package(), "DummyModule");
+                ASSERT_EQ(cache.fields_size(), 1);
+                EXPECT_EQ(UEMeta::Hash{cache.fields(0).decl_id()}, owner_id);
+                EXPECT_EQ(cache.fields(0).name(), "serialized_field");
+                ASSERT_EQ(cache.methods_size(), 1);
+                EXPECT_EQ(UEMeta::Hash{cache.methods(0).decl_id()}, owner_id);
+                EXPECT_EQ(UEMeta::Hash{cache.methods(0).func_id()}, func_id);
+                ASSERT_EQ(cache.enums_size(), 2);
+                for (const auto& info : cache.enums()) {
+                    EXPECT_EQ(info.reflected_package(), "DummyModule");
+                    EXPECT_EQ(UEMeta::Hash{info.decl_id()}, info.reflected_namespace() ? legacy_id : enum_id);
+                }
+            }
+            ReflectionDb::reset();
+            cache = readSerializedCache();
+            EXPECT_EQ(cache.ByteSizeLong(), 0u);
+        });
+    }
+
+    TEST_F(ReflectionDbTest, WrappersCaptureReflectionWithoutAddingItToDeclarationMessages) {
+        parse(R"cpp(
+            USTRUCT() struct Owner {
+                UPROPERTY() int field;
+                UFUNCTION() void method();
+                int plain_field;
+                void plain_method();
+            };
+            UENUM() enum class Kind { Value };
+            UENUM() namespace Legacy { enum Type { Value }; }
+        )cpp", [](clang::ASTContext& context) {
+            UEMeta::DeclDb::reset();
+            const auto arena = std::make_shared<google::protobuf::Arena>();
+            auto owner_ir = UEMeta::RecordDeclWrapper(find<clang::RecordDecl>(context, "Owner"), arena).toIntermediateRepresentation();
+            auto enum_ir = UEMeta::EnumDeclWrapper(find<clang::EnumDecl>(context, "Kind"), arena).toIntermediateRepresentation();
+            auto legacy_ir = UEMeta::EnumDeclWrapper(find<clang::EnumDecl>(context, "Legacy::Type"), arena).toIntermediateRepresentation();
+            const auto* owner = std::get<ParserTypes::TLRecordDeclaration*>(owner_ir);
+            const auto* enumeration = std::get<ParserTypes::TLEnumDeclaration*>(enum_ir);
+            const auto* legacy = std::get<ParserTypes::TLEnumDeclaration*>(legacy_ir);
+            const auto cache = readSerializedCache();
+            ASSERT_EQ(cache.records_size(), 1);
+            EXPECT_EQ(UEMeta::Hash{cache.records(0).decl_id()}, UEMeta::Hash{owner->metadata().decl_id()});
+            ASSERT_EQ(cache.fields_size(), 1);
+            EXPECT_EQ(UEMeta::Hash{cache.fields(0).decl_id()}, UEMeta::Hash{owner->metadata().decl_id()});
+            EXPECT_EQ(cache.fields(0).name(), "field");
+            ASSERT_EQ(cache.methods_size(), 1);
+            EXPECT_EQ(UEMeta::Hash{cache.methods(0).decl_id()}, UEMeta::Hash{owner->metadata().decl_id()});
+            EXPECT_EQ(UEMeta::Hash{cache.methods(0).func_id()}, UEMeta::Hash{owner->methods(0).func_id()});
+            ASSERT_EQ(cache.enums_size(), 2);
+            for (const auto& info : cache.enums()) {
+                const auto* message = info.reflected_namespace() ? legacy : enumeration;
+                EXPECT_EQ(UEMeta::Hash{info.decl_id()}, UEMeta::Hash{message->metadata().decl_id()});
+                EXPECT_EQ(info.reflected_package(), "DummyModule");
+            }
+            EXPECT_EQ(owner->GetDescriptor()->FindFieldByName("reflected_package"), nullptr);
+            EXPECT_EQ(enumeration->GetDescriptor()->FindFieldByName("reflected_package"), nullptr);
+            EXPECT_EQ(legacy->GetDescriptor()->FindFieldByName("reflected_namespace"), nullptr);
+            EXPECT_EQ(ParserTypes::Field::descriptor()->FindFieldByName("is_reflected"), nullptr);
+            EXPECT_EQ(ParserTypes::MemberFunction::descriptor()->FindFieldByName("is_reflected"), nullptr);
+            UEMeta::DeclDb::reset();
+        });
     }
 
     TEST_F(ReflectionDbTest, PackageViewsRemainValidWhenManyPackageRootsAreInserted) {

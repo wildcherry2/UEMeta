@@ -7,6 +7,11 @@ UEMeta::Hash::Hash(boost::hash2::xxh3_128& hasher) {
     b                               = values[1];
 }
 
+UEMeta::Hash::Hash(const ParserTypes::Hash& hash) {
+    a = hash.a();
+    b = hash.b();
+}
+
 void UEMeta::Hash::putProtoHash(ParserTypes::Hash* hash) const {
     hash->set_a(a);
     hash->set_b(b);

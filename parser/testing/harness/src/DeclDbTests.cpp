@@ -103,7 +103,6 @@ namespace {
         DeclDb::serializeIfNeeded(static_cast<clang::EnumDecl*>(nullptr));
         DeclDb::serializeIfNeeded(static_cast<clang::FunctionDecl*>(nullptr));
         DeclDb::serializeIfNeeded(static_cast<clang::VarDecl*>(nullptr));
-        DeclDb::serializeIfNeeded(static_cast<clang::NamespaceDecl*>(nullptr));
         auto* context = parseCode("struct Unknown {};");
         ASSERT_NE(context, nullptr);
         const auto records = declarations<clang::RecordDecl>(context->getTranslationUnitDecl());
@@ -423,17 +422,6 @@ namespace {
             expectQuery(DeclDb::queryDeclIdentity(decl), false);
         EXPECT_TRUE(outputFiles().empty());
         EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 0u);
-    }
-
-    TEST_F(DeclDbTest, NamespaceSerializationIsDisabledWithoutUnrealExtensions) {
-        auto* context = parseCode("namespace N { enum Kind { Value }; }");
-        ASSERT_NE(context, nullptr);
-        const auto namespaces = declarations<clang::NamespaceDecl>(context->getTranslationUnitDecl());
-        ASSERT_EQ(namespaces.size(), 1u);
-        ASSERT_FALSE(Config::getConfig().unrealExtensionsEnabled());
-        DeclDb::serializeIfNeeded(namespaces[0]);
-        EXPECT_TRUE(outputFiles().empty());
-        expectQuery(DeclDb::queryDeclIdentity(namespaces[0]), false);
     }
 
     TEST_F(DeclDbTest, TypeQueriesReturnTheCanonicalUnwrappedTypeWithoutCreatingState) {

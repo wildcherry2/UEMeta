@@ -215,7 +215,7 @@ namespace UEMeta {
             FunctionDeclWrapper(decl, arena) {}
 
         // The record supplies layout availability; dependent records have no vtable offsets.
-        [[nodiscard]] ParserTypes::MemberFunction* serialize(bool has_known_layout = false) const;
+        [[nodiscard]] ParserTypes::MemberFunction* serialize(bool has_known_layout, const Hash& owner_id) const;
 
     private:
         void putVTableDetails(ParserTypes::MemberFunction* p_msg) const;

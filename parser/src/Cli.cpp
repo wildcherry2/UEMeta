@@ -147,11 +147,6 @@ const UEMeta::StablePath& UEMeta::Config::getInputASTFile() const {
     return ast_file;
 }
 
-const UEMeta::StablePath& UEMeta::Config::getInputReflFile() const {
-    assertInitialized();
-    return refl_file;
-}
-
 /// @brief Returns the process-wide configuration singleton.
 UEMeta::Config& UEMeta::Config::getConfig() {
     static Config config{};
@@ -192,7 +187,7 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
 
     CLI::App* parser       = main_app.add_subcommand("parse", "Parse files from an AST or compile_commands.json")
         ->fallthrough();
-    CLI::App* parser_cache = parser->add_subcommand("ast", "Parse files from an .ast file with optional reflection")
+    CLI::App* parser_cache = parser->add_subcommand("ast", "Parse files from an .ast file")
         ->fallthrough();
     CLI::App* parser_cc    = parser->add_subcommand("cc", "Parse files from a single TU compile_commands.json")
         ->fallthrough();
@@ -240,7 +235,7 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
     main_app.add_option("--version", cfg.version)
         ->required();
 
-    // parse commands - two subcommands, one for parsing compile_commands from UPG, the other from reading an .ast/.reflection cache
+    // parse commands - two subcommands, one for parsing compile_commands from UPG, the other from reading an .ast cache
     parser->add_flag("--prefer-clang", cfg.prefer_clang, PREFER_CLANG_HELP)
         ->default_val(false);
     parser->add_flag("--enable-unreal-extensions", cfg.enable_unreal_extensions, ENABLE_UNREAL_EXTENSIONS_HELP)
@@ -258,8 +253,6 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
     parser_cache->add_option("ast", cfg.ast_file)
         ->check(CLI::ExistingFile)
         ->required();
-    parser_cache->add_option("--refl", cfg.refl_file)
-        ->check(CLI::ExistingFile);
 
     // repl commands
     repl->add_option("--clang-args", cfg.additional_clang_args) //semantically different from Parser_CC mode, but occupies the same space

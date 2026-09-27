@@ -9,37 +9,35 @@
 #include <vector>
 
 #include "TopLevel.pb.h"
-#include "clang/AST/ASTContext.h"
 #include "UEMeta/Cli.hpp"
-#include "clang/Basic/FileManager.h"
-#include "clang/Basic/SourceManager.h"
-#include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/clang/wrappers/DeclWrapper.hpp"
 #include "UEMeta/utility/DeclException.hpp"
-
-#define REFL_PRED if (!unrealEnabled()) return {}; \
-    if (!decl) return {}; \
-    if (const auto existing_it = decl_to_package_name_map.find(decl); existing_it != decl_to_package_name_map.end()) { \
-        return existing_it->second; \
-    }
+#include "clang/AST/ASTContext.h"
+#include "clang/Basic/FileManager.h"
+#include "clang/Basic/SourceManager.h"
 
 llvm::DenseMap<clang::FileID, std::set<UEMeta::ReflectionDb::ReflectionMacro, std::less<>>> UEMeta::ReflectionDb::file_to_reflection_macro_map;
 llvm::DenseMap<clang::FileID, std::set<UEMeta::ReflectionDb::DeclWithSource, std::less<>>>  UEMeta::ReflectionDb::file_to_decl_source_map;
 llvm::DenseMap<clang::FileID, std::string_view>                                             UEMeta::ReflectionDb::file_to_reflected_package_map;
 std::unordered_map<std::filesystem::path, std::string>                                      UEMeta::ReflectionDb::package_root_to_package_name_map;
-llvm::DenseMap<const clang::Decl*, std::string_view>                                        UEMeta::ReflectionDb::decl_to_package_name_map;
-llvm::DenseSet<const clang::EnumDecl*>                                                      UEMeta::ReflectionDb::enums_with_refl_ns;
+llvm::DenseSet<const clang::Decl*>                                                          UEMeta::ReflectionDb::registered_decls;
+absl::flat_hash_map<UEMeta::Hash, std::string_view>                                         UEMeta::ReflectionDb::cached_records;
+absl::flat_hash_map<UEMeta::Hash, std::pair<std::string_view, bool>>                        UEMeta::ReflectionDb::cached_enums;
+absl::flat_hash_map<UEMeta::Hash, absl::flat_hash_set<std::string>>                         UEMeta::ReflectionDb::cached_fields;
+absl::flat_hash_map<UEMeta::Hash, absl::flat_hash_set<UEMeta::Hash>>                        UEMeta::ReflectionDb::cached_methods;
 
 void UEMeta::ReflectionDb::addReflectionMacro(clang::FileID file_id, ParserTypes::ReflectionKind kind, unsigned begin_offset, unsigned end_offset,
                                               clang::SourceManager& source_manager) {
-    if (!unrealEnabled()) return;
+    if (!unrealEnabled())
+        return;
     if (const auto set_it = file_to_reflection_macro_map.find(file_id); set_it != file_to_reflection_macro_map.end()) {
         set_it->getSecond().emplace_hint(set_it->getSecond().end(), file_id, kind, begin_offset, end_offset);
     }
     else if (!file_to_reflection_macro_map
-              .try_emplace(file_id,
-                           std::set<ReflectionMacro, std::less<>>({
-                               ReflectionMacro{.file_id = file_id, .kind = kind, .begin_offset = begin_offset, .end_offset = end_offset}
+              .try_emplace(file_id, std::set<ReflectionMacro, std::less<>>({
+                               ReflectionMacro{
+                                   .file_id = file_id, .kind = kind, .begin_offset = begin_offset, .end_offset = end_offset
+                               }
                            }))
               .second) {
         throw std::runtime_error("Somehow failed to emplace a non-existent reflection macro set!");
@@ -48,19 +46,23 @@ void UEMeta::ReflectionDb::addReflectionMacro(clang::FileID file_id, ParserTypes
     computePackageIfNeeded(file_id, source_manager);
 }
 
-std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::RecordDecl* decl) {
-    REFL_PRED;
-    if (!decl->isThisDeclarationADefinition()) return {};
-    static constexpr FlagT REFL_FLAGS = ParserTypes::REFLECTION_KIND_UCLASS | ParserTypes::REFLECTION_KIND_USTRUCT |
-                                        ParserTypes::REFLECTION_KIND_UINTERFACE;
+void UEMeta::ReflectionDb::registerReflectable(const clang::RecordDecl* decl, const Hash& decl_id) {
+    if (!unrealEnabled() || !decl || registered_decls.contains(decl))
+        return;
+    if (!decl->isThisDeclarationADefinition())
+        return;
+    static constexpr FlagT REFL_FLAGS =
+        ParserTypes::REFLECTION_KIND_UCLASS | ParserTypes::REFLECTION_KIND_USTRUCT | ParserTypes::REFLECTION_KIND_UINTERFACE;
     const std::string_view package = getPackageIfReflected(decl, decl->getBeginLoc(), decl->getBraceRange().getBegin(), REFL_FLAGS);
-
-    // we intentionally map a potentially empty string view so that duplicate calls don't go through tryGetPackage
-    return decl_to_package_name_map.emplace_or_assign(decl, package).first->second;
+    registered_decls.insert(decl);
+    if (!package.empty() && decl_id) {
+        cached_records.insert_or_assign(decl_id, package);
+    }
 }
 
-std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::CXXMethodDecl* decl) {
-    REFL_PRED;
+void UEMeta::ReflectionDb::registerReflectable(const clang::CXXMethodDecl* decl, const Hash& owner_id, const Hash& func_id) {
+    if (!unrealEnabled() || !decl || registered_decls.contains(decl))
+        return;
     clang::SourceRange range = decl->getSourceRange();
     if (decl->hasInlineBody() || decl->doesThisDeclarationHaveABody()) {
         if (const auto* body = decl->getBody()) {
@@ -68,111 +70,96 @@ std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::CXXMetho
         }
     }
     const std::string_view package = getPackageIfReflected(decl, range.getBegin(), range.getEnd(), ParserTypes::REFLECTION_KIND_UFUNCTION);
-
-    // we intentionally map a potentially empty string view so that duplicate calls don't go through tryGetPackage
-    return decl_to_package_name_map.emplace_or_assign(decl, package).first->second;
+    registered_decls.insert(decl);
+    if (!package.empty() && owner_id && func_id) {
+        cached_methods[owner_id].insert(func_id);
+    }
 }
 
-std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::EnumDecl* decl) {
-    REFL_PRED;
-    if (!decl->isThisDeclarationADefinition()) return {};
-    const std::string_view package = getPackageIfReflected(decl, decl->getBeginLoc(), decl->getBraceRange().getBegin(),
-                                                           ParserTypes::REFLECTION_KIND_UENUM);
-
-    // we intentionally map a potentially empty string view so that duplicate calls don't go through tryGetPackage
-    return decl_to_package_name_map.emplace_or_assign(decl, package).first->second;
+void UEMeta::ReflectionDb::registerReflectable(const clang::EnumDecl* decl, const Hash& decl_id) {
+    if (!unrealEnabled() || !decl || registered_decls.contains(decl))
+        return;
+    if (!decl->isThisDeclarationADefinition())
+        return;
+    // A legacy namespace annotation belongs to its enum's cache identity.
+    if (const auto* space = llvm::dyn_cast<clang::NamespaceDecl>(decl->getDeclContext())) {
+        registerReflectable(space, decl_id);
+        if (registered_decls.contains(decl))
+            return;
+    }
+    const std::string_view package =
+        getPackageIfReflected(decl, decl->getBeginLoc(), decl->getBraceRange().getBegin(), ParserTypes::REFLECTION_KIND_UENUM);
+    registered_decls.insert(decl);
+    if (!package.empty() && decl_id) {
+        cached_enums.insert_or_assign(decl_id, std::pair{package, false});
+    }
 }
 
-std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::FieldDecl* decl) {
-    REFL_PRED;
+void UEMeta::ReflectionDb::registerReflectable(const clang::FieldDecl* decl, const Hash& owner_id, std::string_view name) {
+    if (!unrealEnabled() || !decl || registered_decls.contains(decl))
+        return;
     const clang::SourceRange range   = decl->getSourceRange();
     const std::string_view   package = getPackageIfReflected(decl, range.getBegin(), range.getEnd(), ParserTypes::REFLECTION_KIND_UPROPERTY);
-    return decl_to_package_name_map.emplace_or_assign(decl, package).first->second;
+    registered_decls.insert(decl);
+    if (!package.empty() && owner_id) {
+        cached_fields[owner_id].emplace(name);
+    }
 }
 
-std::string_view UEMeta::ReflectionDb::registerReflectable(const clang::NamespaceDecl* decl) {
-    REFL_PRED;
-    // for this to match the case where a namespace is reflected as a UEnum, the namespace must have exactly one unscoped enum declaration within it
-    if (std::distance(decl->decls_begin(), decl->decls_end()) != 1) return {};
-    const auto* enum_decl = llvm::dyn_cast_or_null<clang::EnumDecl>(*decl->decls_begin());
-    if (!enum_decl || !enum_decl->isThisDeclarationADefinition() || enum_decl->isScoped()) return {};
+void UEMeta::ReflectionDb::registerReflectable(const clang::NamespaceDecl* decl, const Hash& enum_id) {
+    if (!unrealEnabled() || !decl || registered_decls.contains(decl))
+        return;
+    // A reflected namespace must contain exactly one unscoped enum definition.
+    if (std::distance(decl->decls_begin(), decl->decls_end()) != 1)
+        return;
+    const auto* enum_decl = llvm::dyn_cast<clang::EnumDecl>(*decl->decls_begin());
+    if (!enum_decl || !enum_decl->isThisDeclarationADefinition() || enum_decl->isScoped())
+        return;
 
     const clang::SourceLocation begin   = decl->getBeginLoc();
     const clang::SourceLocation end     = begin.getLocWithOffset(10 + static_cast<int>(decl->getName().size()));
     const std::string_view      package = getPackageIfReflected(decl, begin, end, ParserTypes::REFLECTION_KIND_UENUM);
-    decl_to_package_name_map.emplace_or_assign(decl, std::string_view{package});
-    decl_to_package_name_map.emplace_or_assign(enum_decl, std::string_view{package});
-
-    return package;
-}
-
-void UEMeta::ReflectionDb::markEnumAsReflectedNamespace(const clang::EnumDecl* decl) {
-    enums_with_refl_ns.insert(decl);
+    registered_decls.insert(decl);
+    if (!package.empty()) {
+        registered_decls.insert(enum_decl);
+        if (enum_id) {
+            cached_enums.insert_or_assign(enum_id, std::pair{package, true});
+        }
+    }
 }
 
 void UEMeta::ReflectionDb::serializeReflectionCache() {
-    //todo remove; cache fields on register, remove DeclDb crosstalk
-    if (!unrealEnabled()) return;
+    const auto& cfg = Config::getConfig();
+    if (cfg.getMode() != Config::Mode::Parser_CC || !unrealEnabled() || cfg.getOutputDirectory().isEmptyPath())
+        return;
     auto  arena = std::make_shared<google::protobuf::Arena>();
-    auto* p_msg = google::protobuf::Arena::Create<ParserTypes::ReflectionCache>(arena.get());
-    for (const auto& decl_pkg_pair : decl_to_package_name_map) {
-        if (decl_pkg_pair.second.empty()) continue;
-        if (llvm::isa<clang::RecordDecl>(decl_pkg_pair.first)) {
-            auto query_result = DeclDb::queryDeclIdentity(decl_pkg_pair.getFirst());
-            if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_RecordReflectionInfo* record_info = p_msg->add_records();
-                record_info->set_reflected_package(std::string(decl_pkg_pair.getSecond()));
-                hash->putProtoHash(record_info->mutable_decl_id());
-                continue;
-            }
-            throw DeclException(decl_pkg_pair.first, "Failed to find hash for reflected decl!");
-        }
-
-        if (const auto* enum_decl = llvm::dyn_cast<clang::EnumDecl>(decl_pkg_pair.first)) {
-            auto query_result = DeclDb::queryDeclIdentity(decl_pkg_pair.getFirst());
-            if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_EnumReflectionInfo* enum_info  = p_msg->add_enums();
-                enum_info->set_reflected_package(std::string(decl_pkg_pair.getSecond()));
-                hash->putProtoHash(enum_info->mutable_decl_id());
-                enum_info->set_reflected_namespace(enums_with_refl_ns.contains(enum_decl));
-            }
-            throw DeclException(decl_pkg_pair.first, "Failed to find hash for reflected decl!");
-        }
-
-        if (const auto* field_decl = llvm::dyn_cast<clang::FieldDecl>(decl_pkg_pair.first)) {
-            const clang::RecordDecl* owner        = field_decl->getParent();
-            auto                     query_result = DeclDb::queryDeclIdentity(owner);
-            if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                auto*                                   field_info = p_msg->add_fields();
-                hash->putProtoHash(field_info->mutable_decl_id());
-                field_info->set_name(field_decl->getNameAsString());
-                continue;
-            }
-            throw DeclException(decl_pkg_pair.first, "Failed to find field's owner's hash!");
-        }
-
-        if (const auto* method_decl = llvm::dyn_cast<clang::CXXMethodDecl>(decl_pkg_pair.first)) {
-            const auto* owner        = method_decl->getParent();
-            auto        query_result = DeclDb::queryDeclIdentity(owner);
-            if (const Hash* hash = std::get_if<Hash>(&query_result)) {
-                ParserTypes::ReflectionCache_MethodReflectionInfo* method_info = p_msg->add_methods();
-                hash->putProtoHash(method_info->mutable_decl_id());
-                std::optional<Hash> func_id = DeclDb::getMethodIdentity(method_decl);
-                if (!func_id) {
-                    throw DeclException(decl_pkg_pair.first, "Failed to find function id!");
-                }
-                func_id->putProtoHash(method_info->mutable_func_id());
-                continue;
-            }
-            throw DeclException(decl_pkg_pair.first, "Failed to find method's owner's hash!");
-        }
-
-        throw DeclException(decl_pkg_pair.first, "Type that isn't reflected found in ReflectionDb!");
+    auto* cache = google::protobuf::Arena::Create<ParserTypes::ReflectionCache>(arena.get());
+    for (const auto& [decl_id, package] : cached_records) {
+        auto* info = cache->add_records();
+        decl_id.putProtoHash(info->mutable_decl_id());
+        info->set_reflected_package(std::string{package});
     }
-
-    if (!Config::getConfig().getOutputDirectory().isEmptyPath()) {
-        Detail::DeclWrapperStatics::saveToFile(p_msg, arena);
+    for (const auto& [decl_id, details] : cached_enums) {
+        auto* info = cache->add_enums();
+        decl_id.putProtoHash(info->mutable_decl_id());
+        info->set_reflected_package(std::string{details.first});
+        info->set_reflected_namespace(details.second);
     }
+    for (const auto& [owner_id, fields] : cached_fields) {
+        for (const auto& name : fields) {
+            auto* info = cache->add_fields();
+            owner_id.putProtoHash(info->mutable_decl_id());
+            info->set_name(name);
+        }
+    }
+    for (const auto& [owner_id, methods] : cached_methods) {
+        for (const auto& func_id : methods) {
+            auto* info = cache->add_methods();
+            owner_id.putProtoHash(info->mutable_decl_id());
+            func_id.putProtoHash(info->mutable_func_id());
+        }
+    }
+    Detail::DeclWrapperStatics::saveToFile(cache, arena);
 }
 
 void UEMeta::ReflectionDb::computePackageIfNeeded(clang::FileID file_id, clang::SourceManager& source_manager) {
@@ -287,17 +274,17 @@ void UEMeta::ReflectionDb::computePackageIfNeeded(clang::FileID file_id, clang::
 #endif
 }
 
-bool UEMeta::ReflectionDb::unrealEnabled() {
-    return Config::getConfig().unrealExtensionsEnabled();
-}
+bool UEMeta::ReflectionDb::unrealEnabled() { return Config::getConfig().unrealExtensionsEnabled(); }
 
 std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* decl, clang::SourceLocation begin, clang::SourceLocation end,
                                                              FlagT              assert_refl_kind) {
-    if (begin.isInvalid() || end.isInvalid()) return {};
+    if (begin.isInvalid() || end.isInvalid())
+        return {};
     auto [begin_file, begin_offset] = decl->getASTContext().getSourceManager().getDecomposedExpansionLoc(begin);
     auto [end_file, end_offset]     = decl->getASTContext().getSourceManager().getDecomposedExpansionLoc(end);
 
-    if (begin_file != end_file) return {};
+    if (begin_file != end_file)
+        return {};
 
     // add this decl's source location and get the previous decl from the result
     const DeclWithSource* previous_decl = nullptr;
@@ -311,9 +298,9 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
             previous_decl = &*std::prev(empl_result.first);
     }
     else {
-        file_to_decl_source_map.emplace_or_assign(begin_file, std::set<DeclWithSource, std::less<>>({
-                                                      DeclWithSource{.decl = decl, .begin_offset = begin_offset, .end_offset = end_offset}
-                                                  }));
+        file_to_decl_source_map.emplace_or_assign(
+            begin_file,
+            std::set<DeclWithSource, std::less<>>({DeclWithSource{.decl = decl, .begin_offset = begin_offset, .end_offset = end_offset}}));
     }
 
     // Equal expansion offsets are valid for a declaration generated by a macro.
@@ -345,13 +332,14 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
 
 #ifdef UEM_TESTING
 void UEMeta::ReflectionDb::reset() {
-    decl_to_package_name_map.clear();
+    registered_decls.clear();
     file_to_reflection_macro_map.clear();
     file_to_decl_source_map.clear();
     file_to_reflected_package_map.clear();
     package_root_to_package_name_map.clear();
-    enums_with_refl_ns.clear();
+    cached_enums.clear();
+    cached_fields.clear();
+    cached_records.clear();
+    cached_methods.clear();
 }
 #endif
-
-#undef REFL_PRED

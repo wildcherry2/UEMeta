@@ -53,6 +53,7 @@ namespace UEMeta {
         uint64_t b;
 
         explicit Hash(boost::hash2::xxh3_128& hasher);
+        explicit Hash(const ParserTypes::Hash& hash);
         Hash() = default;
 
         void putProtoHash(ParserTypes::Hash* hash) const;

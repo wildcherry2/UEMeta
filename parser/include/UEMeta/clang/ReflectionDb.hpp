@@ -8,11 +8,14 @@
 
 #include "Enums.pb.h"
 #include "TopLevel.pb.h"
+#include "UEMeta/utility/DeclUtility.hpp"
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/DenseMap.h"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "llvm/ADT/DenseSet.h"
 
 namespace UEMeta {
     /**
@@ -23,28 +26,21 @@ namespace UEMeta {
         /**
          * @brief Records a reflection macro expansion and discovers its owning package if needed.
          */
-        static void addReflectionMacro(clang::FileID         file_id, ParserTypes::ReflectionKind kind, unsigned begin_offset, unsigned end_offset,
+        static void addReflectionMacro(clang::FileID file_id, ParserTypes::ReflectionKind kind, unsigned begin_offset, unsigned end_offset,
                                        clang::SourceManager& source_manager);
 
-        // Marks a declaration as potentially reflected and returns their package if it is reflected.
-        // Records, enums, namespaces, methods, fields could be reflected as UClass, UStruct, UEnum, UFunction,
-        // UProperty, etc.
-        // Adding a Decl to this does not mean that the declaration *is* reflected. It is not a precondition.
-        // But if it's reflectable, we'll need it to make reflection queries work.
-        // Wrappers should invoke these as they parse.
-        // An empty string_view implies the Decl isn't reflected.
-        // Calls are idempotent; trying to reregister the same Decl will return the already resolved string_view.
-        //  As such, these are also the functions that should be used for queries.
-        // Unreal extensions must be enabled from the CLI for this to have any effect.
-        static std::string_view registerReflectable(const clang::RecordDecl* decl);
-        static std::string_view registerReflectable(const clang::CXXMethodDecl* decl);
-        static std::string_view registerReflectable(const clang::EnumDecl* decl);
-        static std::string_view registerReflectable(const clang::FieldDecl* decl);
-        // in some UE versions, a namespace can be reflected as a UEnum.
-        // this can be used to both get the package name and check to see if this is the case
-        static std::string_view registerReflectable(const clang::NamespaceDecl* decl);
+        // Wrappers register potential reflection declarations in source order, supplying
+        // the identities/names used in ReflectionCache. Only reflected declarations with
+        // a nonzero identity enter the output maps. Calls are idempotent and require
+        // Unreal extensions to be enabled.
+        static void registerReflectable(const clang::RecordDecl* decl, const Hash& decl_id);
+        static void registerReflectable(const clang::CXXMethodDecl* decl, const Hash& owner_id, const Hash& func_id);
+        static void registerReflectable(const clang::EnumDecl* decl, const Hash& decl_id);
+        static void registerReflectable(const clang::FieldDecl* decl, const Hash& owner_id, std::string_view name);
+        // Legacy UENUM namespaces use the identity of their sole unscoped enum.
+        static void registerReflectable(const clang::NamespaceDecl* decl, const Hash& enum_id);
 
-        static void markEnumAsReflectedNamespace(const clang::EnumDecl* decl);
+        // Write the cache only while parsing compile_commands with Unreal extensions enabled.
         static void serializeReflectionCache();
 #ifdef UEM_TESTING
         static void reset();
@@ -52,12 +48,12 @@ namespace UEMeta {
 
     private:
         ReflectionDb() = default;
-        using FlagT = std::underlying_type_t<ParserTypes::ReflectionKind>;
+        using FlagT    = std::underlying_type_t<ParserTypes::ReflectionKind>;
 
-        static void                            computePackageIfNeeded(clang::FileID file_id, clang::SourceManager& source_manager);
-        static bool                            unrealEnabled();
-        static std::string_view                getPackageIfReflected(const clang::Decl* decl, clang::SourceLocation begin, clang::SourceLocation end,
-                                                                     FlagT assert_refl_kind);
+        static void             computePackageIfNeeded(clang::FileID file_id, clang::SourceManager& source_manager);
+        static bool             unrealEnabled();
+        static std::string_view getPackageIfReflected(const clang::Decl* decl, clang::SourceLocation begin, clang::SourceLocation end,
+                                                      FlagT assert_refl_kind);
 
         struct ReflectionMacro final {
             clang::FileID               file_id;
@@ -98,9 +94,13 @@ namespace UEMeta {
         // query file's path until it matches to a path in this map or we find the Build.cs file; this ensures that you also get the nearest package.
         static std::unordered_map<std::filesystem::path, std::string> package_root_to_package_name_map;
 
-        // Maps decls to their package name
-        static llvm::DenseMap<const clang::Decl*, std::string_view> decl_to_package_name_map;
+        // Cache both positive and negative registrations so annotations are claimed only once.
+        static llvm::DenseSet<const clang::Decl*> registered_decls;
 
-        static llvm::DenseSet<const clang::EnumDecl*> enums_with_refl_ns;
+        using PackageName = std::string_view;
+        static absl::flat_hash_map<Hash, PackageName>                      cached_records;
+        static absl::flat_hash_map<Hash, std::pair<PackageName, bool>>     cached_enums;
+        static absl::flat_hash_map<Hash, absl::flat_hash_set<std::string>> cached_fields;
+        static absl::flat_hash_map<Hash, absl::flat_hash_set<Hash>>        cached_methods;
     };
 } // namespace UEMeta

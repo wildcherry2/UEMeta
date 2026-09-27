@@ -23,6 +23,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
             const Hash        decl_id = computeDeclId(fqn);
             putMetadata(out_msg->mutable_metadata(), true, fqn, decl_id);
             DeclDb::addDeclIdentity(decl, decl_id);
+            ReflectionDb::registerReflectable(decl, decl_id);
         }
         // A non-null enum integer type has a spelling; missing types were rejected above.
         setVersionedString(out_msg->mutable_underlying_type(), underlying.getAsString());
@@ -40,10 +41,6 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
             }
 
             setVersionedString(p_enumerator->mutable_value(), llvm::toString(enumerator->getInitVal(), 10));
-        }
-        std::string_view package = ReflectionDb::registerReflectable(decl);
-        if (!package.empty()) {
-            setVersionedString(out_msg->mutable_reflected_package(), package);
         }
         return out_msg;
     }

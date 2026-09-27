@@ -7,13 +7,12 @@
 #include "clang/Basic/TargetInfo.h"
 #include "UEMeta/clang/ReflectionDb.hpp"
 
-ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known_layout) const {
+ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known_layout, const Hash& owner_id) const {
     // Allocate the method beside its owning record and populate shared function details.
     auto* p_msg = google::protobuf::Arena::Create<ParserTypes::MemberFunction>(arena.get());
     p_msg->set_name(computeName());
     const Hash func_id = computeDeclIdWithTemplateDetails(computeFQN(), p_msg->mutable_common());
     func_id.putProtoHash(p_msg->mutable_func_id());
-    DeclDb::addMethodIdentity(decl, func_id); // for reflection tracking
     putFunctionCommon(p_msg->mutable_common());
 
     // Access and qualifiers are properties of the member, not independently tracked declarations.
@@ -34,9 +33,7 @@ ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known
         putVTableDetails(p_msg);
     }
 
-    if (!ReflectionDb::registerReflectable(decl).empty()) {
-        setVersionedBool(p_msg->mutable_is_reflected(), true);
-    }
+    ReflectionDb::registerReflectable(decl, owner_id, func_id);
     return p_msg;
 }
 

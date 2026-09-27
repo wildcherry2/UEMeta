@@ -54,7 +54,6 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::VarDecl* decl);
         static void serializeIfNeeded(clang::RecordDecl* decl);
         static void serializeIfNeeded(clang::FunctionDecl* decl);
-        static void serializeIfNeeded(clang::NamespaceDecl* decl); // for unreal extensions; effectively disabled in repl
 
         // Adds a forward occurrence keyed by the given record, enum or function definition.
         // Throws if for_decl is null, another declaration kind, or not a definition.
@@ -73,9 +72,6 @@ namespace UEMeta {
         // Serializes known forward declarations to a ForwardDeclarationList and saves it.
         static void serializeForwardDeclarations();
 
-        static void addMethodIdentity(const clang::CXXMethodDecl* decl, const Hash& hash);
-        static std::optional<Hash> getMethodIdentity(const clang::CXXMethodDecl* decl);
-
         static void reset();
     private:
         DeclDb() = default;
@@ -84,7 +80,6 @@ namespace UEMeta {
         static llvm::DenseMap<const clang::Decl*, Hash> decl_to_identity_map;
 
         static absl::flat_hash_map<Hash, const clang::Decl*> identity_to_decl_map;
-        static llvm::DenseMap<const clang::CXXMethodDecl*, Hash> method_identity_map;
 
         // Maps definition declarations to all forward-declaration occurrence indices in visitation order.
         // Retain the full history for later consumers; identity lookup uses only the latest occurrence.

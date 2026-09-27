@@ -15,7 +15,7 @@ namespace {
                 ADD_FAILURE() << "Expected a method";
                 return nullptr;
             }
-            return MethodDeclWrapper{method, arena}.serialize(known_layout);
+            return MethodDeclWrapper{method, arena}.serialize(known_layout, {});
         }
 
         static ParserTypes::MemberFunction expectedMethod(std::string_view name, const UEMeta::Hash& identity, ParserTypes::FunctionCommon traits,
