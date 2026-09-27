@@ -226,12 +226,6 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
     main_app.add_flag("--sync", cfg.sync_serialization, SYNC_HELP)
         ->default_val(false);
     main_app.add_option("-l,--log", cfg.log, LOG_HELP);
-    main_app.add_option("-f,--format", cfg.format, FORMAT_HELP)
-        ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
-        ->default_val(UEM_DEFAULT_FORMAT);
-    main_app.add_option("--log-level", cfg.log_level)
-        ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
-        ->default_val(quill::LogLevel::Info);
     main_app.add_option("--version", cfg.version)
         ->required();
 
@@ -243,6 +237,12 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
     parser->add_option("--file-delimiter", cfg.file_delimiter, FILE_DELIMITER_HELP)
         ->default_str("UnrealEngine");
     parser->add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP);
+    parser->add_option("--log-level", cfg.log_level)
+        ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
+        ->default_val(quill::LogLevel::Info);
+    parser->add_option("-f,--format", cfg.format, FORMAT_HELP)
+        ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
+        ->default_val(UEM_DEFAULT_FORMAT);
     parser_cc->add_option("compile-commands.json", cfg.compile_commands, COMPILE_COMMANDS_HELP)
          ->transform(loadCompileCommandsString)
          ->required();
@@ -258,6 +258,12 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
     repl->add_option("--clang-args", cfg.additional_clang_args) //semantically different from Parser_CC mode, but occupies the same space
         ->delimiter(','); // note- must not be CL style args
     repl->add_option("--output", cfg.output_directory, OUTPUT_DIRECTORY_HELP);
+    repl->add_option("--log-level", cfg.log_level)
+        ->transform(CLI::CheckedTransformer(string_loglevel_map, CLI::ignore_case))
+        ->default_val(quill::LogLevel::Error);
+    repl->add_option("-f,--format", cfg.format, FORMAT_HELP)
+        ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
+        ->default_val(SerializationFormat::Json);
 
     if (const auto result = try_cli_parse(); result != InitializationResult::Success)
         return result;
