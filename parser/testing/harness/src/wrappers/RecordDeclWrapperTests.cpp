@@ -598,19 +598,48 @@ namespace {
         EXPECT_EQ(outputFiles(), before);
     }
 
-    TEST_F(RecordDeclWrapperTest, NonVirtualAndVirtualBasesUseByteOffsetsAndDeclaredAccess) {
-        const auto records = parse("struct Left { int l; }; struct Right { int r; }; struct Virtual { int v; }; class Derived : Left, protected "
-                                   "Right, public virtual Virtual { public: int own; };");
+    TEST_F(RecordDeclWrapperTest, NonVirtualBasesUseByteOffsetsAndDeclaredAccess) {
+        const auto records = parse("struct Left { int l; }; struct Right { int r; }; struct Third { int t; }; class Derived : Left, protected "
+                                   "Right, public Third { public: int own; };");
         ASSERT_EQ(records.size(), 4u);
         for (size_t i = 0; i < 3; ++i)
             ASSERT_NE(serialize(records[i]), nullptr);
-        // Windows layout: Left@0, Right@4, vbptr@8, own@16, Virtual@24; alignment 8.
-        auto expected          = record("::Derived", 3, ParserTypes::RECORD_KIND_CLASS, 32, 8);
+        auto expected          = record("::Derived", 3, ParserTypes::RECORD_KIND_CLASS, 16, 4);
         *expected.add_bases()  = base(reference("::Left", recordId("::Left")), ParserTypes::ACCESS_SPECIFIER_PRIVATE, false, 0);
         *expected.add_bases()  = base(reference("::Right", recordId("::Right")), ParserTypes::ACCESS_SPECIFIER_PROTECTED, false, 4, 1);
-        *expected.add_bases()  = base(reference("::Virtual", recordId("::Virtual")), ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, 24, 2);
-        *expected.add_fields() = field("own", "int", 32, 128);
+        *expected.add_bases()  = base(reference("::Third", recordId("::Third")), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, 8, 2);
+        *expected.add_fields() = field("own", "int", 32, 96);
         expectProto(*serialize(records[3]), expected);
+    }
+
+    TEST_F(RecordDeclWrapperTest, VirtualInheritanceIsRejectedEvenWithoutDeclaredMethodsOrKnownLayout) {
+        for (const auto* target : {"--target=x86_64-pc-windows-msvc", "--target=i686-pc-windows-msvc",
+                                   "--target=x86_64-unknown-linux-gnu", "--target=i686-unknown-linux-gnu"}) {
+            SCOPED_TRACE(target);
+            const auto records = parse(R"cpp(
+                struct Base { int value; };
+                struct Left : virtual Base {};
+                struct Right : virtual Base {};
+                struct Diamond : Left, Right {};
+                struct Further : Left {};
+                template<class T> struct Known : virtual Base { T value; };
+                template<class T> struct Dependent : virtual T {};
+            )cpp", {target});
+            ASSERT_EQ(records.size(), 7u);
+            ASSERT_NE(serialize(records[0]), nullptr);
+            for (std::size_t index = 1; index < records.size(); ++index) {
+                SCOPED_TRACE(index);
+                try {
+                    (void)serialize(records[index]);
+                    ADD_FAILURE() << "Expected virtual inheritance to be rejected";
+                }
+                catch (const RecordError& error) {
+                    EXPECT_NE(std::string_view{error.what()}.find("Virtual inheritance is not supported."), std::string_view::npos);
+                }
+                // Failed records must not become reference targets with partial metadata.
+                EXPECT_FALSE(std::holds_alternative<UEMeta::Hash>(UEMeta::DeclDb::queryDeclIdentity(records[index])));
+            }
+        }
     }
 
     TEST_F(RecordDeclWrapperTest, DependentBasesKeepPacksAndUnknownTypesWithoutLayout) {

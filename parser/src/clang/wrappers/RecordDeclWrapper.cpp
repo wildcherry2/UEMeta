@@ -5,6 +5,7 @@
 #include "UEMeta/utility/DeclException.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "clang/AST/DeclTemplate.h"
+#include "llvm/ADT/STLExtras.h"
 #include "UEMeta/clang/ReflectionDb.hpp"
 
 /*
@@ -109,6 +110,13 @@ private:
 UEMeta::RecordDeclWrapper::IntermediateRepresentation UEMeta::RecordDeclWrapper::toIntermediateRepresentation() const {
     if (!decl)
         throw DeclException(decl, "Cannot toIntermediateRepresentation a null record declaration!");
+
+    // Reject before registering identities or emitting any members. Direct virtual
+    // specifiers also catch dependent bases whose layout is not available yet.
+    if (const auto* cxx = llvm::dyn_cast<clang::CXXRecordDecl>(decl);
+        cxx && (cxx->getNumVBases() != 0 || llvm::any_of(cxx->bases(), [](const auto& base) { return base.isVirtual(); }))) {
+        throw DeclException(decl, "Virtual inheritance is not supported.");
+    }
 
     // File-scope anonymous unions inject static variables into their enclosing namespace.
     if (decl->isUnion() && decl->isAnonymousStructOrUnion() && decl->getDeclContext()->getNonTransparentContext()->isFileContext()) {
@@ -435,7 +443,7 @@ void UEMeta::RecordDeclWrapper::handleBase(const clang::CXXBaseSpecifier& base, 
 
     // Layout offsets use the actual base specialization, even when its identity refers to a template pattern.
     if (const auto* base_record = type->getAsCXXRecordDecl(); layout && base_record) {
-        const auto offset = base.isVirtual() ? layout->getVBaseClassOffset(base_record) : layout->getBaseClassOffset(base_record);
+        const auto offset = layout->getBaseClassOffset(base_record);
         setVersioned(p_msg->mutable_offset(), offset.getQuantity());
     }
 }

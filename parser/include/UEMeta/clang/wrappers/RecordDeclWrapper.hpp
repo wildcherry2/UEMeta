@@ -37,6 +37,7 @@ namespace UEMeta {
          * for a file-scope anonymous union. Callers must handle forward declarations first.
          * Nested semantically anonymous records must go through their owner's extraction
          * path, not a standalone call to toIntermediateRepresentation().
+         * Records with direct or indirect virtual bases are unsupported and rejected.
          *
          * This is a single-pass operation, not a pure/repeatable conversion: despite const,
          * it allocates messages and updates DeclDb's identities, forwards and visited set.

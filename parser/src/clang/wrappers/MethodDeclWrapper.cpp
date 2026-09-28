@@ -1,13 +1,17 @@
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 
-#include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/GlobalDecl.h"
-#include "clang/AST/RecordLayout.h"
 #include "clang/AST/VTableBuilder.h"
 #include "clang/Basic/TargetInfo.h"
+#include "llvm/ADT/STLExtras.h"
 #include "UEMeta/clang/ReflectionDb.hpp"
 
 ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known_layout, const Hash& owner_id) const {
+    const auto* owner = decl->getParent();
+    if (owner->getNumVBases() != 0 || llvm::any_of(owner->bases(), [](const auto& base) { return base.isVirtual(); })) {
+        throw DeclException(decl, "Virtual inheritance is not supported.");
+    }
+
     // Allocate the method beside its owning record and populate shared function details.
     auto* p_msg = google::protobuf::Arena::Create<ParserTypes::MemberFunction>(arena.get());
     p_msg->set_name(computeName());
@@ -38,16 +42,14 @@ ParserTypes::MemberFunction* UEMeta::MethodDeclWrapper::serialize(bool has_known
 }
 
 void UEMeta::MethodDeclWrapper::putVirtualDispatchInfo(ParserTypes::MemberFunction* p_msg) const {
-    // Preserve the existing Microsoft ABI support boundary.
-    auto* vtable = llvm::dyn_cast<clang::MicrosoftVTableContext>(getASTContext().getVTableContext());
-    if (!vtable) {
-        throw DeclException(decl, "Itanium (Linux) ABI not supported yet!");
-    }
+    auto* vtable = getASTContext().getVTableContext();
 
-    // Destructors occupy the ABI's deleting-destructor entry, not the complete-destructor entry.
+    // Select the deleting destructor for both ABIs. Itanium has a separate complete
+    // destructor slot immediately before it; vector deleting destructors are Microsoft-only.
     clang::GlobalDecl global_decl;
     if (const auto* destructor = llvm::dyn_cast<clang::CXXDestructorDecl>(decl)) {
-        const auto destructor_kind = getASTContext().getTargetInfo().emitVectorDeletingDtors(getASTContext().getLangOpts())
+        const auto destructor_kind = vtable->isMicrosoft() &&
+                                     getASTContext().getTargetInfo().emitVectorDeletingDtors(getASTContext().getLangOpts())
                                          ? clang::Dtor_VectorDeleting
                                          : clang::Dtor_Deleting;
         global_decl                = clang::GlobalDecl(destructor, destructor_kind);
@@ -56,26 +58,22 @@ void UEMeta::MethodDeclWrapper::putVirtualDispatchInfo(ParserTypes::MemberFuncti
         global_decl = clang::GlobalDecl(decl);
     }
 
-    const auto location = vtable->getMethodVFTableLocation(global_decl);
+    uint64_t vtable_index;
+    int64_t vtable_offset = 0;
+    if (auto* microsoft = llvm::dyn_cast<clang::MicrosoftVTableContext>(vtable)) {
+        const auto location = microsoft->getMethodVFTableLocation(global_decl);
+        vtable_index        = location.Index;
+        vtable_offset       = location.VFPtrOffset.getQuantity();
+    }
+    else {
+        // Methods declared/overridden by the owning record have primary-vtable slots
+        // in Itanium, even when overriding a secondary base's method.
+        // The index is relative to the address point stored in the owner's vptr.
+        // Adjustments inside secondary-table thunks must not be applied here.
+        vtable_index = llvm::cast<clang::ItaniumVTableContext>(vtable)->getMethodVTableIndex(global_decl);
+    }
     const auto* owner   = decl->getParent();
     auto* dispatch      = p_msg->mutable_virtual_dispatch();
-    if (owner->getNumVBases() != 0) {
-        auto* complex = dispatch->mutable_complex();
-        auto offset   = location.VFPtrOffset;
-        setVersioned(complex->mutable_vtable_index(), location.Index);
-        // The fixed adjustment applies after any dynamic virtual-base lookup.
-        setVersioned(complex->mutable_this_delta(), location.VFPtrOffset.getQuantity());
-        if (location.VBase) {
-            const auto& layout = getASTContext().getASTRecordLayout(owner);
-            setVersioned(complex->mutable_vbptr_offset(), layout.getVBPtrOffset().getQuantity());
-            setVersioned(complex->mutable_vbtable_index(), location.VBTableIndex);
-            offset += layout.getVBaseClassOffset(location.VBase);
-        }
-        // Keep the complete-object offset for consumers inspecting a concrete layout.
-        setVersioned(complex->mutable_vtable_offset(), offset.getQuantity());
-        return;
-    }
-
     // A single direct base may itself inherit from multiple nonvirtual bases.
     const auto* base = owner;
     // Iterate through bases until getNumBases is > 1, meaning we've found a point in the inheritance chain
@@ -87,11 +85,11 @@ void UEMeta::MethodDeclWrapper::putVirtualDispatchInfo(ParserTypes::MemberFuncti
     }
     if (base->getNumBases() > 1) {
         auto* multiple = dispatch->mutable_multiple();
-        setVersioned(multiple->mutable_vtable_index(), location.Index);
+        setVersioned(multiple->mutable_vtable_index(), vtable_index);
         // This offset both locates the vfptr and adjusts this before calling its slot.
-        setVersioned(multiple->mutable_vtable_offset(), location.VFPtrOffset.getQuantity());
+        setVersioned(multiple->mutable_vtable_offset(), vtable_offset);
     }
     else {
-        setVersioned(dispatch->mutable_simple()->mutable_vtable_index(), location.Index);
+        setVersioned(dispatch->mutable_simple()->mutable_vtable_index(), vtable_index);
     }
 }

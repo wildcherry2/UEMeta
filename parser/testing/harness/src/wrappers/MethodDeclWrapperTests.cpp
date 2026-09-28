@@ -1,5 +1,4 @@
 #include "CallableTest.hpp"
-#include "UEMeta/utility/DeclException.hpp"
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 #include "clang/Basic/TargetInfo.h"
 
@@ -54,18 +53,6 @@ namespace {
             *dispatch->mutable_vtable_offset() = versioned<ParserTypes::VersionedInt64>(offset);
         }
 
-        static void complexLocation(ParserTypes::MemberFunction& expected, uint64_t index, int64_t offset, int64_t this_delta) {
-            auto* dispatch = expected.mutable_virtual_dispatch()->mutable_complex();
-            *dispatch->mutable_vtable_index()  = versioned<ParserTypes::VersionedUint64>(index);
-            *dispatch->mutable_vtable_offset() = versioned<ParserTypes::VersionedInt64>(offset);
-            *dispatch->mutable_this_delta()    = versioned<ParserTypes::VersionedInt64>(this_delta);
-        }
-
-        static void virtualBase(ParserTypes::MemberFunction& expected, int64_t vbptr_offset, uint64_t vbtable_index) {
-            auto* dispatch = expected.mutable_virtual_dispatch()->mutable_complex();
-            *dispatch->mutable_vbptr_offset()  = versioned<ParserTypes::VersionedInt64>(vbptr_offset);
-            *dispatch->mutable_vbtable_index() = versioned<ParserTypes::VersionedUint64>(vbtable_index);
-        }
     };
 
     TEST_F(MethodDeclWrapperTest, MethodPreservesCompleteCommonDataQualifiersAccessArenaAndOwnership) {
@@ -262,94 +249,27 @@ namespace {
         expectProto(*serialize(functions[2], true), expected);
     }
 
-    TEST_F(MethodDeclWrapperTest, VirtualBaseLocationsAreRelativeToTheCompleteRecord) {
-        const auto functions = parse("struct Base { virtual void run(); }; struct Derived : virtual Base { void run() override; };");
-        ASSERT_EQ(functions.size(), 2u);
-        auto expected = expectedMethod("run", functionId("::Derived::run"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false, false,
-                                       ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
-        // The vbptr occupies the first eight bytes; Base's vfptr follows it.
-        complexLocation(expected, 0, 8, 0);
-        virtualBase(expected, 0, 1);
-        expectProto(*serialize(functions[1], true), expected);
-    }
-
-    TEST_F(MethodDeclWrapperTest, VirtualBaseDispatchIncludesASecondaryVfptrAdjustmentAndSlot) {
-        const auto functions = parse(R"cpp(
-            struct Left { virtual void left(); };
-            struct Right { virtual void first(); virtual void right(); };
-            struct Combined : Left, Right {};
-            struct Derived : virtual Combined { void right() override; };
-        )cpp");
-        ASSERT_EQ(functions.size(), 4u);
-        auto expected = expectedMethod("right", functionId("::Derived::right"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false,
-                                       false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
-        // Combined starts at 8, and its Right vfptr is another 8 bytes into that virtual base.
-        complexLocation(expected, 1, 16, 8);
-        virtualBase(expected, 0, 1);
-        expectProto(*serialize(functions[3], true), expected);
-    }
-
-    TEST_F(MethodDeclWrapperTest, VirtualBaseDispatchUsesAnInheritedVbptrAndAnEntryIndexOnBothWindowsTargets) {
-        for (const auto pointer_size : {8, 4}) {
-            SCOPED_TRACE(pointer_size);
+    TEST_F(MethodDeclWrapperTest, VirtualInheritanceIsRejectedBeforeDispatchOnBothAbis) {
+        using MethodError = UEMeta::DeclException<clang::CXXMethodDecl>;
+        for (const auto* target : {"--target=x86_64-pc-windows-msvc", "--target=i686-pc-windows-msvc",
+                                   "--target=x86_64-unknown-linux-gnu", "--target=i686-unknown-linux-gnu"}) {
+            SCOPED_TRACE(target);
             const auto functions = parse(R"cpp(
-                struct Anchor { virtual void anchor(); };
-                struct First { virtual void first(); };
-                struct Second { virtual void prefix(); virtual void second(); };
-                struct Carrier : virtual First, virtual Second {};
-                struct Derived : Anchor, Carrier { void second() override; };
-            )cpp", {pointer_size == 8 ? "--target=x86_64-pc-windows-msvc" : "--target=i686-pc-windows-msvc"});
-            ASSERT_EQ(functions.size(), 5u);
-            auto expected = expectedMethod("second", functionId("::Derived::second"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false,
-                                           false, false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
-            // Anchor's vfptr precedes Carrier's shared vbptr, then First and Second.
-            complexLocation(expected, 1, 3 * pointer_size, 0);
-            virtualBase(expected, pointer_size, 2);
-            expectProto(*serialize(functions[4], true), expected);
-        }
-    }
-
-    TEST_F(MethodDeclWrapperTest, MethodsOutsideVirtualBasesOmitVbtableMetadataEvenWhenTheRecordHasAVbptr) {
-        const auto functions = parse(R"cpp(
-            struct Base { virtual void inherited(); };
-            struct Derived : virtual Base { virtual void own(); };
-        )cpp");
-        ASSERT_EQ(functions.size(), 2u);
-        auto expected = expectedMethod("own", functionId("::Derived::own"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false,
-                                       false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
-        complexLocation(expected, 0, 0, 0);
-        expectProto(*serialize(functions[1], true), expected);
-    }
-
-    TEST_F(MethodDeclWrapperTest, ComplexDispatchCanSelectANonvirtualSecondaryBaseWithoutAVbtableLookup) {
-        const auto functions = parse(R"cpp(
-            struct Left { virtual void left(); };
-            struct Right { virtual void right(); };
-            struct Virtual { virtual void inherited(); };
-            struct Derived : Left, Right, virtual Virtual { void right() override; };
-        )cpp");
-        ASSERT_EQ(functions.size(), 4u);
-        auto expected = expectedMethod("right", functionId("::Derived::right"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false,
-                                       false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
-        complexLocation(expected, 0, 8, 8);
-        expectProto(*serialize(functions[3], true), expected);
-    }
-
-    TEST_F(MethodDeclWrapperTest, FurtherDerivedLayoutChangesDoNotBecomeFixedThisAdjustments) {
-        const auto functions = parse(R"cpp(
-            struct Base { virtual void run(); };
-            struct Derived : virtual Base { void run() override; };
-            struct Further : Derived { long long padding[3]; void run() override; };
-        )cpp");
-        ASSERT_EQ(functions.size(), 3u);
-        for (std::size_t index = 1; index < functions.size(); ++index) {
-            SCOPED_TRACE(index);
-            auto expected = expectedMethod("run", functionId(index == 1 ? "::Derived::run" : "::Further::run"), methodCommon(),
-                                           ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false, false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
-            // The virtual Base moves from 8 to 32, but both calls find it dynamically.
-            complexLocation(expected, 0, index == 1 ? 8 : 32, 0);
-            virtualBase(expected, 0, 1);
-            expectProto(*serialize(functions[index], true), expected);
+                struct Base { virtual void run(); virtual ~Base(); };
+                struct Left : virtual Base { void run() override; void ordinary(); };
+                struct Right : virtual Base {};
+                struct Diamond : Left, Right { void run() override; ~Diamond() override; };
+                struct Further : Left { void run() override; };
+                template<class T> struct Dependent : virtual T { void ordinary(); };
+            )cpp", {target});
+            ASSERT_EQ(functions.size(), 8u);
+            // Base is usable on its own even though other records inherit it virtually.
+            EXPECT_TRUE(serialize(functions[0], true)->has_virtual_dispatch());
+            for (std::size_t index = 2; index < functions.size(); ++index) {
+                SCOPED_TRACE(index);
+                EXPECT_THROW((void)serialize(functions[index], true), MethodError);
+                EXPECT_THROW((void)serialize(functions[index], false), MethodError);
+            }
         }
     }
 
@@ -379,15 +299,110 @@ namespace {
         expectProto(*serialize(functions[0], true), expected);
     }
 
-    TEST_F(MethodDeclWrapperTest, WindowsGnuAbiIsRejectedOnlyWhenVtableDetailsAreRequested) {
-        // This remains a Windows target, but uses the unsupported Itanium-family ABI.
+    TEST_F(MethodDeclWrapperTest, WindowsGnuUsesItaniumDispatchDespiteBeingAWindowsTarget) {
+        // Select by ABI rather than assuming all Windows targets use the Microsoft ABI.
         const auto functions = parse("struct Owner { virtual void run(); };", {"--target=x86_64-w64-windows-gnu"});
         ASSERT_EQ(functions.size(), 1u);
         auto expected = expectedMethod("run", functionId("::Owner::run"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false, false,
                                        ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
         expectProto(*serialize(functions[0], false), expected);
-        using UnsupportedAbi = UEMeta::DeclException<clang::CXXMethodDecl>;
-        EXPECT_THROW((void)serialize(functions[0], true), UnsupportedAbi);
+        simpleLocation(expected, 0);
+        expectProto(*serialize(functions[0], true), expected);
+    }
+
+    TEST_F(MethodDeclWrapperTest, ItaniumSlotsAreRelativeToTheAddressPointAndIncludeBothDestructorEntries) {
+        for (const auto* target : {"--target=x86_64-unknown-linux-gnu", "--target=i686-unknown-linux-gnu"}) {
+            SCOPED_TRACE(target);
+            const auto functions = parse(R"cpp(
+                struct Base { virtual void first(); virtual void pure() = 0; virtual ~Base(); virtual void last(); };
+            )cpp", {target});
+            ASSERT_EQ(functions.size(), 4u);
+            const std::vector<std::string> names{"first", "pure", "~Base", "last"};
+            // The vptr skips RTTI/offset-to-top; the complete destructor occupies slot 2.
+            const std::vector<uint64_t> slots{0, 1, 3, 4};
+            for (std::size_t index = 0; index < functions.size(); ++index) {
+                SCOPED_TRACE(names[index]);
+                auto traits = index == 2 ? methodCommon(ParserTypes::FUNCTION_KIND_DESTRUCTOR, std::nullopt) : methodCommon();
+                auto expected = expectedMethod(names[index], functionId("::Base::" + names[index]), traits,
+                                               ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false, false,
+                                               index == 1 ? ParserTypes::FUNCTION_VIRTUALITY_PURE : ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
+                expectProto(*serialize(functions[index], false), expected);
+                simpleLocation(expected, slots[index]);
+                expectProto(*serialize(functions[index], true), expected);
+            }
+        }
+    }
+
+    TEST_F(MethodDeclWrapperTest, ItaniumSingleInheritanceKeepsTheInheritedPrimarySlot) {
+        const auto functions = parse(R"cpp(
+            struct Base { virtual void first(); virtual void run(); };
+            struct Middle : Base {};
+            struct Derived : Middle { void run() override; };
+        )cpp", {"--target=x86_64-unknown-linux-gnu"});
+        ASSERT_EQ(functions.size(), 3u);
+        auto expected = expectedMethod("run", functionId("::Derived::run"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false,
+                                       false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
+        simpleLocation(expected, 1);
+        expectProto(*serialize(functions[2], true), expected);
+    }
+
+    TEST_F(MethodDeclWrapperTest, ItaniumSecondaryBaseOverridesUseTheOwnersPrimaryVtable) {
+        const auto functions = parse(R"cpp(
+            struct Left { virtual void left(); };
+            struct Right { virtual void right(); };
+            struct Combined : Left, Right {};
+            struct Derived : Combined { void right() override; };
+        )cpp", {"--target=x86_64-unknown-linux-gnu"});
+        ASSERT_EQ(functions.size(), 3u);
+        auto expected = expectedMethod("right", functionId("::Derived::right"), methodCommon(), ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false,
+                                       false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
+        // Right's secondary vtable contains an adjusting thunk, but Derived has its own slot.
+        multipleLocation(expected, 1, 0);
+        expectProto(*serialize(functions[2], true), expected);
+    }
+
+    TEST_F(MethodDeclWrapperTest, ItaniumCovariantReturnUsesTheDerivedSlotWithoutReturnAdjustment) {
+        const auto functions = parse(R"cpp(
+            struct Prefix { long long padding; };
+            struct Result { int value; };
+            struct DerivedResult : Prefix, Result {};
+            struct Base { virtual Result* clone(); };
+            struct Derived : Base { DerivedResult* clone() override; };
+        )cpp", {"--target=x86_64-unknown-linux-gnu"});
+        ASSERT_EQ(functions.size(), 2u);
+        ParserTypes::MemberFunction expected;
+        // Slot 0 adjusts DerivedResult* to Result* for Base callers; Derived callers need slot 1.
+        simpleLocation(expected, 1);
+        const auto* actual = serialize(functions[1], true);
+        ASSERT_TRUE(actual->has_virtual_dispatch());
+        expectProto(actual->virtual_dispatch(), expected.virtual_dispatch());
+    }
+
+    TEST_F(MethodDeclWrapperTest, ItaniumDeletingDestructorFromASecondaryBaseUsesThePrimaryVtable) {
+        const auto functions = parse(R"cpp(
+            struct Left { virtual void left(); };
+            struct Right { virtual ~Right(); };
+            struct Derived : Left, Right { ~Derived() override; };
+        )cpp", {"--target=x86_64-unknown-linux-gnu"});
+        ASSERT_EQ(functions.size(), 3u);
+        auto expected = expectedMethod("~Derived", functionId("::Derived::~Derived"),
+                                       methodCommon(ParserTypes::FUNCTION_KIND_DESTRUCTOR, std::nullopt),
+                                       ParserTypes::ACCESS_SPECIFIER_PUBLIC, false, false, false, ParserTypes::FUNCTION_VIRTUALITY_VIRTUAL);
+        // Left::left is slot 0, followed by Derived's complete and deleting destructors.
+        multipleLocation(expected, 2, 0);
+        expectProto(*serialize(functions[2], true), expected);
+    }
+
+    TEST_F(MethodDeclWrapperTest, ItaniumNonVirtualAndDependentMethodsOmitDispatch) {
+        const auto functions = parse(R"cpp(
+            struct Owner { void ordinary(); static void factory(); };
+            template<class T> struct Abstract { virtual T get() const = 0; };
+        )cpp", {"--target=x86_64-unknown-linux-gnu"});
+        ASSERT_EQ(functions.size(), 3u);
+        for (std::size_t index = 0; index < functions.size(); ++index) {
+            SCOPED_TRACE(index);
+            EXPECT_FALSE(serialize(functions[index], index < 2)->has_virtual_dispatch());
+        }
     }
 
     TEST_F(MethodDeclWrapperTest, DependentVirtualMethodsPreserveTypesWithoutInventingLayout) {
