@@ -1,1 +1,1 @@
-from . import Merge
+from . import merge

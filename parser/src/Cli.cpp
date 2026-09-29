@@ -243,14 +243,14 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
     parser->add_option("-f,--format", cfg.format, FORMAT_HELP)
         ->transform(CLI::CheckedTransformer(string_format_map, CLI::ignore_case))
         ->default_val(UEM_DEFAULT_FORMAT);
-    parser_cc->add_option("compile-commands.json", cfg.compile_commands, COMPILE_COMMANDS_HELP)
+    parser_cc->add_option("compile-commands", cfg.compile_commands, COMPILE_COMMANDS_HELP)
          ->transform(loadCompileCommandsString)
          ->required();
     parser_cc->add_option("--strip-commands", cfg.strip_commands, STRIP_COMMANDS_HELP)
         ->delimiter(',');
     parser_cc->add_option("--additional-clang-args", cfg.additional_clang_args, ADDITIONAL_CLANG_ARGS_HELP)
         ->delimiter(',');
-    parser_cache->add_option("ast", cfg.ast_file)
+    parser_cache->add_option("ast-file", cfg.ast_file)
         ->check(CLI::ExistingFile)
         ->required();
 
