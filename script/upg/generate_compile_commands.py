@@ -2,6 +2,7 @@ import re
 from os import PathLike
 from pathlib import Path
 
+from upg.build import build
 from upg.setup import setup
 from upg.write_project_files import write_project_files
 from utility import Git
@@ -35,6 +36,8 @@ def generate_compile_commands(version_or_tag: str, intermediate_dir: Path, platf
     major = int(tag_result.group("major"))
     minor = int(tag_result.group("minor"))
     patch = int(patch)
+
     setup(major, minor, patch, git.root, pat)
-    write_project_files(major, minor, patch, intermediate_dir, headers, modules)
+    uproject_file = write_project_files(major, minor, patch, intermediate_dir, headers, modules)
+    build(major, minor, patch, git.root, uproject_file, platform, config)
     pass

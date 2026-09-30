@@ -1,5 +1,6 @@
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from upg.write_project_files.get_build_cs import get_build_cs
@@ -7,6 +8,7 @@ from upg.write_project_files.get_metadata_harness_h import get_metadata_harness_
 from upg.write_project_files.get_target_cs import get_target_cs
 from upg.write_project_files.get_uproject import get_uproject
 from upg.write_project_files.get_metadata_analysis import get_metadata_analysis
+from utility import execute
 
 def write_project_files(major: int, minor: int, patch: int, intermediate_dir: Path, headers: list[str], modules: list[str]):
     project_root = intermediate_dir / "MetadataHarness"
@@ -43,3 +45,10 @@ def write_project_files(major: int, minor: int, patch: int, intermediate_dir: Pa
 
     with open(analysis_cpp, "w", encoding="utf-8") as analysis_cpp_file:
         analysis_cpp_file.write(get_metadata_analysis(major, minor, patch, headers))
+
+    unreal_root = intermediate_dir / "UnrealEngine"
+    generate_project_files_script = unreal_root / f"GenerateProjectFiles.{"bat" if sys.platform is "win32" else "sh"}"
+
+    execute([generate_project_files_script, f"-project={uproject_file}", "-game", "engine"])
+
+    return uproject_file
