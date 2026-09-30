@@ -5,7 +5,7 @@ from pathlib import Path
 
 def __make_local_gitdep_map() -> dict[int, dict[int, dict[int, Path]]]:
     out: dict[int, dict[int, dict[int, Path]]] = defaultdict(partial(defaultdict, dict))
-    external_path = Path(__file__).parent / "external"
+    external_path = Path(__file__).resolve().parent.parent / "external"
     if not external_path.exists() or not external_path.is_dir():
         raise Exception(f"external_path for local git dep patches does not exist: {external_path}")
     pattern = re.compile(r"^Commit\.gitdeps\.(?P<version>(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+))\.xml$",
@@ -14,7 +14,7 @@ def __make_local_gitdep_map() -> dict[int, dict[int, dict[int, Path]]]:
         match = pattern.match(file.name)
         if not match:
             raise Exception(f"unable to parse out version from {file.name}")
-        out[int(match.group("version"))][int(match.group("major"))][int(match.group("minor"))] = file
+        out[int(match.group("major"))][int(match.group("minor"))][int(match.group("patch"))] = file
     return out
 
 LOCAL_GIT_DEPS = __make_local_gitdep_map()

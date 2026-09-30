@@ -4,10 +4,8 @@ import sys
 import tarfile
 import zipfile
 from pathlib import Path
-from constants import LOCAL_GIT_DEPS, CDN_DEPS
-from upg.setup.constants import REMOTE_GIT_DEPS
+from upg.setup.constants import LOCAL_GIT_DEPS, CDN_DEPS, REMOTE_GIT_DEPS
 from utility import execute
-from mega.client import MegaNzClient
 from urllib.request import Request, urlopen
 
 # versions 4.11 to 5.1 (patches included) have broken gitdeps that need replacement before running setup
@@ -17,25 +15,27 @@ from urllib.request import Request, urlopen
 
 # Setup refers to the step of running the setup script after unreal checks out/clones, usually done via git hooks,
 # but it's very buggy on a majority of versions that are more than a year old so we manually patch versions < 5.2
-def setup(major: int, minor: int, patch: int, repo_root: Path, pat: str):
-    if major >= 5 and minor >= 2:
-        run_setup_script(repo_root)
+def setup(major: int, minor: int, patch: int, repo_root: Path, pat: str,
+          env: dict[str, str] | None = None):
+    if (major, minor) >= (5, 2):
+        run_setup_script(repo_root, env)
     elif (major == 4 and minor >= 11) or (major == 5 and minor < 2):
         patch_gitdeps(major, minor, patch, repo_root)
-        run_setup_script(repo_root)
-    elif (major == 4 and minor < 11) or (major == 4 and minor >= 6):
+        run_setup_script(repo_root, env)
+    elif major == 4 and 6 <= minor < 11:
         path = asyncio.run(download_deps_from_cdn(major, minor, repo_root.parent / "zips"))
         untar(path, repo_root)
     elif major == 4 and minor < 6:
-        download_deps_from_github(major, minor, patch, repo_root.parent / "zips", pat)
+        for path in download_deps_from_github(major, minor, patch, repo_root.parent / "zips", pat):
+            unzip(path, repo_root)
     else:
         raise Exception(f"Unhandled version {major}-{minor}-{patch}")
 
-def run_setup_script(root: Path):
+def run_setup_script(root: Path, env: dict[str, str] | None = None):
     if sys.platform == "win32":
-        execute(["Setup.bat"], cwd=root)
+        execute([root / "Setup.bat", "--force"], cwd=root, addl_env=env)
     elif sys.platform == "linux":
-        execute(["Setup.sh"], cwd=root)
+        execute([root / "Setup.sh", "--force"], cwd=root, addl_env=env)
 
 def patch_gitdeps(major: int, minor: int, patch: int, root: Path):
     path = LOCAL_GIT_DEPS[major][minor][patch]
@@ -50,6 +50,7 @@ def patch_gitdeps(major: int, minor: int, patch: int, root: Path):
 async def download_deps_from_cdn(major: int, minor: int, cache_dir: Path) -> Path:
     out_path = cache_dir / f"{major}-{minor}.tar.zst"
     if out_path.exists(): return out_path
+    from mega.client import MegaNzClient
     if not cache_dir.exists(): cache_dir.mkdir(exist_ok=True, parents=True)
 
     url = CDN_DEPS[major][minor]
@@ -61,34 +62,29 @@ async def download_deps_from_cdn(major: int, minor: int, cache_dir: Path) -> Pat
         return path.rename(out_path)
 
 # fetch from github
-def download_deps_from_github(major: int, minor: int, patch: int, cache_dir: Path, pat: str):
-    out_path = cache_dir / f"{major}-{minor}.zip"
-    if out_path.exists(): return out_path
-    if not cache_dir.exists(): cache_dir.mkdir(exist_ok=True, parents=True)
-
-    url = REMOTE_GIT_DEPS[major][minor][patch]
-    if url is None:
+def download_deps_from_github(major: int, minor: int, patch: int, cache_dir: Path, pat: str) -> list[Path]:
+    urls = REMOTE_GIT_DEPS[major][minor][patch]
+    if not urls:
         raise Exception(f"No known remote git deps for version {major}.{minor}!")
-
-    if pat is None or len(pat) == 0:
-        raise Exception(f"A GitHub PAT is required to fetch older unreal dependencies! Supply it on the command line with --git-pat")
-
-    headers = {
-        "Accept": "application/octet-stream",
-        "User-Agent": "curl",
-        "Authorization": f"token {pat}"
-    }
-
-    with urlopen(Request(url, headers=headers)) as response:
-        with open(out_path, "wb") as download_file:
-            shutil.copyfileobj(response, download_file)
-
-    return out_path
+    version_cache = cache_dir / f"{major}.{minor}.{patch}"
+    version_cache.mkdir(exist_ok=True, parents=True)
+    paths = []
+    for index, url in enumerate(urls, start=1):
+        out_path = version_cache / f"Required_{index}of{len(urls)}.zip"
+        if not out_path.exists():
+            if not pat:
+                raise ValueError("A GitHub PAT is required to fetch older Unreal dependencies.")
+            headers = {"Accept": "application/octet-stream", "User-Agent": "curl", "Authorization": f"token {pat}"}
+            with urlopen(Request(url, headers=headers)) as response:
+                with open(out_path, "wb") as download_file:
+                    shutil.copyfileobj(response, download_file)
+        paths.append(out_path)
+    return paths
 
 def untar(in_tar_zst: Path, out_dir: Path):
     if not in_tar_zst.exists() or not in_tar_zst.is_file():
         raise FileNotFoundError(f"{in_tar_zst} is not an existing file!")
-    if not in_tar_zst.suffix == ".zstd":
+    if in_tar_zst.suffix != ".zst":
         raise Exception(f"{in_tar_zst} is not a tar.zst file!")
     if not out_dir.exists() or not out_dir.is_dir():
         raise NotADirectoryError(f"{out_dir} is not an existing directory!")

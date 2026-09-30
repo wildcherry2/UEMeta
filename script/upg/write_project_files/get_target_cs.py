@@ -1,5 +1,5 @@
 def get_target_cs(major: int, minor: int, patch: int):
-    if major >= 5 and minor >= 1:
+    if (major, minor) >= (5, 1):
         return """
                     using UnrealBuildTool;
 
@@ -33,7 +33,7 @@ def get_target_cs(major: int, minor: int, patch: int):
                     }
                 """
 
-    elif (major == 4 and minor <= 4.23) or (major == 4 and minor >= 16):
+    elif major == 4 and 16 <= minor <= 23:
         return """
                     using UnrealBuildTool;
     
