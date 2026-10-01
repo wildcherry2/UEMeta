@@ -1,6 +1,6 @@
 
 def get_build_cs(major: int, minor: int, patch: int, modules: list[str]):
-    module_names = ", ".join(modules)
+    module_names = ", ".join(f'"{name}"' for name in modules)
     if major == 4 and minor <= 15:
         return f"""
                     using UnrealBuildTool;
@@ -28,7 +28,7 @@ def get_build_cs(major: int, minor: int, patch: int, modules: list[str]):
                 {{
                     PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-                    PublicDependencyModuleNames.AddRange(new[]
+                    PublicDependencyModuleNames.AddRange(new string[]
                     {{
                         {module_names}
                     }});

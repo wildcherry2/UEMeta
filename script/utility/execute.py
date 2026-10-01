@@ -4,7 +4,7 @@ import subprocess
 import sys
 from enum import Flag, auto
 from functools import partial
-from typing import Optional, cast
+from typing import Optional, cast, Sequence
 from utility.log_util import log_exc
 
 class ExecuteOutputOptions(Flag):
@@ -45,7 +45,7 @@ def __merge_env(addl_env: dict[str, str]) -> dict[str, str]:
         env_keys[key.upper()] = key
     return env
 
-def execute(argv: list[str | os.PathLike[str]] | str | os.PathLike[str] | list[str], *,
+def execute(argv: str | bytes | os.PathLike[str] | os.PathLike[bytes] | Sequence[str | bytes | os.PathLike[str] | os.PathLike[bytes]], *,
             success_msg: Optional[str] = None,
             fail_msg: Optional[str] = None,
             expected_ret = 0,
@@ -53,7 +53,8 @@ def execute(argv: list[str | os.PathLike[str]] | str | os.PathLike[str] | list[s
             raise_on_error: Optional[type[ExecuteException]] = ExecuteException,
             log_on_error: bool = True,
             output = ExecuteOutputOptions.LOGGER,
-            addl_env: Optional[dict[str, str]] = None) -> tuple[int, str]:
+            addl_env: Optional[dict[str, str]] = None,
+            shell: bool = False) -> tuple[int, str]:
 
     out = ""
     is_silent = output == ExecuteOutputOptions.SILENT
@@ -64,7 +65,7 @@ def execute(argv: list[str | os.PathLike[str]] | str | os.PathLike[str] | list[s
     if addl_env is not None and len(addl_env) > 0:
         addl_env = __merge_env(addl_env)
 
-    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env) as proc:
+    with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=addl_env, shell=shell) as proc:
         if proc.stdout:
             for line in proc.stdout:
                 out += line

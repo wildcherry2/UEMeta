@@ -12,7 +12,7 @@ from utility import execute
 
 def write_project_files(major: int, minor: int, patch: int, intermediate_dir: Path, headers: list[str], modules: list[str]):
     project_root = intermediate_dir / "MetadataHarness"
-    uproject_file = project_root / "MetadataHarness.uproject"
+    uproject = project_root / "MetadataHarness.uproject"
     project_sources = project_root / "Source" / "MetadataHarness"
     target_cs = project_root / "Source" / "MetadataHarness.Target.cs"
     build_cs = project_sources / "MetadataHarness.Build.cs"
@@ -25,7 +25,7 @@ def write_project_files(major: int, minor: int, patch: int, intermediate_dir: Pa
 
     project_sources.mkdir(parents=True, exist_ok=True)
 
-    with open(uproject_file, "w", encoding="utf-8") as uproject_file:
+    with open(uproject, "w", encoding="utf-8") as uproject_file:
         uproject_file.write(json.dumps(get_uproject(major, minor, patch)))
 
     with open(target_cs, "w", encoding="utf-8") as target_cs_file:
@@ -46,9 +46,9 @@ def write_project_files(major: int, minor: int, patch: int, intermediate_dir: Pa
     with open(analysis_cpp, "w", encoding="utf-8") as analysis_cpp_file:
         analysis_cpp_file.write(get_metadata_analysis(major, minor, patch, headers))
 
-    unreal_root = intermediate_dir / "UnrealEngine"
-    generate_project_files_script = unreal_root / f"GenerateProjectFiles.{"bat" if sys.platform is "win32" else "sh"}"
+    unreal_root = intermediate_dir / "UnrealEngine" #todo pass in git root
+    generate_project_files_script = unreal_root / f"GenerateProjectFiles.{"bat" if sys.platform == "win32" else "sh"}"
 
-    execute([generate_project_files_script, f"-project={uproject_file}", "-game", "engine"])
+    execute([generate_project_files_script, f"-project={uproject}", "-game", "engine"])
 
-    return uproject_file
+    return uproject
