@@ -110,7 +110,7 @@ def __get_list(section: SectionProxy, option: str) -> list[str]:
     return [item.strip() for item in section[option].split(",") if item.strip()]
 
 
-def parse_config(ini_path: Path) -> Config:
+def __parse_config(ini_path: Path) -> Config:
     """Load sections into dataclasses, retaining INI names and interpolation.
 
     Blank or missing optional parser settings become None so callers can omit
@@ -170,4 +170,4 @@ def parse_config(ini_path: Path) -> Config:
     )
 
 
-CONFIG: Config = parse_config(Path(__file__).resolve().parent.parent / "config.ini")
+CONFIG: Config = __parse_config(Path(__file__).resolve().parent.parent / "config.ini")

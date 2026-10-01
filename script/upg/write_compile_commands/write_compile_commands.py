@@ -14,9 +14,10 @@ def write_compile_commands(major: int, minor: int, patch: int, unreal_repo: Path
     raise NotImplementedError()
 
 def filter_compile_commands(cc_path: Path):
-    with open(cc_path, 'rw') as cc_file:
+    with open(cc_path, 'r+') as cc_file:
         cc: list[dict[str, str]] = json.load(cc_file)
         cc = [entry for entry in cc if entry["file"].endswith("MetadataAnalysis.cpp") ]
+        cc_file.seek(0)
         cc_file.write(json.dumps(cc))
-
+        cc_file.truncate()
     return cc_path
