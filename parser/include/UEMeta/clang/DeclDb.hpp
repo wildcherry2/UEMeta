@@ -15,7 +15,9 @@ namespace UEMeta {
     public:
         using QueryResult = std::variant<Hash, uint64_t, bool, llvm::StringRef, std::monostate>;
 
-        // DeclWrappers call this to bind a themselves to a Hash globally
+        // DeclWrappers call this to bind themselves to a Hash globally.
+        // Registering the same declaration with the same hash again is ignored.
+        // Throws DeclException if a declaration's hash changes or the hash is already bound to another declaration.
         static void addDeclIdentity(const clang::Decl* decl, const Hash& hash);
 
         // returns Hash if the decl is mapped to a full declaration with that identity Hash,

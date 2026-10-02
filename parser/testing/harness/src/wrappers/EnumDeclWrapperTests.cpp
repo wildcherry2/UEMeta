@@ -230,6 +230,7 @@ namespace {
         ASSERT_EQ(second.size(), 1u);
         ASSERT_EQ(other.size(), 1u);
         const auto* a = asEnum(first[0]);
+        UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
         const auto* b = asEnum(second[0]);
         const auto* c = asEnum(other[0]);
         ASSERT_NE(a, nullptr);
@@ -249,6 +250,7 @@ namespace {
         ASSERT_EQ(first.size(), 1u);
         ASSERT_EQ(second.size(), 1u);
         const auto* earlier = asEnum(first[0]);
+        UEMeta::DeclDb::reset(); // The relocated declaration has the same identity in a separate AST.
         const auto* later   = asEnum(second[0]);
         ASSERT_NE(earlier, nullptr);
         ASSERT_NE(later, nullptr);

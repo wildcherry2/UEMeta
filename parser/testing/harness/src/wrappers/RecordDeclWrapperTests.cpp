@@ -266,6 +266,7 @@ namespace {
             std::vector<UEMeta::Hash> unqualified_policy_ids;
             for (bool fully_qualified_policy : {false, true}) {
                 SCOPED_TRACE(fully_qualified_policy);
+                UEMeta::DeclDb::reset(); // Each policy is tested against a separate AST of the same declarations.
                 const auto records = parse(R"cpp(
                     namespace Left { struct Value {}; }
                     namespace Right { struct Value {}; }
@@ -375,6 +376,7 @@ namespace {
         auto expected          = record("::N::Stable", 0, ParserTypes::RECORD_KIND_STRUCT, 4, 4);
         *expected.add_fields() = field("value", "int", 32, 0);
         expectProto(*serialize(first[0]), expected);
+        UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
         expected               = record("::N::Stable", 1, ParserTypes::RECORD_KIND_STRUCT, 8, 8);
         *expected.add_fields() = field("value", "double", 64, 0);
         expectProto(*serialize(changed[0]), expected);
@@ -778,6 +780,7 @@ namespace {
         for (const auto* target : {"--target=x86_64-pc-windows-msvc", "--target=i686-pc-windows-msvc",
                                    "--target=x86_64-unknown-linux-gnu", "--target=i686-unknown-linux-gnu"}) {
             SCOPED_TRACE(target);
+            UEMeta::DeclDb::reset(); // Each target has its own AST of the same declarations.
             const auto records = parse(R"cpp(
                 struct Base { int value; };
                 struct Left : virtual Base {};

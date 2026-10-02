@@ -82,6 +82,8 @@ namespace {
         const auto functions = parse("int redeclared(int value = 4); int redeclared(int renamed) { return renamed + 1; }");
         ASSERT_EQ(functions.size(), 2u);
         const auto* prototype                = serialize(functions[0]);
+        // Exercise the wrappers independently; normal traversal defers this prototype to its definition.
+        UEMeta::DeclDb::reset();
         const auto* definition               = serialize(functions[1]);
         auto        declaration_traits       = common(ParserTypes::FUNCTION_KIND_FREE, "int");
         *declaration_traits.add_parameters() = parameter("value", "int", "4");
@@ -105,6 +107,7 @@ namespace {
         for (const auto* group : {&first, &changed, &overload, &other})
             ASSERT_EQ(group->size(), 1u);
         expectId(serialize(first[0])->metadata().decl_id(), functionId("::N::stable", "int"));
+        UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
         expectId(serialize(changed[0])->metadata().decl_id(), functionId("::N::stable", "int"));
         expectId(serialize(overload[0])->metadata().decl_id(), functionId("::N::stable", "long"));
         expectId(serialize(other[0])->metadata().decl_id(), functionId("::Other::stable", "int"));

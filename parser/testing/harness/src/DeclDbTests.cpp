@@ -1,5 +1,6 @@
 #include <fstream>
 #include <iterator>
+#include <stdexcept>
 #include <type_traits>
 
 #include "ProtoAssertions.hpp"
@@ -128,6 +129,45 @@ namespace {
         EXPECT_TRUE(outputFiles().empty());
     }
 
+    TEST_F(DeclDbTest, RejectsChangesToRegisteredIdentities) {
+        auto* context = parseCode("struct First {}; struct Second {};");
+        ASSERT_NE(context, nullptr);
+        const auto records = declarations<clang::RecordDecl>(context->getTranslationUnitDecl());
+        ASSERT_EQ(records.size(), 2u);
+        const auto first_id  = identity(17, 29);
+        const auto second_id = identity(31, 37);
+        const auto unused_id = identity(41, 43);
+        DeclDb::addDeclIdentity(records[0], first_id);
+        DeclDb::addDeclIdentity(records[1], second_id);
+
+        EXPECT_THROW(DeclDb::addDeclIdentity(records[0], unused_id), UEMeta::DeclException<>);
+        EXPECT_THROW(DeclDb::addDeclIdentity(records[0], second_id), UEMeta::DeclException<>);
+        expectQuery(DeclDb::queryDeclIdentity(records[0]), first_id);
+        expectQuery(DeclDb::queryDeclIdentity(records[1]), second_id);
+        EXPECT_EQ(DeclDb::queryDecl(first_id), records[0]);
+        EXPECT_EQ(DeclDb::queryDecl(second_id), records[1]);
+        EXPECT_EQ(DeclDb::queryDecl(unused_id), nullptr);
+    }
+
+    TEST_F(DeclDbTest, RejectsIdentityHashCollisionsWithoutChangingState) {
+        auto* context = parseCode("struct First {}; struct Second {};");
+        ASSERT_NE(context, nullptr);
+        const auto records = declarations<clang::RecordDecl>(context->getTranslationUnitDecl());
+        ASSERT_EQ(records.size(), 2u);
+        const auto id = identity(17, 29);
+        DeclDb::addDeclIdentity(records[0], id);
+
+        EXPECT_THROW(DeclDb::addDeclIdentity(records[1], id), UEMeta::DeclException<>);
+        EXPECT_EQ(DeclDb::queryDecl(id), records[0]);
+        expectQuery(DeclDb::queryDeclIdentity(records[0]), id);
+        expectQuery(DeclDb::queryDeclIdentity(records[1]), false);
+
+        // The rejected declaration must remain eligible for serialization.
+        DeclDb::serializeIfNeeded(records[1]);
+        EXPECT_TRUE(std::holds_alternative<Hash>(DeclDb::queryDeclIdentity(records[1])));
+        EXPECT_EQ(outputFiles().size(), 1u);
+    }
+
     TEST_F(DeclDbTest, RejectsForwardOccurrencesForNullNonDefinitionsAndOtherDeclarationKinds) {
         auto* context = parseCode("struct Record; enum class Enum; void function(); int variable; namespace N {}");
         ASSERT_NE(context, nullptr);
@@ -214,6 +254,39 @@ namespace {
     using ForwardKinds = ::testing::Types<clang::RecordDecl, clang::EnumDecl, clang::FunctionDecl>;
     TYPED_TEST_SUITE(DeclDbRedeclarationTest, ForwardKinds);
 
+    TYPED_TEST(DeclDbRedeclarationTest, SerializationPreservesOriginalCollisionException) {
+        auto* first_context  = this->parseCode(this->source());
+        auto* second_context = this->parseCode(this->source());
+        ASSERT_NE(first_context, nullptr);
+        ASSERT_NE(second_context, nullptr);
+        const auto first  = declarations<TypeParam>(first_context->getTranslationUnitDecl());
+        const auto second = declarations<TypeParam>(second_context->getTranslationUnitDecl());
+        ASSERT_EQ(first.size(), 4u);
+        ASSERT_EQ(second.size(), 4u);
+        DeclDb::serializeIfNeeded(first[2]);
+        const auto result = DeclDb::queryDeclIdentity(first[2]);
+        ASSERT_TRUE(std::holds_alternative<Hash>(result));
+
+        // Capture the original message, including both declarations, before serialization handles it.
+        std::string collision_message;
+        try {
+            DeclDb::addDeclIdentity(second[2], std::get<Hash>(result));
+            FAIL() << "Expected an identity collision";
+        }
+        catch (const UEMeta::DeclExceptionBase& error) {
+            collision_message = error.what();
+        }
+        ASSERT_FALSE(collision_message.empty());
+
+        try {
+            DeclDb::serializeIfNeeded(second[2]);
+            FAIL() << "Expected serialization to propagate the identity collision";
+        }
+        catch (const UEMeta::DeclException<>& error) {
+            EXPECT_EQ(std::string{error.what()}, collision_message);
+        }
+    }
+
     TYPED_TEST(DeclDbRedeclarationTest, SerializationJoinsRedeclarationsToOneDefinitionInVisitationOrder) {
         auto* context = this->parseCode(this->source());
         ASSERT_NE(context, nullptr);
@@ -289,6 +362,7 @@ namespace {
         const std::vector<std::string> sources{"namespace std { struct Record {}; enum Enum { Value }; void function() {} int variable; }",
                                                "# 1 \"library.hpp\" 3\nstruct Record {}; enum Enum { Value }; void function() {} int variable;"};
         for (const auto& source : sources) {
+            DeclDb::reset(); // Each source registers its own declaration with the same test identity.
             auto* context = parseCode(source, "vendor/library.hpp");
             ASSERT_NE(context, nullptr);
             clang::DeclContext* scope      = context->getTranslationUnitDecl();

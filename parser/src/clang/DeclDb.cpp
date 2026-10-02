@@ -56,8 +56,18 @@ static void serialize(const typename T::WrappedDeclType* decl) {
 void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) {
     if (!decl)
         throw DeclException(decl, "Can't addDeclIdentity with null Decl pointer!");
-    decl_to_identity_map.insert({decl, hash});
-    identity_to_decl_map.insert({hash, decl});
+    const auto [it, inserted] = decl_to_identity_map.insert({decl, hash});
+    if (!inserted) {
+        if (it->second != hash) {
+            throw DeclException(decl, "Tried to assign a different hash to an already hashed declaration!");
+        }
+        return;
+    }
+    if (auto result = identity_to_decl_map.insert({hash, decl}); !result.second) {
+        const auto* related = result.first->second;
+        decl_to_identity_map.erase(it);
+        throw DeclException(decl, related, "Hash collision in identity_to_decl_map for hash ({}, {})", hash.a, hash.b);
+    }
     visited_decls.insert(decl);
 }
 
@@ -194,7 +204,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
 
         return serialize<EnumDeclWrapper>(decl);
     }
-    catch ([[maybe_unused]] DeclException<clang::EnumDecl>& de) {
+    catch (const DeclExceptionBase&) {
         throw;
     }
     catch (std::exception& e) {
@@ -224,7 +234,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl* decl) {
 
         return serialize<VarDeclWrapper>(decl);
     }
-    catch ([[maybe_unused]] DeclException<clang::VarDecl>& de) {
+    catch (const DeclExceptionBase&) {
         throw;
     }
     catch (std::exception& e) {
@@ -263,7 +273,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
 
         return serialize<RecordDeclWrapper>(decl);
     }
-    catch ([[maybe_unused]] DeclException<clang::RecordDecl>& de) {
+    catch (const DeclExceptionBase&) {
         throw;
     }
     catch (std::exception& e) {
@@ -299,7 +309,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
 
         return serialize<FunctionDeclWrapper<>>(decl);
     }
-    catch ([[maybe_unused]] DeclException<clang::FunctionDecl>& de) {
+    catch (const DeclExceptionBase&) {
         throw;
     }
     catch (std::exception& e) {
