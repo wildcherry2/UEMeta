@@ -32,8 +32,8 @@ namespace {
         auto traits              = common(ParserTypes::FUNCTION_KIND_FREE, "long");
         *traits.add_parameters() = parameter("count", "int");
         *traits.add_parameters() = parameter("label", "const char *", "\"result\"");
-        expectProto(*message, expectedFunction("::Outer::Inner::compute", "intconst char *", 0, traits, "/// Function documentation."));
-        const auto id       = functionId("::Outer::Inner::compute", "intconst char *");
+        expectProto(*message, expectedFunction("::Outer::Inner::compute", "(int,const char *)", 0, traits, "/// Function documentation."));
+        const auto id       = functionId("::Outer::Inner::compute", "(int,const char *)");
         const auto resolved = UEMeta::DeclDb::queryDeclIdentity(functions[0]);
         ASSERT_TRUE(std::holds_alternative<UEMeta::Hash>(resolved));
         EXPECT_EQ(std::get<UEMeta::Hash>(resolved), id);
@@ -60,7 +60,7 @@ namespace {
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(names[index]);
             expectProto(*serialize(functions[index]),
-                        expectedFunction(names[index], "", index, common(ParserTypes::FUNCTION_KIND_FREE, "void", storage[index])));
+                        expectedFunction(names[index], "()", index, common(ParserTypes::FUNCTION_KIND_FREE, "void", storage[index])));
         }
     }
 
@@ -74,7 +74,7 @@ namespace {
             SCOPED_TRACE(names[index]);
             auto traits = common(ParserTypes::FUNCTION_KIND_FREE, "int", ParserTypes::FUN_VAR_STORAGE_CLASS_UNSPECIFIED, kinds[index]);
             *traits.mutable_inline_definition() = versioned<ParserTypes::VersionedString>("{\n    return " + std::to_string(index + 1) + ";\n}\n");
-            expectProto(*serialize(functions[index]), expectedFunction(names[index], "", index, traits));
+            expectProto(*serialize(functions[index]), expectedFunction(names[index], "()", index, traits));
         }
     }
 
@@ -92,11 +92,11 @@ namespace {
         *definition_traits.add_parameters()            = parameter("renamed", "int", "4");
         *definition_traits.mutable_inline_definition() = versioned<ParserTypes::VersionedString>("{\n    return renamed + 1;\n}\n");
         expectProto(definition->common(), definition_traits);
-        expectId(prototype->metadata().decl_id(), functionId("::redeclared", "int"));
-        expectId(definition->metadata().decl_id(), functionId("::redeclared", "int"));
+        expectId(prototype->metadata().decl_id(), functionId("::redeclared", "(int)"));
+        expectId(definition->metadata().decl_id(), functionId("::redeclared", "(int)"));
         const auto reference = UEMeta::DeclDb::queryDeclIdentity(functions[0]);
         ASSERT_TRUE(std::holds_alternative<UEMeta::Hash>(reference));
-        EXPECT_EQ(std::get<UEMeta::Hash>(reference), functionId("::redeclared", "int"));
+        EXPECT_EQ(std::get<UEMeta::Hash>(reference), functionId("::redeclared", "(int)"));
     }
 
     TEST_F(FunctionDeclWrapperTest, IdentityIgnoresReturnTypeNamesDefaultsStorageAndBodiesButDistinguishesOverloadsAndScopes) {
@@ -106,13 +106,26 @@ namespace {
         const auto other    = parse("namespace Other { int stable(int value); }");
         for (const auto* group : {&first, &changed, &overload, &other})
             ASSERT_EQ(group->size(), 1u);
-        expectId(serialize(first[0])->metadata().decl_id(), functionId("::N::stable", "int"));
+        expectId(serialize(first[0])->metadata().decl_id(), functionId("::N::stable", "(int)"));
         UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
-        expectId(serialize(changed[0])->metadata().decl_id(), functionId("::N::stable", "int"));
-        expectId(serialize(overload[0])->metadata().decl_id(), functionId("::N::stable", "long"));
-        expectId(serialize(other[0])->metadata().decl_id(), functionId("::Other::stable", "int"));
-        EXPECT_NE(functionId("::N::stable", "int"), functionId("::N::stable", "long"));
-        EXPECT_NE(functionId("::N::stable", "int"), functionId("::Other::stable", "int"));
+        expectId(serialize(changed[0])->metadata().decl_id(), functionId("::N::stable", "(int)"));
+        expectId(serialize(overload[0])->metadata().decl_id(), functionId("::N::stable", "(long)"));
+        expectId(serialize(other[0])->metadata().decl_id(), functionId("::Other::stable", "(int)"));
+        EXPECT_NE(functionId("::N::stable", "(int)"), functionId("::N::stable", "(long)"));
+        EXPECT_NE(functionId("::N::stable", "(int)"), functionId("::Other::stable", "(int)"));
+    }
+
+    TEST_F(FunctionDeclWrapperTest, ArgumentBoundariesDistinguishOtherwiseIdenticalHashInputs) {
+        const auto functions = parse(R"cpp(
+            template<class T, class TT> void select(T, TT);
+            template<class T, class TT> void select(TT, T);
+        )cpp");
+        ASSERT_EQ(functions.size(), 2u);
+        const auto* first  = serialize(functions[0]);
+        const auto* second = serialize(functions[1]);
+        expectId(first->metadata().decl_id(), functionId("::select", "(T,TT)<typename,typename>"));
+        expectId(second->metadata().decl_id(), functionId("::select", "(TT,T)<typename,typename>"));
+        EXPECT_NE(UEMeta::Hash{first->metadata().decl_id()}, UEMeta::Hash{second->metadata().decl_id()});
     }
 
     TEST_F(FunctionDeclWrapperTest, UnnamedAndAdjustedParametersPreserveOrderAndQualifiers) {
@@ -161,7 +174,7 @@ namespace {
         *traits.mutable_is_friend()         = boolean(true);
         *traits.add_parameters()            = parameter("x", "int");
         *traits.mutable_inline_definition() = versioned<ParserTypes::VersionedString>("{\n    return x;\n}\n");
-        expectProto(*serialize(functions[0]), expectedFunction("::N::friend_function", "int", 0, traits));
+        expectProto(*serialize(functions[0]), expectedFunction("::N::friend_function", "(int)", 0, traits));
     }
 
     TEST_F(FunctionDeclWrapperTest, DeletedFreeFunctionsAndDefaultedFriendComparisonsRetainDefinitionKind) {
@@ -208,7 +221,7 @@ namespace {
         *traits.add_parameters() = parameter("operator+", "int");
         const auto* message      = serialize(functions[0]);
         expectProto(message->common(), traits);
-        expectId(message->metadata().decl_id(), functionId("::synthesized", "int"));
+        expectId(message->metadata().decl_id(), functionId("::synthesized", "(int)"));
     }
 
     TEST_F(FunctionDeclWrapperTest, PrimaryTemplatePreservesParametersDefaultsAndDependentFunctionTypes) {
@@ -230,13 +243,13 @@ namespace {
         )pb");
         const auto* message                = serialize(functions[0]);
         expectProto(message->common(), traits);
-        expectId(message->metadata().decl_id(), functionId("::select", "T<typenameint>"));
+        expectId(message->metadata().decl_id(), functionId("::select", "(T)<typename,int>"));
     }
 
     TEST_F(FunctionDeclWrapperTest, ExplicitSpecializationReferencesItsPrimaryAndIncludesConcreteArgumentsInIdentity) {
         const auto functions = parse("template<class T, int N> T select(T value); template<> int select<int, 2>(int value);");
         ASSERT_EQ(functions.size(), 2u);
-        const auto primary_id = functionId("::select", "T<typenameint>");
+        const auto primary_id = functionId("::select", "(T)<typename,int>");
         expectId(serialize(functions[0])->metadata().decl_id(), primary_id);
         auto traits                        = common(ParserTypes::FUNCTION_KIND_FREE, "int");
         *traits.add_parameters()           = parameter("value", "int");
@@ -255,7 +268,7 @@ namespace {
         primary_id.putProtoHash(traits.mutable_template_details()->mutable_primary_template_decl_id()->mutable_decl_id());
         const auto* message = serialize(functions[1]);
         expectProto(message->common(), traits);
-        expectId(message->metadata().decl_id(), functionId("::select", "int<int2>"));
+        expectId(message->metadata().decl_id(), functionId("::select", "(int)<int,2>"));
     }
 
     TEST_F(FunctionDeclWrapperTest, SpecializationWithoutRegisteredPrimaryDoesNotInventAReference) {
@@ -280,7 +293,7 @@ namespace {
         }; template<> void Owner::choose<int>(int);)cpp");
         ASSERT_EQ(functions.size(), 8u);
         const std::vector<std::string> names{"Owner", "~Owner", "operator bool", "create", "cv", "move", "choose", "choose"};
-        const std::vector<std::string> signatures{"", "", " const", "", " const volatile &", " &&", "T<typename>", "int<int>"};
+        const std::vector<std::string> signatures{"()", "()", "() const", "()", "() const volatile &", "() &&", "(T)<typename>", "(int)<int>"};
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
             auto traits = common(ParserTypes::FUNCTION_KIND_MEMBER);
@@ -335,7 +348,7 @@ namespace {
         ASSERT_FALSE(functions.empty());
         auto* primary = functions[0]->getDescribedFunctionTemplate();
         ASSERT_NE(primary, nullptr);
-        const auto primary_id = functionId("::twice", "T<typename>");
+        const auto primary_id = functionId("::twice", "(T)<typename>");
         expectId(serialize(functions[0])->metadata().decl_id(), primary_id);
         int count = 0;
         for (auto* specialization : primary->specializations()) {
@@ -360,7 +373,7 @@ namespace {
             *argument->mutable_type() = builtin(type);
             const auto* message       = serialize(specialization);
             expectProto(message->common(), traits);
-            expectId(message->metadata().decl_id(), functionId("::twice", type + "<" + type + ">"));
+            expectId(message->metadata().decl_id(), functionId("::twice", "(" + type + ")<" + type + ">"));
             ++count;
         }
         EXPECT_EQ(count, 3);
@@ -380,7 +393,7 @@ namespace {
         traits.mutable_return_type()->clear_is_builtin_or_template();
         *traits.mutable_return_type()->mutable_forward_decl_index() = versioned<ParserTypes::VersionedUint64>(0);
         traits.mutable_parameters(0)->mutable_type_ref()->set_forward_decl_index(0);
-        expectProto(*serialize(functions[0]), expectedFunction("::forward", "::Node &", 1, traits));
+        expectProto(*serialize(functions[0]), expectedFunction("::forward", "(::Node &)", 1, traits));
     }
 
     TEST_F(FunctionDeclWrapperTest, StaticAndMemberToFileWriteOnlyFunctionFilesWithoutReadingThemBack) {

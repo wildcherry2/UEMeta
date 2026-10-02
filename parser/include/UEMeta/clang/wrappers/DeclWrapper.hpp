@@ -241,7 +241,11 @@ namespace UEMeta {
                     return;
                 append_out(std::string_view{"<"});
 
+                bool first_parameter = true;
                 for (const clang::NamedDecl* param : *params) {
+                    if (!first_parameter)
+                        append_out(std::string_view{","});
+                    first_parameter = false;
                     ParserTypes::TemplateParameter* p_param = p_details_or_param->add_parameters();
                     const std::string param_name = param->getDeclName().isIdentifier() ? param->getName().str() : param->getNameAsString();
 
@@ -350,8 +354,9 @@ namespace UEMeta {
                     return SpecializationArgumentKind::ConcreteValue;
                 };
 
-                const auto put_specialization_argument = [&append_out, &classify_specialization_argument, &get_carried_generic, &print_argument,
-                        &put_generic_type_ref, id_out_ptr,
+                bool first_argument = true;
+                const auto put_specialization_argument = [&append_out, &first_argument, &classify_specialization_argument, &get_carried_generic,
+                        &print_argument, &put_generic_type_ref, id_out_ptr,
                         this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
                     if (argument.getKind() == clang::TemplateArgument::Null) {
                         throw DeclException(decl, "Encountered a null template specialization argument!");
@@ -364,6 +369,10 @@ namespace UEMeta {
                         return;
                     }
 
+                    // Packs are flattened above; only emitted arguments need separators.
+                    if (!first_argument)
+                        append_out(std::string_view{","});
+                    first_argument = false;
                     ParserTypes::TemplateParameter*  p_param       = add_parameter();
                     const SpecializationArgumentKind argument_kind = classify_specialization_argument(argument);
                     if (argument_kind == SpecializationArgumentKind::Generic) {

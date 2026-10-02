@@ -410,7 +410,7 @@ namespace {
         expectVersioned(count.value(), "3");
         auto expected =
             builtinVariable("::value", "const T", 0, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "Count");
-        *expected.mutable_metadata()         = metadata("::value", variableId("::valueconst T<typenameint>"), 0);
+        *expected.mutable_metadata()         = metadata("::value", variableId("::valueconst T<typename,int>"), 0);
         *expected.mutable_template_details() = proto<ParserTypes::TemplateDetails>(R"pb(
             specialization_kind: TEMPLATE_SPECIALIZATION_NONE
             parameters {
@@ -442,7 +442,7 @@ namespace {
         ASSERT_TRUE(llvm::isa<clang::VarTemplatePartialSpecializationDecl>(variables[1]));
         ASSERT_TRUE(llvm::isa<clang::VarTemplateSpecializationDecl>(variables[2]));
         const auto* primary    = serialize(variables[0]);
-        const auto  primary_id = variableId("::selectedconst int<typenameint>");
+        const auto  primary_id = variableId("::selectedconst int<typename,int>");
         expectId(primary->metadata().decl_id(), primary_id);
         UEMeta::DeclDb::addDeclIdentity(variables[0], primary_id);
         const auto* partial       = serialize(variables[1]);
@@ -491,7 +491,7 @@ namespace {
         primary_id.putProtoHash(partial_details.mutable_primary_template_decl_id()->mutable_decl_id());
         auto expected_partial                        = builtinVariable("::selected", "const int", 1, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                                                        ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "1");
-        *expected_partial.mutable_metadata()         = metadata("::selected", variableId("::selectedconst int<typename><typename2>"), 1);
+        *expected_partial.mutable_metadata()         = metadata("::selected", variableId("::selectedconst int<typename><typename,2>"), 1);
         *expected_partial.mutable_template_details() = partial_details;
         expectProto(*partial, expected_partial);
 
@@ -510,7 +510,7 @@ namespace {
         primary_id.putProtoHash(explicit_details.mutable_primary_template_decl_id()->mutable_decl_id());
         auto expected_explicit                        = builtinVariable("::selected", "const int", 2, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED,
                                                                         ParserTypes::CONSTANT_EVALUATION_CONSTEXPR, "2");
-        *expected_explicit.mutable_metadata()         = metadata("::selected", variableId("::selectedconst int<int3>"), 2);
+        *expected_explicit.mutable_metadata()         = metadata("::selected", variableId("::selectedconst int<int,3>"), 2);
         *expected_explicit.mutable_template_details() = explicit_details;
         expectProto(*explicit_spec, expected_explicit);
     }
@@ -576,9 +576,26 @@ namespace {
         EXPECT_EQ(specialization->template_details().parameters_size(), 0);
         EXPECT_FALSE(specialization->template_details().has_primary_template_decl_id());
         EXPECT_EQ(specialization->template_details().specialization_kind(), ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT);
-        expectId(specialization->metadata().decl_id(), variableId("::packedint<123>"));
+        expectId(specialization->metadata().decl_id(), variableId("::packedint<1,2,3>"));
         expectVersioned(specialization->default_value(), "6");
         EXPECT_NE(identity(primary), identity(specialization));
+    }
+
+    TEST_F(VarDeclWrapperTest, TemplatePackBoundariesDistinguishValuesAndSkipEmptyPacks) {
+        const auto variables = parse(R"cpp(
+            template<int First, int... Rest> int packed = 0;
+            template<> int packed<0> = 0;
+            template<> int packed<0, 1, 23> = 0;
+            template<> int packed<0, 12, 3> = 0;
+        )cpp");
+        ASSERT_EQ(variables.size(), 4u);
+        expectId(serialize(variables[0])->metadata().decl_id(), variableId("::packedint<int,int...>"));
+        expectId(serialize(variables[1])->metadata().decl_id(), variableId("::packedint<0>"));
+        const auto* first  = serialize(variables[2]);
+        const auto* second = serialize(variables[3]);
+        expectId(first->metadata().decl_id(), variableId("::packedint<0,1,23>"));
+        expectId(second->metadata().decl_id(), variableId("::packedint<0,12,3>"));
+        EXPECT_NE(identity(first), identity(second));
     }
 
     TEST_F(VarDeclWrapperTest, SourceFileAndDocumentationChangeMetadataButNotIdentity) {

@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <type_traits>
 
-#include "ProtoAssertions.hpp"
+#include "CallableTest.hpp"
 #include "UEMeta/utility/DeclException.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
@@ -300,7 +300,7 @@ namespace {
         DeclDb::serializeIfNeeded(decls[2]);
         DeclDb::serializeIfNeeded(decls[2]);
         DeclDb::serializeIfNeeded(decls[3]); // A written redeclaration after the definition still counts.
-        const auto id = enumId("::Target");  // All three no-parameter declarations hash this name.
+        const auto id = std::is_same_v<TypeParam, clang::FunctionDecl> ? functionId("::Target") : enumId("::Target");
         expectQuery(DeclDb::queryDeclIdentity(decls[2]), id);
         EXPECT_EQ(DeclDb::queryDecl(id), decls[2]);
         const auto files = this->outputFiles();
@@ -340,7 +340,7 @@ namespace {
         DeclDb::serializeIfNeeded(functions[0]);
         DeclDb::serializeIfNeeded(variables[0]);
         EXPECT_EQ(outputFiles().size(), 2u);
-        const auto                             function_metadata = metadata("::external", enumId("::external"), 0);
+        const auto                             function_metadata = metadata("::external", functionId("::external"), 0);
         const auto                             variable_metadata = metadata("::variable", variableId("::variable"), 1);
         ParserTypes::TLFreeFunctionDeclaration function;
         std::ifstream                          function_file{outputPath(function_metadata, "functionbin"), std::ios::binary};
@@ -449,13 +449,13 @@ namespace {
         ASSERT_EQ(functions[0]->getLexicalDeclContext(), owners[0]);
         ASSERT_EQ(functions[0]->getDeclContext(), context->getTranslationUnitDecl());
         DeclDb::serializeIfNeeded(functions[0]);
-        expectQuery(DeclDb::queryDeclIdentity(functions[0]), enumId("::external"));
+        expectQuery(DeclDb::queryDeclIdentity(functions[0]), functionId("::external"));
         const auto files = outputFiles();
         ASSERT_EQ(files.size(), 1u);
         ParserTypes::TLFreeFunctionDeclaration function;
         std::ifstream                          input{files[0], std::ios::binary};
         ASSERT_TRUE(function.ParseFromIstream(&input));
-        expectProto(function.metadata(), metadata("::external", enumId("::external"), 0));
+        expectProto(function.metadata(), metadata("::external", functionId("::external"), 0));
     }
 
     TEST_F(DeclDbTest, ImplicitRecordEnumFunctionAndVariableInstantiationsDoNotSerialize) {

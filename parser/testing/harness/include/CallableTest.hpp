@@ -32,7 +32,7 @@ namespace UEMeta::Testing {
         return message;
     }
 
-    inline Hash functionId(std::string_view name, std::string_view signature = "") {
+    inline Hash functionId(std::string_view name, std::string_view signature = "()") {
         boost::hash2::xxh3_128 hasher;
         boost::hash2::hash_append(hasher, boost::hash2::little_endian_flavor{}, name);
         hasher.update(signature.data(), signature.size());

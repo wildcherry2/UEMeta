@@ -144,11 +144,17 @@ namespace UEMeta {
             boost::hash2::xxh3_128 hasher;
             boost::hash2::hash_append(hasher, boost::hash2::little_endian_flavor{}, fqn);
 
+            hasher.update("(", 1);
+            bool first_parameter = true;
             for (const clang::ParmVarDecl* parameter : Super::decl->parameters()) {
+                if (!first_parameter)
+                    hasher.update(",", 1);
+                first_parameter = false;
                 const std::string parameter_type = clang::TypeName::getFullyQualifiedName(parameter->getType(), Super::getASTContext(),
                                                                                           Super::getTypePrintingPolicy(parameter->getType()), true);
                 hasher.update(parameter_type.data(), parameter_type.size());
             }
+            hasher.update(")", 1);
 
             // cv/ref qualifiers distinguish otherwise identical member overloads.
             if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(Super::decl)) {

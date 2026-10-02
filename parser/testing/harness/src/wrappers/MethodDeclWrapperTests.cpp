@@ -61,7 +61,7 @@ namespace {
         auto traits              = methodCommon(ParserTypes::FUNCTION_KIND_MEMBER, "int");
         *traits.add_parameters() = parameter("index", "int", "2");
         const auto expected      =
-            expectedMethod("read", functionId("::N::Owner::read", "int const volatile &"), traits, ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, true);
+            expectedMethod("read", functionId("::N::Owner::read", "(int) const volatile &"), traits, ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, true);
         const auto  before  = outputFiles();
         const auto* message = serialize(functions[0], true);
         ASSERT_NE(message, nullptr);
@@ -69,7 +69,7 @@ namespace {
         EXPECT_EQ(message->common().GetArena(), arena.get());
         expectProto(*message, expected);
         expectUnregistered(functions[0]);
-        EXPECT_EQ(UEMeta::DeclDb::queryDecl(functionId("::N::Owner::read", "int const volatile &")), nullptr);
+        EXPECT_EQ(UEMeta::DeclDb::queryDecl(functionId("::N::Owner::read", "(int) const volatile &")), nullptr);
         EXPECT_EQ(outputFiles(), before);
     }
 
@@ -105,7 +105,7 @@ namespace {
         };)cpp");
         ASSERT_EQ(functions.size(), 7u);
         const std::vector<std::string> names{"Owner", "Owner", "Owner", "~Owner", "operator bool", "operator int", "create"};
-        const std::vector<std::string> signatures{"", "int", "double", "", " const", " volatile", "int"};
+        const std::vector<std::string> signatures{"()", "(int)", "(double)", "()", "() const", "() volatile", "(int)"};
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
             ParserTypes::FunctionCommon traits;
@@ -138,7 +138,7 @@ namespace {
         auto traits = methodCommon(ParserTypes::FUNCTION_KIND_MEMBER_CONVERSION, "::A::Alias");
         *traits.mutable_return_type()->mutable_is_builtin_or_template() = boolean(false);
         *traits.mutable_is_explicit() = boolean(false);
-        const auto expected           = expectedMethod("operator ::A::Result", functionId("::B::Source::operator ::A::Result", " const"), traits,
+        const auto expected           = expectedMethod("operator ::A::Result", functionId("::B::Source::operator ::A::Result", "() const"), traits,
                                                        ParserTypes::ACCESS_SPECIFIER_PUBLIC, true);
         expectProto(*serialize(functions[0]), expected);
     }
@@ -146,7 +146,7 @@ namespace {
     TEST_F(MethodDeclWrapperTest, CvAndReferenceQualifiersDistinguishOtherwiseIdenticalOverloads) {
         const auto functions = parse("struct Owner { int value() &; int value() const &; int value() volatile &; int value() &&; };");
         ASSERT_EQ(functions.size(), 4u);
-        const std::vector<std::string> signatures{" &", " const &", " volatile &", " &&"};
+        const std::vector<std::string> signatures{"() &", "() const &", "() volatile &", "() &&"};
         std::vector<UEMeta::Hash>      ids;
         for (std::size_t index = 0; index < functions.size(); ++index) {
             SCOPED_TRACE(index);
@@ -408,7 +408,7 @@ namespace {
     TEST_F(MethodDeclWrapperTest, DependentVirtualMethodsPreserveTypesWithoutInventingLayout) {
         const auto functions = parse("template<class T> struct Owner { virtual T get() const = 0; };");
         ASSERT_EQ(functions.size(), 1u);
-        auto expected = expectedMethod("get", functionId("::Owner<T>::get", " const"), methodCommon(ParserTypes::FUNCTION_KIND_MEMBER, "T"),
+        auto expected = expectedMethod("get", functionId("::Owner<T>::get", "() const"), methodCommon(ParserTypes::FUNCTION_KIND_MEMBER, "T"),
                                        ParserTypes::ACCESS_SPECIFIER_PUBLIC, true, false, false, ParserTypes::FUNCTION_VIRTUALITY_PURE);
         expectProto(*serialize(functions[0]), expected);
     }
@@ -424,7 +424,7 @@ namespace {
                 type { type_name { versions { source_versions: "test-version" value: "T" } } is_builtin_or_template: true }
             }
         )pb");
-        const auto primary_id                      = functionId("::Owner::select", "T<typename>");
+        const auto primary_id                      = functionId("::Owner::select", "(T)<typename>");
         expectProto(*serialize(functions[0]), expectedMethod("select", primary_id, primary_traits));
         expectUnregistered(functions[0]);
         // Even if a caller erroneously registers a member, no top-level reference should leak into its specialization.
@@ -438,7 +438,7 @@ namespace {
                 type { type_name { versions { source_versions: "test-version" value: "int" } } is_builtin_or_template: true }
             }
         )pb");
-        expectProto(*serialize(functions[1]), expectedMethod("select", functionId("::Owner::select", "int<int>"), specialized_traits));
+        expectProto(*serialize(functions[1]), expectedMethod("select", functionId("::Owner::select", "(int)<int>"), specialized_traits));
         expectUnregistered(functions[1]);
     }
 
@@ -448,7 +448,7 @@ namespace {
         auto*                                  method     = llvm::cast<clang::CXXMethodDecl>(functions[0]);
         const auto*                            message    = MethodDeclWrapper{method, arena}.toIntermediateRepresentation();
         ParserTypes::TLFreeFunctionDeclaration expected;
-        *expected.mutable_metadata() = metadata("::Owner::read", functionId("::Owner::read", " const"), 0);
+        *expected.mutable_metadata() = metadata("::Owner::read", functionId("::Owner::read", "() const"), 0);
         *expected.mutable_common()   = methodCommon(ParserTypes::FUNCTION_KIND_MEMBER, "int");
         expectProto(*message, expected);
         expectUnregistered(method);
@@ -468,7 +468,7 @@ namespace {
             *traits.mutable_inline_definition() = versioned<ParserTypes::VersionedString>(bodies[index]);
             *traits.mutable_consteval_kind()    = versioned<ParserTypes::VersionedConstantEvaluationKind>(
                 index == 0 ? ParserTypes::CONSTANT_EVALUATION_CONSTEXPR : ParserTypes::CONSTANT_EVALUATION_CONSTEVAL);
-            expectProto(*serialize(functions[index]), expectedMethod(names[index], functionId("::Owner::" + names[index], "int const"), traits,
+            expectProto(*serialize(functions[index]), expectedMethod(names[index], functionId("::Owner::" + names[index], "(int) const"), traits,
                                                                      ParserTypes::ACCESS_SPECIFIER_PUBLIC, true));
         }
     }

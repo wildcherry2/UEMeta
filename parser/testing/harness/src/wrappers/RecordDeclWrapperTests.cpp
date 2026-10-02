@@ -194,7 +194,7 @@ namespace {
                 const auto& argument = actual->template_details().specialized_parameters(0);
                 EXPECT_EQ(argument.kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC);
                 expectProto(argument.type(), builtin("type-parameter-0-0[N]"));
-                const auto id = recordId("::Box<T[N]>", "<typenameint><typename>");
+                const auto id = recordId("::Box<T[N]>", "<typename,int><typename>");
                 EXPECT_EQ(UEMeta::Hash{actual->metadata().decl_id()}, id);
                 expectRegistered(records[1], id);
                 EXPECT_EQ(context.getPrintingPolicy().FullyQualifiedName, fully_qualified_policy);
@@ -239,7 +239,7 @@ namespace {
                 ASSERT_NE(actual, nullptr);
                 EXPECT_EQ(actual->metadata().qualified_name(), "::Trait<T[N], Predicate>");
                 EXPECT_EQ(UEMeta::Hash{actual->metadata().decl_id()},
-                          recordId("::Trait<T[N], Predicate>", "<typenameinttypename<typename>><typenametypename>"));
+                          recordId("::Trait<T[N], Predicate>", "<typename,int,typename<typename>><typename,typename>"));
                 ASSERT_EQ(actual->fields_size(), 4);
                 expectVersioned(actual->fields(0).default_value(), "Predicate<T>::Value");
                 expectVersioned(actual->fields(1).default_value(), "N");
@@ -295,8 +295,8 @@ namespace {
                     fully_qualified_policy ? "Scope::Box<Left::Value>" : "::Scope::Box< ::Left::Value>",
                     fully_qualified_policy ? "Scope::Box<Right::Value>" : "::Scope::Box< ::Right::Value>"};
                 const std::vector<std::string> signatures{
-                    "", "", "<typename>", "<typenameint><typename>", "<typenameint><typename>",
-                    "<typenameintint><typename>", "<int><typename>", "<int><typename>", "<::Left::Value>", "<::Right::Value>"};
+                    "", "", "<typename>", "<typename,int><typename>", "<typename,int><typename>",
+                    "<typename,int,int><typename>", "<int><typename>", "<int><typename>", "<::Left::Value>", "<::Right::Value>"};
                 for (size_t i = 0; i < records.size(); ++i) {
                     SCOPED_TRACE(names[i]);
                     const auto* actual = serialize(records[i]);
@@ -811,7 +811,7 @@ namespace {
         const auto records = parse("struct Known {}; template<class T, class... Bases> struct Derived : Known, T, Bases... {};");
         ASSERT_EQ(records.size(), 2u);
         // Known deliberately is not serialized: references must not invent identities.
-        auto expected = record("::Derived<T, Bases...>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typenametypename...>");
+        auto expected = record("::Derived<T, Bases...>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typename,typename...>");
         *expected.mutable_template_details()->add_parameters() = typeParameter("T");
         *expected.mutable_template_details()->add_parameters() = typeParameter("Bases", true);
         auto known                                             = builtin("::Known");
@@ -864,7 +864,7 @@ namespace {
             enum { Count = N + 1 };
         };)cpp");
         ASSERT_EQ(records.size(), 3u);
-        auto expected = record("::Dependent<T, N>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typenameint>");
+        auto expected = record("::Dependent<T, N>", 0, ParserTypes::RECORD_KIND_STRUCT, std::nullopt, std::nullopt, "<typename,int>");
         *expected.mutable_template_details() = proto<ParserTypes::TemplateDetails>(R"pb(
             parameters { kind: TEMPLATE_PARAMETER_KIND_CLASS type { type_name { versions { source_versions: "test-version" value: "T" } } is_builtin_or_template: true } }
             parameters { kind: TEMPLATE_PARAMETER_KIND_NON_TYPE name { versions { source_versions: "test-version" value: "N" } } type { type_name { versions { source_versions: "test-version" value: "int" } } is_builtin_or_template: true } }
@@ -1031,7 +1031,7 @@ namespace {
             SCOPED_TRACE(names[i]);
             const auto& method = actual->methods(i);
             EXPECT_EQ(method.name(), names[i]);
-            expectId(method.func_id(), recordId("::Derived::" + names[i], i == 0 ? " const" : ""));
+            expectId(method.func_id(), recordId("::Derived::" + names[i], i == 0 ? "() const" : "()"));
             EXPECT_EQ(method.GetArena(), arena.get());
             expectProto(method.is_const(), boolean(i == 0));
             expectProto(method.is_volatile(), boolean(false));
@@ -1068,7 +1068,7 @@ namespace {
             else {
                 EXPECT_FALSE(method.has_virtual_dispatch());
             }
-            EXPECT_EQ(UEMeta::DeclDb::queryDecl(recordId("::Derived::" + names[i], i == 0 ? " const" : "")), nullptr);
+            EXPECT_EQ(UEMeta::DeclDb::queryDecl(recordId("::Derived::" + names[i], i == 0 ? "() const" : "()")), nullptr);
         }
         EXPECT_EQ(outputFiles(), before);
     }
@@ -1083,7 +1083,7 @@ namespace {
         ASSERT_EQ(actual->methods_size(), 1);
         const auto& method = actual->methods(0);
         EXPECT_EQ(method.name(), "get");
-        expectId(method.func_id(), recordId("::Abstract<T>::get", " const"));
+        expectId(method.func_id(), recordId("::Abstract<T>::get", "() const"));
         expectVersioned(method.virtuality(), ParserTypes::FUNCTION_VIRTUALITY_PURE);
         expectProto(method.is_const(), boolean(true));
         ASSERT_TRUE(method.common().has_return_type());
@@ -1129,7 +1129,7 @@ namespace {
         ASSERT_EQ(actual->methods_size(), 1);
         const auto& method = actual->methods(0);
         EXPECT_EQ(method.name(), "method");
-        expectId(method.func_id(), recordId("::Owner::method", "T<typename>"));
+        expectId(method.func_id(), recordId("::Owner::method", "(T)<typename>"));
         ASSERT_EQ(method.common().parameters_size(), 1);
         expectVersioned(method.common().parameters(0).name(), "input");
         expectProto(method.common().parameters(0).type_ref(), builtin("T"));
