@@ -89,17 +89,19 @@ UEMeta::StablePath UEMeta::StablePath::currentProgramDirectory() noexcept {
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 UEMeta::StablePath UEMeta::StablePath::currentProgramPath() noexcept {
+    static StablePath cached_path;
+    if (cached_path && !cached_path.isEmptyPath()) return cached_path;
     wchar_t path[MAX_PATH];
     if (GetModuleFileNameW(NULL, path, MAX_PATH) > 0) {
-        if (auto out = StablePath(std::filesystem::path(path)))
-            return out;
-        else
-            UEM_ERROR("StablePath::currentProgramPath failed with error: {}!", out.last_error.value());
+        if ((cached_path = StablePath(std::filesystem::path(path))))
+            return cached_path;
+        UEM_ERROR("StablePath::currentProgramPath failed with error: {}!", cached_path.last_error.value());
+        return cached_path;
     }
-    auto out = StablePath();
-    out.last_error.assign(GetLastError(), std::system_category());
-    UEM_ERROR("StablePath::currentProgramPath failed with error: {}!", out.last_error.value());
-    return out;
+
+    cached_path.last_error.assign(GetLastError(), std::system_category());
+    UEM_ERROR("StablePath::currentProgramPath failed with error: {}!", cached_path.last_error.value());
+    return cached_path;
 }
 
 #elif defined(__linux__)

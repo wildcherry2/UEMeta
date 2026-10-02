@@ -66,11 +66,14 @@ std::unique_ptr<CompilationDatabase> UEMeta::MetaTool::loadCompileDatabase(const
     if (commands.empty()) {
         throw std::runtime_error("(llvm) compile_commands JSON buffer does not contain any compile commands.");
     }
-    for (const auto& command : commands) {
-        if (command.CommandLine.empty()) {
-            throw std::runtime_error(
-                fmtquill::format("(llvm) Found compile command for file \"{}\", but its command line is empty.", command.Filename));
-        }
+    if (commands.size() > 1) {
+        throw std::runtime_error(fmtquill::format(
+            "(llvm) compile_commands JSON buffer contains {} entries; the parser requires exactly one translation unit.", commands.size()));
+    }
+    const auto& command = commands.front();
+    if (command.CommandLine.empty()) {
+        throw std::runtime_error(
+            fmtquill::format("(llvm) Found compile command for file \"{}\", but its command line is empty.", command.Filename));
     }
 
     UEM_INFO("Using filtered compile_commands JSON buffer ({} bytes)", cc_json.size());

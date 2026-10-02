@@ -15,6 +15,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Lex/Lexer.h"
 
 llvm::DenseMap<clang::FileID, std::set<UEMeta::ReflectionDb::ReflectionMacro, std::less<>>> UEMeta::ReflectionDb::file_to_reflection_macro_map;
 llvm::DenseMap<clang::FileID, std::set<UEMeta::ReflectionDb::DeclWithSource, std::less<>>>  UEMeta::ReflectionDb::file_to_decl_source_map;
@@ -62,6 +63,10 @@ void UEMeta::ReflectionDb::registerReflectable(const clang::RecordDecl* decl, co
 
 void UEMeta::ReflectionDb::registerReflectable(const clang::CXXMethodDecl* decl, const Hash& owner_id, const Hash& func_id) {
     if (!unrealEnabled() || !decl || registered_decls.contains(decl))
+        return;
+    // Implicit methods have no written annotation. Their borrowed source locations
+    // can point at the owning record's name and incorrectly claim its USTRUCT/UCLASS.
+    if (decl->isImplicit())
         return;
     clang::SourceRange range = decl->getSourceRange();
     if (decl->hasInlineBody() || decl->doesThisDeclarationHaveABody()) {
@@ -280,8 +285,21 @@ std::string_view UEMeta::ReflectionDb::getPackageIfReflected(const clang::Decl* 
                                                              FlagT              assert_refl_kind) {
     if (begin.isInvalid() || end.isInvalid())
         return {};
-    auto [begin_file, begin_offset] = decl->getASTContext().getSourceManager().getDecomposedExpansionLoc(begin);
-    auto [end_file, end_offset]     = decl->getASTContext().getSourceManager().getDecomposedExpansionLoc(end);
+    const auto& context = decl->getASTContext();
+    const auto& source  = context.getSourceManager();
+    if (end.isMacroID()) {
+        // Expansion locations collapse generated declarations to the invocation's
+        // start. Consume the whole invocation so its reflection macro cannot
+        // annotate a following declaration (e.g. consecutive dynamic delegates).
+        const auto expansion = source.getExpansionRange(end);
+        end = expansion.getEnd();
+        if (expansion.isTokenRange())
+            end = clang::Lexer::getLocForEndOfToken(end, 0, source, context.getLangOpts());
+        if (end.isInvalid())
+            return {};
+    }
+    auto [begin_file, begin_offset] = source.getDecomposedExpansionLoc(begin);
+    auto [end_file, end_offset]     = source.getDecomposedExpansionLoc(end);
 
     if (begin_file != end_file)
         return {};

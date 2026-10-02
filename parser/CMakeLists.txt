@@ -630,14 +630,17 @@ set_property(DIRECTORY APPEND PROPERTY
     ADDITIONAL_CLEAN_FILES "${PARSER_BUNDLE_DIR}"
 )
 
-# LibTooling runs in-process; package the parser executable and its debug symbols.
+# LibTooling runs in-process; package the executable, Clang resources, and debug symbols.
 add_custom_command(TARGET parser POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory
         "${PARSER_BUNDLE_DIR}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "$<TARGET_FILE:parser>"
         "${PARSER_BUNDLE_DIR}/$<TARGET_FILE_NAME:parser>"
-    COMMENT "Bundling parser executable"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory
+        "${llvm_prebuilt_SOURCE_DIR}/lib/clang/${LLVM_VERSION_MAJOR}"
+        "${PARSER_BUNDLE_DIR}/resources"
+    COMMENT "Bundling parser executable and Clang resources"
     VERBATIM
 )
 

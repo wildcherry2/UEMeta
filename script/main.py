@@ -12,6 +12,4 @@ if __name__ == "__main__":
                      enable_unreal_extensions=True,
                      log_level="info",
                      format="json",
-                     output=Path(r"D:\intermediate\ParserOutput"),
-                     additional_clang_args=["-resource-dir=D:/UEMeta/parser/intermediate/deps/src/"
-                                            "clang+llvm-23.1.0-x86_64-pc-windows-msvc/lib/clang/23"])
+                     output=Path(r"D:\intermediate\ParserOutput"))

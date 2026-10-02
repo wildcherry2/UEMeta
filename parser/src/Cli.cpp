@@ -28,7 +28,7 @@ constexpr auto STRIP_COMMANDS_HELP = "List of compile commands to ignore/strip f
 constexpr auto ADDITIONAL_CLANG_ARGS_HELP = "List of additional clang args to force into the command list passed to the "
     "in-process Clang driver.\n"
     "-mwaitpkg and -fno-access-control are always added, with /clang: prefixes "
-    "in clang-cl mode.";
+    "in clang-cl mode. -resource-dir always points to the resources folder beside the parser executable.";
 
 constexpr auto LOG_HELP = "Path to log file.\nIf empty, no logs will be saved.\nIf given, it should be relative to the "
     "directory of parser.exe, or absolute.";
@@ -274,6 +274,7 @@ UEMeta::Config::InitializationResult UEMeta::Config::initialize(int argc, char**
         }
         cfg.strip_commands.insert_range(UEM_DEFAULT_STRIP_LIST);
         cfg.additional_clang_args.insert_range(cfg.additional_clang_args.end(), cfg.prefer_clang ? UEM_DEFAULT_CLANG_ADDL_ARGS : UEM_DEFAULT_CLANG_CL_ADDL_ARGS);
+        cfg.additional_clang_args.emplace_back("-resource-dir=" + (StablePath::currentProgramDirectory() / "resources").string());
     }
 
     if ((cfg.mode == Mode::Parser_CC || cfg.mode == Mode::Parser_Cache) && cfg.output_directory.isEmptyPath()) {

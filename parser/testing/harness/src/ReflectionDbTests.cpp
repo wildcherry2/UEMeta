@@ -682,6 +682,32 @@ namespace {
         });
     }
 
+    TEST_F(ReflectionDbTest, DelegateMacroExpansionsDoNotAnnotateFollowingDeclarations) {
+        for (const std::string macro : {"DECLARE_DYNAMIC_DELEGATE_OneParam", "DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam",
+                                        "DECLARE_DYNAMIC_MULTICAST_SPARSE_DELEGATE_OneParam"}) {
+            SCOPED_TRACE(macro);
+            const std::string code =
+                "#define DECLARE_BODY(Name, Type, Arg) class Name { public: void Broadcast(Type Arg) {} };\n"
+                "#define " + macro + "(Name, Type, Arg) DECLARE_BODY(Name, Type, Arg)\n"
+                "#define WRAPPED_DELEGATE(Name) " + macro + "(Name, int, Value)\n" +
+                macro + "(FirstDelegate, int, Value);\n" +
+                macro + "(SecondDelegate, int, Value);\n"
+                "WRAPPED_DELEGATE(WrappedDelegate)struct Plain {};\n"
+                "USTRUCT() struct Reflected { UPROPERTY() int field; };\n";
+            parse(code, [](clang::ASTContext& context) {
+                expectPackages(context, {{"FirstDelegate", ""},
+                                         {"FirstDelegate::Broadcast", ""},
+                                         {"SecondDelegate", ""},
+                                         {"SecondDelegate::Broadcast", ""},
+                                         {"WrappedDelegate", ""},
+                                         {"WrappedDelegate::Broadcast", ""},
+                                         {"Plain", ""},
+                                         {"Reflected", "DummyModule"},
+                                         {"Reflected::field", "DummyModule"}});
+            });
+        }
+    }
+
     TEST_F(ReflectionDbTest, DelegateKindsAreNotMistakenForRecordAnnotations) {
         for (const auto kind : {ParserTypes::REFLECTION_KIND_DYNAMIC_DELEGATE, ParserTypes::REFLECTION_KIND_DYNAMIC_DELEGATE_MULTICAST,
                                 ParserTypes::REFLECTION_KIND_DYNAMIC_DELEGATE_MULTICAST_SPARSE}) {
@@ -1081,6 +1107,41 @@ namespace {
             EXPECT_EQ(legacy->GetDescriptor()->FindFieldByName("reflected_namespace"), nullptr);
             EXPECT_EQ(ParserTypes::Field::descriptor()->FindFieldByName("is_reflected"), nullptr);
             EXPECT_EQ(ParserTypes::MemberFunction::descriptor()->FindFieldByName("is_reflected"), nullptr);
+            UEMeta::DeclDb::reset();
+        });
+    }
+
+    TEST_F(ReflectionDbTest, ImplicitVirtualDestructorsRetainMetadataWithoutClaimingReflectionAnnotations) {
+        parse(R"cpp(
+            struct Base { virtual ~Base() = default; };
+            USTRUCT() struct Owner : Base {
+                UPROPERTY() int field;
+                UFUNCTION() void method();
+            };
+            Owner instance;
+        )cpp", [](clang::ASTContext& context) {
+            UEMeta::DeclDb::reset();
+            const auto* declaration = find<clang::CXXRecordDecl>(context, "Owner");
+            ASSERT_NE(declaration, nullptr);
+            const auto* destructor = declaration->getDestructor();
+            ASSERT_NE(destructor, nullptr);
+            ASSERT_TRUE(destructor->isImplicit());
+            ASSERT_TRUE(destructor->isVirtual());
+
+            const auto arena = std::make_shared<google::protobuf::Arena>();
+            auto ir = UEMeta::RecordDeclWrapper(declaration, arena).toIntermediateRepresentation();
+            const auto* owner = std::get<ParserTypes::TLRecordDeclaration*>(ir);
+            const auto method = std::find_if(owner->methods().begin(), owner->methods().end(),
+                                             [](const auto& value) { return value.name() == "~Owner"; });
+            ASSERT_NE(method, owner->methods().end());
+            EXPECT_EQ(method->common().kind(), ParserTypes::FUNCTION_KIND_DESTRUCTOR);
+            const auto cache = readSerializedCache();
+            ASSERT_EQ(cache.records_size(), 1);
+            EXPECT_EQ(UEMeta::Hash{cache.records(0).decl_id()}, UEMeta::Hash{owner->metadata().decl_id()});
+            ASSERT_EQ(cache.fields_size(), 1);
+            EXPECT_EQ(cache.fields(0).name(), "field");
+            ASSERT_EQ(cache.methods_size(), 1);
+            EXPECT_NE(UEMeta::Hash{cache.methods(0).func_id()}, UEMeta::Hash{method->func_id()});
             UEMeta::DeclDb::reset();
         });
     }
