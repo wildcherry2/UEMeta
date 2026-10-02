@@ -209,6 +209,57 @@ namespace {
         }
     }
 
+    TEST_F(RecordDeclWrapperDeathTest, ArrayPartialSpecializationPrintsDependentInitializersBodiesAndDefaults) {
+        GTEST_FLAG_SET(death_test_style, "threadsafe");
+        for (bool fully_qualified_policy : {false, true}) {
+            SCOPED_TRACE(fully_qualified_policy);
+            const auto verify_serialization = [this, fully_qualified_policy] {
+                const auto records = parse(R"cpp(
+                    namespace Constants { constexpr int k = 7; }
+                    using Constants::k;
+                    template<class T, template<class> class Predicate> struct Trait {};
+                    template<class T, int N, template<class> class Predicate> struct Trait<T[N], Predicate> {
+                        enum { Value = Predicate<T>::Value };
+                        int count = N;
+                        static constexpr int Width = N;
+                        int concrete = k;
+                        int read(int fallback = N) { return Predicate<T>::Value + fallback; }
+                        // Extent has a fixed value, but printing its template references must still be guarded.
+                        template<int Count = N, template<class> class P = Predicate, class U = T[N], int Extent = sizeof(sizeof(T[N]))>
+                        struct Nested {};
+                    };
+                )cpp");
+                ASSERT_EQ(records.size(), 3u);
+                auto& context = records[0]->getASTContext();
+                auto policy = context.getPrintingPolicy();
+                policy.FullyQualifiedName = fully_qualified_policy;
+                context.setPrintingPolicy(policy);
+                ASSERT_NE(serialize(records[0]), nullptr);
+                const auto* actual = serialize(records[1]);
+                ASSERT_NE(actual, nullptr);
+                EXPECT_EQ(actual->metadata().qualified_name(), "::Trait<T[N], Predicate>");
+                EXPECT_EQ(UEMeta::Hash{actual->metadata().decl_id()},
+                          recordId("::Trait<T[N], Predicate>", "<typenameinttypename<typename>><typenametypename>"));
+                ASSERT_EQ(actual->fields_size(), 4);
+                expectVersioned(actual->fields(0).default_value(), "Predicate<T>::Value");
+                expectVersioned(actual->fields(1).default_value(), "N");
+                expectVersioned(actual->fields(2).default_value(), "N");
+                // A concrete initializer within a dependent record still uses the original FQN policy.
+                expectVersioned(actual->fields(3).default_value(), fully_qualified_policy ? "Constants::k" : "k");
+                ASSERT_EQ(actual->methods_size(), 1);
+                const auto& method = actual->methods(0).common();
+                ASSERT_EQ(method.parameters_size(), 1);
+                expectVersioned(method.parameters(0).default_value(), "N");
+                expectVersioned(method.inline_definition(), "{\n    return Predicate<T>::Value + fallback;\n}\n");
+                EXPECT_EQ(context.getPrintingPolicy().FullyQualifiedName, fully_qualified_policy);
+            };
+            ASSERT_EXIT({
+                verify_serialization();
+                std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+            }, ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+        }
+    }
+
     TEST_F(RecordDeclWrapperDeathTest, DependentArgumentsPreserveStructureAndConcreteScopesInHashes) {
         GTEST_FLAG_SET(death_test_style, "threadsafe");
         const auto verify_serialization = [this] {

@@ -82,7 +82,7 @@ namespace UEMeta {
                 if (const clang::Stmt* body = Super::decl->getBody()) {
                     std::string              out;
                     llvm::raw_string_ostream os{out};
-                    body->printPretty(os, nullptr, Super::getASTContext().getPrintingPolicy());
+                    body->printPretty(os, nullptr, Super::getPrintingPolicyForDependence(Super::decl->isDependentContext()));
                     setVersionedString(p_msg->mutable_inline_definition(), out);
                 }
             }
@@ -102,7 +102,7 @@ namespace UEMeta {
                     if (const clang::Expr* default_argument = parameter->getDefaultArg()) {
                         std::string              out;
                         llvm::raw_string_ostream os{out};
-                        default_argument->printPretty(os, nullptr, Super::getASTContext().getPrintingPolicy());
+                        default_argument->printPretty(os, nullptr, Super::getPrintingPolicyForDependence(default_argument->isInstantiationDependent()));
                         setVersionedString(p_parameter->mutable_default_value(), out);
                     }
                 }

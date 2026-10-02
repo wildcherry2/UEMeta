@@ -604,7 +604,7 @@ void UEMeta::RecordDeclWrapper::putInitializer(const clang::Expr* initializer, P
     // Match VarDeclWrapper's source-level initializer serialization.
     std::string              out;
     llvm::raw_string_ostream os{out};
-    initializer->printPretty(os, nullptr, getASTContext().getPrintingPolicy());
+    initializer->printPretty(os, nullptr, getPrintingPolicyForDependence(initializer->isInstantiationDependent()));
     setVersionedString(p_msg, out);
 }
 

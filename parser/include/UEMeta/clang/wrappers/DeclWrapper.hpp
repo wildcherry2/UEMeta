@@ -172,14 +172,18 @@ namespace UEMeta {
             }
         }
 
-        [[nodiscard]] clang::PrintingPolicy getTypePrintingPolicy(clang::QualType type) const {
+        [[nodiscard]] clang::PrintingPolicy getPrintingPolicyForDependence(bool is_dependent) const {
             auto policy = getASTContext().getPrintingPolicy();
-            // Qualifying a dependent argument can recurse through its owning specialization:
-            // N -> Box<T[N]>::N -> Box<T[N]>::... . TypeName still supplies type scopes,
-            // and argument structure is retained for hashing. Ordinary types keep their policy.
-            if (type->isDependentType())
+            // Dependent references in types AND expressions can recurse through their
+            // owning specialization: N -> Box<T[N]>::N -> Box<T[N]>::... . TypeName
+            // still supplies type scopes; concrete printing and hash fragments are unchanged.
+            if (is_dependent)
                 policy.FullyQualifiedName = false;
             return policy;
+        }
+
+        [[nodiscard]] clang::PrintingPolicy getTypePrintingPolicy(clang::QualType type) const {
+            return getPrintingPolicyForDependence(type->isInstantiationDependentType());
         }
 
         void putContextFQN(llvm::raw_string_ostream& out_stream, const clang::Decl* for_decl = nullptr) const {
@@ -268,7 +272,8 @@ namespace UEMeta {
                         if (non_type_param->hasDefaultArgument()) {
                             std::string              out;
                             llvm::raw_string_ostream os{out};
-                            non_type_param->getDefaultArgument().getArgument().print(decl->getASTContext().getPrintingPolicy(), os, true);
+                            const auto& argument = non_type_param->getDefaultArgument().getArgument();
+                            argument.print(getPrintingPolicyForDependence(argument.isInstantiationDependent()), os, true);
                             setVersionedString(p_param->mutable_value(), out);
                         }
                     }
@@ -300,10 +305,7 @@ namespace UEMeta {
                 const auto print_argument = [this](const clang::TemplateArgument& argument) {
                     std::string              out;
                     llvm::raw_string_ostream os{out};
-                    auto policy = getASTContext().getPrintingPolicy();
-                    if (argument.isDependent())
-                        policy.FullyQualifiedName = false;
-                    argument.print(policy, os, true);
+                    argument.print(getPrintingPolicyForDependence(argument.isInstantiationDependent()), os, true);
                     return out;
                 };
 
@@ -554,7 +556,7 @@ namespace UEMeta {
             else {
                 // Parameters and dependent names retain their own qualifiers, not the declaration's enclosing scope.
                 llvm::raw_string_ostream os{fqn};
-                template_name.print(os, getASTContext().getPrintingPolicy());
+                template_name.print(os, getPrintingPolicyForDependence(argument.isInstantiationDependent()));
             }
 
             if (id_out_ptr)
@@ -576,7 +578,7 @@ namespace UEMeta {
 
             std::string              out;
             llvm::raw_string_ostream os{out};
-            def.print(decl->getASTContext().getPrintingPolicy(), os, true);
+            def.print(getPrintingPolicyForDependence(def.isInstantiationDependent()), os, true);
             putTypeRef(out, DeclDb::QueryResult{true}, p_def);
         }
 

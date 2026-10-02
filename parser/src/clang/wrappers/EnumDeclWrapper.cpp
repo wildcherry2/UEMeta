@@ -130,7 +130,7 @@ void UEMeta::EnumDeclWrapper::serializeAsFields(ParserTypes::AccessSpecifier acc
         if (const auto* initializer = enumerator->getInitExpr(); initializer && initializer->isValueDependent()) {
             std::string              out;
             llvm::raw_string_ostream os{out};
-            initializer->printPretty(os, nullptr, getASTContext().getPrintingPolicy());
+            initializer->printPretty(os, nullptr, getPrintingPolicyForDependence(initializer->isInstantiationDependent()));
             setVersionedString(p_field->mutable_default_value(), out);
         }
         else {
