@@ -172,6 +172,16 @@ namespace UEMeta {
             }
         }
 
+        [[nodiscard]] clang::PrintingPolicy getTypePrintingPolicy(clang::QualType type) const {
+            auto policy = getASTContext().getPrintingPolicy();
+            // Qualifying a dependent argument can recurse through its owning specialization:
+            // N -> Box<T[N]>::N -> Box<T[N]>::... . TypeName still supplies type scopes,
+            // and argument structure is retained for hashing. Ordinary types keep their policy.
+            if (type->isDependentType())
+                policy.FullyQualifiedName = false;
+            return policy;
+        }
+
         void putContextFQN(llvm::raw_string_ostream& out_stream, const clang::Decl* for_decl = nullptr) const {
             const clang::Decl* context_owner = for_decl ? for_decl : decl;
             if (!context_owner || !context_owner->getDeclContext()) {
@@ -290,7 +300,10 @@ namespace UEMeta {
                 const auto print_argument = [this](const clang::TemplateArgument& argument) {
                     std::string              out;
                     llvm::raw_string_ostream os{out};
-                    argument.print(decl->getASTContext().getPrintingPolicy(), os, true);
+                    auto policy = getASTContext().getPrintingPolicy();
+                    if (argument.isDependent())
+                        policy.FullyQualifiedName = false;
+                    argument.print(policy, os, true);
                     return out;
                 };
 
@@ -372,7 +385,7 @@ namespace UEMeta {
                             }
                             else {
                                 const std::string generic_type_name = clang::TypeName::getFullyQualifiedName(
-                                    pattern.getAsType(), getASTContext(), getASTContext().getPrintingPolicy(), true);
+                                    pattern.getAsType(), getASTContext(), getTypePrintingPolicy(pattern.getAsType()), true);
                                 put_generic_type_ref(generic_type_name, p_param->mutable_type());
                             }
                             append_out(std::string_view{"typename"});
@@ -571,7 +584,7 @@ namespace UEMeta {
             requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
         void putType(const clang::QualType type, Ref* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
             const bool is_dependent = type->isDependentType();
-            auto policy = getASTContext().getPrintingPolicy();
+            auto policy = getTypePrintingPolicy(type);
             if (!is_dependent)
                 policy.FullyQualifiedName = false; // Preserve the qualifiers supplied by TypeName.
             std::string fqn = is_dependent ? type.getAsString(policy)

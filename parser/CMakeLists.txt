@@ -600,7 +600,7 @@ target_compile_options(uemeta-parser-core PUBLIC
 )
 
 target_link_options(uemeta-parser-core PUBLIC
-    $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Debug>>:/DEBUG:FULL>
+    $<$<AND:$<BOOL:${MSVC}>,$<CONFIG:Debug>>:/DEBUG:FULL>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:REF>
     $<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/OPT:ICF>
 )
@@ -630,7 +630,7 @@ set_property(DIRECTORY APPEND PROPERTY
     ADDITIONAL_CLEAN_FILES "${PARSER_BUNDLE_DIR}"
 )
 
-# LibTooling runs in-process; package only the parser executable.
+# LibTooling runs in-process; package the parser executable and its debug symbols.
 add_custom_command(TARGET parser POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory
         "${PARSER_BUNDLE_DIR}"
@@ -640,6 +640,15 @@ add_custom_command(TARGET parser POST_BUILD
     COMMENT "Bundling parser executable"
     VERBATIM
 )
+
+if(MSVC)
+    add_custom_command(TARGET parser POST_BUILD
+        COMMAND "$<$<CONFIG:Debug>:${CMAKE_COMMAND};-E;copy_if_different;$<TARGET_PDB_FILE:parser>;${PARSER_BUNDLE_DIR}/$<TARGET_PDB_FILE_NAME:parser>>"
+        COMMAND_EXPAND_LISTS
+        COMMENT "Bundling parser debug symbols"
+        VERBATIM
+    )
+endif()
 
 if(UEMETA_ENABLE_TESTING)
     enable_testing()

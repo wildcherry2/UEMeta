@@ -90,7 +90,7 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
             }
         }
 
-        std::string type_name = clang::TypeName::getFullyQualifiedName(declared_type, getASTContext(), getASTContext().getPrintingPolicy(), true);
+        std::string type_name = clang::TypeName::getFullyQualifiedName(declared_type, getASTContext(), getTypePrintingPolicy(declared_type), true);
         if (!type_ref_or_anon->has_anon_record() && !type_ref_or_anon->has_anon_enum()) {
             putTypeRef(type_name, type_query, type_ref_or_anon->mutable_type_ref());
         }

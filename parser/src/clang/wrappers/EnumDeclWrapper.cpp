@@ -156,5 +156,5 @@ bool UEMeta::EnumDeclWrapper::computeHasIdentity() const { return decl->hasNameF
 std::string UEMeta::EnumDeclWrapper::computeFQN() const {
     // ASTContext supplies the canonical tag type for a valid EnumDecl.
     const clang::QualType type = getASTContext().getCanonicalTagType(decl);
-    return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
+    return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getTypePrintingPolicy(type), true);
 }

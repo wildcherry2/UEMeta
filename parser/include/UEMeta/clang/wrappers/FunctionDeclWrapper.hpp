@@ -131,7 +131,7 @@ namespace UEMeta {
             if (const auto* conversion = llvm::dyn_cast<clang::CXXConversionDecl>(Super::decl)) {
                 os << "operator "
                    << clang::TypeName::getFullyQualifiedName(conversion->getConversionType().getCanonicalType(), Super::getASTContext(),
-                                                             Super::getASTContext().getPrintingPolicy(), true);
+                                                             Super::getTypePrintingPolicy(conversion->getConversionType()), true);
             }
             else {
                 Super::decl->printName(os, Super::getASTContext().getPrintingPolicy());
@@ -146,7 +146,7 @@ namespace UEMeta {
 
             for (const clang::ParmVarDecl* parameter : Super::decl->parameters()) {
                 const std::string parameter_type = clang::TypeName::getFullyQualifiedName(parameter->getType(), Super::getASTContext(),
-                                                                                          Super::getASTContext().getPrintingPolicy(), true);
+                                                                                          Super::getTypePrintingPolicy(parameter->getType()), true);
                 hasher.update(parameter_type.data(), parameter_type.size());
             }
 
@@ -203,7 +203,7 @@ namespace UEMeta {
             requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
         void putFunctionTypeRef(clang::QualType declared_type, Ref* p_type_ref) const {
             Super::putTypeRef(
-                clang::TypeName::getFullyQualifiedName(declared_type, Super::getASTContext(), Super::getASTContext().getPrintingPolicy(), true),
+                clang::TypeName::getFullyQualifiedName(declared_type, Super::getASTContext(), Super::getTypePrintingPolicy(declared_type), true),
                 DeclDb::queryType(declared_type), p_type_ref);
         }
     };

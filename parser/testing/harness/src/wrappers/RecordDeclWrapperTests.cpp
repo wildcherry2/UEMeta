@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -161,6 +162,116 @@ namespace {
             }
         }
     };
+
+    class RecordDeclWrapperDeathTest : public RecordDeclWrapperTest {};
+
+    TEST_F(RecordDeclWrapperDeathTest, ArrayPartialSpecializationSerializesWithFullyQualifiedPrinting) {
+        // Match MetaASTConsumer's production policy as well as the harness default.
+        // Isolate the call: the regression overflows the native stack while printing
+        // the array bound N's enclosing Box<T[N]> specialization recursively.
+        GTEST_FLAG_SET(death_test_style, "threadsafe");
+        for (bool fully_qualified_policy : {false, true}) {
+            SCOPED_TRACE(fully_qualified_policy);
+            const auto verify_serialization = [this, fully_qualified_policy] {
+                const auto records = parse(R"cpp(
+                    template<class T> struct Box {};
+                    template<class T, int N> struct Box<T[N]> {};
+                )cpp");
+                ASSERT_EQ(records.size(), 2u);
+                ASSERT_TRUE(llvm::isa<clang::ClassTemplatePartialSpecializationDecl>(records[1]));
+
+                auto& context = records[1]->getASTContext();
+                auto policy = context.getPrintingPolicy();
+                policy.FullyQualifiedName = fully_qualified_policy;
+                context.setPrintingPolicy(policy);
+
+                ASSERT_NE(serialize(records[0]), nullptr);
+                const auto* actual = serialize(records[1]);
+                ASSERT_NE(actual, nullptr);
+                EXPECT_EQ(actual->metadata().qualified_name(), "::Box<T[N]>");
+                EXPECT_EQ(actual->template_details().parameters_size(), 2);
+                ASSERT_EQ(actual->template_details().specialized_parameters_size(), 1);
+                const auto& argument = actual->template_details().specialized_parameters(0);
+                EXPECT_EQ(argument.kind(), ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC);
+                expectProto(argument.type(), builtin("type-parameter-0-0[N]"));
+                const auto id = recordId("::Box<T[N]>", "<typenameint><typename>");
+                EXPECT_EQ(UEMeta::Hash{actual->metadata().decl_id()}, id);
+                expectRegistered(records[1], id);
+                EXPECT_EQ(context.getPrintingPolicy().FullyQualifiedName, fully_qualified_policy);
+            };
+
+            // Expect successful serialization, so the current crash fails the test
+            // without terminating the rest of the suite.
+            ASSERT_EXIT({
+                verify_serialization();
+                std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+            }, ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+        }
+    }
+
+    TEST_F(RecordDeclWrapperDeathTest, DependentArgumentsPreserveStructureAndConcreteScopesInHashes) {
+        GTEST_FLAG_SET(death_test_style, "threadsafe");
+        const auto verify_serialization = [this] {
+            std::vector<UEMeta::Hash> unqualified_policy_ids;
+            for (bool fully_qualified_policy : {false, true}) {
+                SCOPED_TRACE(fully_qualified_policy);
+                const auto records = parse(R"cpp(
+                    namespace Left { struct Value {}; }
+                    namespace Right { struct Value {}; }
+                    namespace Scope {
+                        template<class T> struct Box {};
+                        template<class T, int N> struct Box<T[N]> {};
+                        template<class T, int N> struct Box<const T[N]> {};
+                        template<class T, int N, int M> struct Box<T[N][M]> {};
+                        template<int N> struct Box<Left::Value[N]> {};
+                        template<int N> struct Box<Right::Value[N]> {};
+                        template<> struct Box<Left::Value> {};
+                        template<> struct Box<Right::Value> {};
+                    }
+                )cpp");
+                ASSERT_EQ(records.size(), 10u);
+                auto& context = records[0]->getASTContext();
+                auto policy = context.getPrintingPolicy();
+                policy.FullyQualifiedName = fully_qualified_policy;
+                context.setPrintingPolicy(policy);
+
+                const std::vector<std::string> names{
+                    fully_qualified_policy ? "Left::Value" : "::Left::Value",
+                    fully_qualified_policy ? "Right::Value" : "::Right::Value", "::Scope::Box<T>", "::Scope::Box<T[N]>",
+                    "::Scope::Box<const T[N]>", "::Scope::Box<T[N][M]>", "::Scope::Box<Left::Value[N]>",
+                    "::Scope::Box<Right::Value[N]>",
+                    fully_qualified_policy ? "Scope::Box<Left::Value>" : "::Scope::Box< ::Left::Value>",
+                    fully_qualified_policy ? "Scope::Box<Right::Value>" : "::Scope::Box< ::Right::Value>"};
+                const std::vector<std::string> signatures{
+                    "", "", "<typename>", "<typenameint><typename>", "<typenameint><typename>",
+                    "<typenameintint><typename>", "<int><typename>", "<int><typename>", "<::Left::Value>", "<::Right::Value>"};
+                for (size_t i = 0; i < records.size(); ++i) {
+                    SCOPED_TRACE(names[i]);
+                    const auto* actual = serialize(records[i]);
+                    ASSERT_NE(actual, nullptr);
+                    EXPECT_EQ(actual->metadata().qualified_name(), names[i]);
+                    const UEMeta::Hash id{actual->metadata().decl_id()};
+                    EXPECT_EQ(id, recordId(names[i], signatures[i]));
+                    if (fully_qualified_policy) {
+                        // Only dependent types override FullyQualifiedName. Concrete types
+                        // retain Clang's original spelling (and therefore its hash inputs).
+                        if (i >= 2 && i < 8)
+                            EXPECT_EQ(id, unqualified_policy_ids[i]);
+                    }
+                    else {
+                        for (const auto& previous : unqualified_policy_ids)
+                            EXPECT_NE(id, previous);
+                        unqualified_policy_ids.push_back(id);
+                    }
+                }
+                EXPECT_EQ(context.getPrintingPolicy().FullyQualifiedName, fully_qualified_policy);
+            }
+        };
+        ASSERT_EXIT({
+            verify_serialization();
+            std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        }, ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+    }
 
     TEST_F(RecordDeclWrapperTest, EmptyRecordsPreserveKindsMetadataIdentityAndArena) {
         const auto records = parse("namespace Outer::Inner { /// Record documentation.\nstruct S {}; class C {}; union U {}; }");

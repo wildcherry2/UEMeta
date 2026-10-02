@@ -190,7 +190,7 @@ void UEMeta::RecordDeclWrapper::toString(const IntermediateRepresentation& ir, s
 std::string UEMeta::RecordDeclWrapper::computeFQN() const {
     // Canonical tag types also give typedef-named anonymous records their C++ name.
     const clang::QualType type = getASTContext().getCanonicalTagType(decl);
-    return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
+    return clang::TypeName::getFullyQualifiedName(type, getASTContext(), getTypePrintingPolicy(type), true);
 }
 
 UEMeta::Hash UEMeta::RecordDeclWrapper::computeDeclIdWithTemplateDetails(std::string_view fqn, ParserTypes::TLRecordDeclaration* p_msg) const {
@@ -433,7 +433,7 @@ void UEMeta::RecordDeclWrapper::handleBase(const clang::CXXBaseSpecifier& base, 
                                            const clang::ASTRecordLayout* layout) const {
     // A base is a specifier rather than a Decl; its type resolves through the same query rules as fields.
     const clang::QualType type = base.getType().getCanonicalType();
-    std::string           name = clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true);
+    std::string           name = clang::TypeName::getFullyQualifiedName(type, getASTContext(), getTypePrintingPolicy(type), true);
     if (base.isPackExpansion())
         name += "...";
     putTypeRef(name, DeclDb::queryType(type), p_msg->mutable_type_ref());
@@ -586,7 +586,7 @@ void UEMeta::RecordDeclWrapper::putFieldType(clang::QualType type, ParserTypes::
     }
 
     // Every remaining query alternative is preserved: hash, forward occurrence, header, builtin or unknown.
-    putTypeRef(clang::TypeName::getFullyQualifiedName(type, getASTContext(), getASTContext().getPrintingPolicy(), true), query,
+    putTypeRef(clang::TypeName::getFullyQualifiedName(type, getASTContext(), getTypePrintingPolicy(type), true), query,
                p_msg->mutable_type_ref());
 }
 

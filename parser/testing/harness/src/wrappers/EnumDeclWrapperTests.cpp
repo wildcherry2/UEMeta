@@ -56,6 +56,29 @@ namespace {
         }
     };
 
+    TEST_F(EnumDeclWrapperTest, OrdinaryEnumsKeepFullyQualifiedPrintingAndIdentity) {
+        const auto enums = parse(R"cpp(
+            namespace Left { enum class Kind { Value }; }
+            namespace Right { enum class Kind { Value }; }
+        )cpp");
+        ASSERT_EQ(enums.size(), 2u);
+        auto& context = enums[0]->getASTContext();
+        auto policy = context.getPrintingPolicy();
+        policy.FullyQualifiedName = true;
+        context.setPrintingPolicy(policy);
+
+        // With FullyQualifiedName enabled, Clang keeps the namespace but omits
+        // the leading ::. Preserve that existing spelling, which feeds the hash.
+        const std::vector<std::string> names{"Left::Kind", "Right::Kind"};
+        for (size_t i = 0; i < enums.size(); ++i) {
+            const auto* message = asEnum(enums[i]);
+            ASSERT_NE(message, nullptr);
+            EXPECT_EQ(message->metadata().qualified_name(), names[i]);
+            expectId(message->metadata().decl_id(), enumId(names[i]));
+        }
+        EXPECT_TRUE(context.getPrintingPolicy().FullyQualifiedName);
+    }
+
     TEST_F(EnumDeclWrapperTest, NamedEnumPreservesMetadataEnumeratorNamesValuesAndDocumentation) {
         const auto enums = parse(R"cpp(namespace Example {
             /// Enum documentation.
