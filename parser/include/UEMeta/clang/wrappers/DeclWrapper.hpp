@@ -9,11 +9,13 @@
 #include "TopLevel.pb.h"
 #include "UEMeta/utility/DeclException.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
+#include "clang/AST/ASTConcept.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/QualTypeNames.h"
+#include "clang/AST/TypeLoc.h"
 #include "clang/Basic/SourceManager.h"
 #include "google/protobuf/json/json.h"
 #include "google/protobuf/util/json_util.h"
@@ -216,7 +218,9 @@ namespace UEMeta {
                 return str;
             };
 
-            if ((!declared_params && !specialization_args) || !p_msg) {
+            const auto*        function             = llvm::dyn_cast<clang::FunctionDecl>(decl);
+            const clang::Expr* trailing_requirement = function ? function->getTrailingRequiresClause().ConstraintExpr : nullptr;
+            if ((!declared_params && !specialization_args && !trailing_requirement) || !p_msg) {
                 throw DeclException(decl, "Template parameters are not valid!");
             }
 
@@ -234,9 +238,27 @@ namespace UEMeta {
                 p_type->set_is_builtin_or_template(true);
             };
 
+            const auto put_constraint = [this, &append_out](const clang::ConceptReference* constraint, ParserTypes::TemplateParameter* p_param) {
+                if (!constraint)
+                    return;
+                std::string              out;
+                llvm::raw_string_ostream os{out};
+                // Print the written concept-id, without the implicit constrained type argument.
+                constraint->print(os, getPrintingPolicyForDependence(true));
+                // Constrained auto can carry an empty argument list even when no <> was written.
+                if (const auto* args = constraint->getTemplateArgsAsWritten();
+                    args && args->arguments().empty() && args->getLAngleLoc().isInvalid() && out.ends_with("<>")) {
+                    out.resize(out.size() - 2);
+                }
+                p_param->set_constraint(out);
+                append_out(std::string_view{" constraint("});
+                append_out(out);
+                append_out(std::string_view{")"});
+            };
+
             // recursively parses template params through any nested params
-            const auto put_params = [&append_out, &put_generic_type_ref, id_out_ptr, this](this auto self, const clang::TemplateParameterList* params,
-                                                                                           auto*     p_details_or_param) {
+            const auto put_params = [&append_out, &put_generic_type_ref, &put_constraint, id_out_ptr, this](
+                                        this auto self, const clang::TemplateParameterList* params, auto* p_details_or_param) {
                 if (params->empty())
                     return;
                 append_out(std::string_view{"<"});
@@ -262,6 +284,9 @@ namespace UEMeta {
                         if (type_param->hasDefaultArgument()) {
                             putDefaultType(type_param->getDefaultArgument().getArgument(), p_param->mutable_default_type());
                         }
+                        if (const auto* constraint = type_param->getTypeConstraint()) {
+                            put_constraint(constraint->getConceptReference(), p_param);
+                        }
                     }
                     else if (const auto* non_type_param = llvm::dyn_cast<clang::NonTypeTemplateParmDecl>(param)) {
                         p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_NON_TYPE);
@@ -279,6 +304,14 @@ namespace UEMeta {
                             const auto& argument = non_type_param->getDefaultArgument().getArgument();
                             argument.print(getPrintingPolicyForDependence(argument.isInstantiationDependent()), os, true);
                             setVersionedString(p_param->mutable_value(), out);
+                        }
+                        if (const auto* type_info = non_type_param->getTypeSourceInfo()) {
+                            for (auto location = type_info->getTypeLoc(); !location.isNull(); location = location.getNextTypeLoc()) {
+                                if (const auto auto_location = location.getAs<clang::AutoTypeLoc>()) {
+                                    put_constraint(auto_location.getConceptReference(), p_param);
+                                    break;
+                                }
+                            }
                         }
                     }
                     else if (const auto* template_param = llvm::dyn_cast<clang::TemplateTemplateParmDecl>(param)) {
@@ -465,6 +498,29 @@ namespace UEMeta {
                     put_specialization_argument(argument, [p_msg] { return p_msg->add_specialized_parameters(); });
                 }
                 append_out(std::string_view{">"});
+            }
+
+            const clang::Expr* head_requirement = declared_params ? declared_params->getRequiresClause() : nullptr;
+            if (head_requirement || trailing_requirement) {
+                std::string              requirement;
+                llvm::raw_string_ostream os{requirement};
+                const auto print_requirement = [this, &os](const clang::Expr* expression) {
+                    expression->printPretty(os, nullptr, getPrintingPolicyForDependence(expression->isInstantiationDependent()));
+                };
+                // A function can have both clauses; preserve their conjunction and precedence.
+                if (head_requirement && trailing_requirement) {
+                    os << '(';
+                    print_requirement(head_requirement);
+                    os << ") && (";
+                    print_requirement(trailing_requirement);
+                    os << ')';
+                }
+                else {
+                    print_requirement(head_requirement ? head_requirement : trailing_requirement);
+                }
+                p_msg->set_requirement(requirement);
+                append_out(std::string_view{" requires "});
+                append_out(requirement);
             }
         }
 

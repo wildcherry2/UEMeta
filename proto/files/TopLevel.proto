@@ -111,7 +111,7 @@ message TemplateDetails {
   // if this is an instantiation, this is the type_id of the specialization or primary template that this is an instantiation of.
   optional TypeRef primary_template_decl_id = 4;
 
-  // Requirement clause for this template; similar to concepts in TemplateParameter, this contributes to the declaration's or member function's decl_id or func_id,
+  // Requirement expression for this template; similar to concepts in TemplateParameter, this contributes to the declaration's or member function's decl_id or func_id,
   // so when requirements differ between versions, they should be rendered as unique declarations or resolved through post processing during generation.
   optional string requirement = 5;
 }

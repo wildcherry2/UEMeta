@@ -55,6 +55,29 @@ namespace {
 
     };
 
+    TEST_F(MethodDeclWrapperTest, TrailingRequiresClausesDistinguishMembersWithoutTheirOwnTemplateParameters) {
+        const auto functions = parse(R"cpp(
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<class T> concept Large = sizeof(T) > 4;
+            template<class T> struct Owner {
+                void choose() requires Small<T>;
+                void choose() requires Large<T>;
+                template<Small U> void constrained(U) requires Large<T>;
+            };
+        )cpp");
+        ASSERT_EQ(functions.size(), 3u);
+        const auto* small = serialize(functions[0]);
+        const auto* large = serialize(functions[1]);
+        EXPECT_EQ(small->common().template_details().parameters_size(), 0);
+        EXPECT_EQ(small->common().template_details().requirement(), "Small<T>");
+        EXPECT_EQ(large->common().template_details().requirement(), "Large<T>");
+        EXPECT_NE(small->func_id().SerializeAsString(), large->func_id().SerializeAsString());
+        const auto& constrained = serialize(functions[2])->common().template_details();
+        ASSERT_EQ(constrained.parameters_size(), 1);
+        EXPECT_EQ(constrained.parameters(0).constraint(), "Small");
+        EXPECT_EQ(constrained.requirement(), "Large<T>");
+    }
+
     TEST_F(MethodDeclWrapperTest, MethodPreservesCompleteCommonDataQualifiersAccessArenaAndOwnership) {
         const auto functions = parse("namespace N { class Owner { public: int read(int index = 2) const volatile &; }; }");
         ASSERT_EQ(functions.size(), 1u);

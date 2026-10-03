@@ -246,6 +246,75 @@ namespace {
         expectId(message->metadata().decl_id(), functionId("::select", "(T)<typename,int>"));
     }
 
+    TEST_F(FunctionDeclWrapperTest, ConceptConstraintsDistinguishOverloadsAndLeaveUnconstrainedParametersAbsent) {
+        const auto functions = parse(R"cpp(
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<class T> concept Large = sizeof(T) > 4;
+            template<Small T> void choose(T);
+            template<Large T> void choose(T);
+            template<class T> void choose(T);
+        )cpp");
+        ASSERT_EQ(functions.size(), 3u);
+        const auto* small = serialize(functions[0]);
+        const auto* large = serialize(functions[1]);
+        const auto* plain = serialize(functions[2]);
+        EXPECT_EQ(small->common().template_details().parameters(0).constraint(), "Small");
+        EXPECT_EQ(large->common().template_details().parameters(0).constraint(), "Large");
+        EXPECT_FALSE(plain->common().template_details().parameters(0).has_constraint());
+        EXPECT_FALSE(small->common().template_details().has_requirement());
+        EXPECT_NE(small->metadata().decl_id().SerializeAsString(), large->metadata().decl_id().SerializeAsString());
+        EXPECT_NE(small->metadata().decl_id().SerializeAsString(), plain->metadata().decl_id().SerializeAsString());
+        expectId(plain->metadata().decl_id(), functionId("::choose", "(T)<typename>"));
+    }
+
+    TEST_F(FunctionDeclWrapperTest, ConceptConstraintsPreserveArgumentsPacksNestedParametersAndConstrainedAuto) {
+        const auto functions = parse(R"cpp(
+            namespace N {
+                template<class T> concept Any = true;
+                template<class T, class U> concept Fits = sizeof(T) <= sizeof(U);
+            }
+            template<template<N::Fits<int> U> class Container, N::Any auto Value, N::Any... Ts> void nested();
+            void abbreviated(N::Fits<int> auto value);
+            template<N::Any<> auto Value> void explicit_arguments();
+        )cpp");
+        ASSERT_EQ(functions.size(), 3u);
+        const auto& details = serialize(functions[0])->common().template_details();
+        ASSERT_EQ(details.parameters_size(), 3);
+        ASSERT_EQ(details.parameters(0).parameters_size(), 1);
+        EXPECT_FALSE(details.parameters(0).has_constraint());
+        EXPECT_EQ(details.parameters(0).parameters(0).constraint(), "N::Fits<int>");
+        EXPECT_EQ(details.parameters(1).constraint(), "N::Any");
+        EXPECT_EQ(details.parameters(2).constraint(), "N::Any");
+        EXPECT_TRUE(details.parameters(2).is_parameter_pack());
+        const auto& abbreviated = serialize(functions[1])->common().template_details();
+        ASSERT_EQ(abbreviated.parameters_size(), 1);
+        EXPECT_EQ(abbreviated.parameters(0).constraint(), "N::Fits<int>");
+        EXPECT_EQ(serialize(functions[2])->common().template_details().parameters(0).constraint(), "N::Any<>");
+    }
+
+    TEST_F(FunctionDeclWrapperTest, RequiresClausesPreserveHeadTrailingAndCombinedExpressionsAndDistinguishOverloads) {
+        const auto functions = parse(R"cpp(
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<class T> concept Large = sizeof(T) > 4;
+            template<class T> requires Small<T> void choose(T);
+            template<class T> requires Large<T> void choose(T);
+            template<class T> void trailing(T) requires Small<T>;
+            template<class T> requires Small<T> || Large<T> void both(T) requires Large<T>;
+            template<class T> void expression(T) requires requires(T value) { value + value; };
+        )cpp");
+        ASSERT_EQ(functions.size(), 5u);
+        const auto* small = serialize(functions[0]);
+        const auto* large = serialize(functions[1]);
+        EXPECT_EQ(small->common().template_details().requirement(), "Small<T>");
+        EXPECT_EQ(large->common().template_details().requirement(), "Large<T>");
+        EXPECT_NE(small->metadata().decl_id().SerializeAsString(), large->metadata().decl_id().SerializeAsString());
+        EXPECT_EQ(serialize(functions[2])->common().template_details().requirement(), "Small<T>");
+        EXPECT_EQ(serialize(functions[3])->common().template_details().requirement(), "(Small<T> || Large<T>) && (Large<T>)");
+        const auto& expression = serialize(functions[4])->common().template_details().requirement();
+        EXPECT_NE(expression.find("requires (T value)"), std::string::npos);
+        EXPECT_NE(expression.find("value + value;"), std::string::npos);
+    }
+
     TEST_F(FunctionDeclWrapperTest, ExplicitSpecializationReferencesItsPrimaryAndIncludesConcreteArgumentsInIdentity) {
         const auto functions = parse("template<class T, int N> T select(T value); template<> int select<int, 2>(int value);");
         ASSERT_EQ(functions.size(), 2u);

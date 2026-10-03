@@ -163,6 +163,39 @@ namespace {
         }
     };
 
+    TEST_F(RecordDeclWrapperTest, TemplateConstraintsAndRequirementsSurvivePrimaryAndPartialSpecializationSerialization) {
+        const auto records = parse(R"cpp(
+            template<class T> concept Any = true;
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<Any T> requires Small<T> struct Primary {};
+            template<class T> struct Box {};
+            template<Any T> requires Small<T> struct Box<T*> {};
+        )cpp");
+        ASSERT_EQ(records.size(), 3u);
+        const auto* primary = serialize(records[0]);
+        ASSERT_NE(primary, nullptr);
+        EXPECT_EQ(primary->template_details().parameters(0).constraint(), "Any");
+        EXPECT_EQ(primary->template_details().requirement(), "Small<T>");
+        const auto* box = serialize(records[1]);
+        ASSERT_NE(box, nullptr);
+        EXPECT_FALSE(box->template_details().has_requirement());
+        EXPECT_FALSE(box->template_details().parameters(0).has_constraint());
+        const auto* partial = serialize(records[2]);
+        ASSERT_NE(partial, nullptr);
+        EXPECT_EQ(partial->template_details().parameters(0).constraint(), "Any");
+        EXPECT_EQ(partial->template_details().requirement(), "Small<T>");
+
+        const auto changed = parse(R"cpp(
+            template<class T> concept Any = true;
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<Any T> requires (!Small<T>) struct Primary {};
+        )cpp");
+        ASSERT_EQ(changed.size(), 1u);
+        const auto* different = serialize(changed[0]);
+        ASSERT_NE(different, nullptr);
+        EXPECT_NE(primary->metadata().decl_id().SerializeAsString(), different->metadata().decl_id().SerializeAsString());
+    }
+
     class RecordDeclWrapperDeathTest : public RecordDeclWrapperTest {};
 
     TEST_F(RecordDeclWrapperDeathTest, ArrayPartialSpecializationSerializesWithFullyQualifiedPrinting) {

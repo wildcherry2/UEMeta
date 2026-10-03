@@ -182,7 +182,7 @@ namespace UEMeta {
             const clang::TemplateParameterList* declared_params     = described_template ? described_template->getTemplateParameters() : nullptr;
             const clang::TemplateArgumentList*  specialization_args = Super::decl->getTemplateSpecializationArgs();
 
-            if (declared_params || specialization_args) {
+            if (declared_params || specialization_args || Super::decl->getTrailingRequiresClause()) {
                 std::vector<AnyString> template_identity;
                 Super::putTemplateDetails(declared_params, p_msg->mutable_template_details(), specialization_args, primary_template_id,
                                           &template_identity);

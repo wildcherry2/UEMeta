@@ -93,6 +93,34 @@ namespace {
         }
     };
 
+    TEST_F(VarDeclWrapperTest, TemplateConstraintsAndRequirementsSurvivePrimaryAndPartialSpecializationSerialization) {
+        const auto variables = parse(R"cpp(
+            template<class T> concept Any = true;
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<Any T> requires Small<T> constexpr int primary = 1;
+            template<class T> constexpr int value = 0;
+            template<Any T> requires Small<T> constexpr int value<T*> = 1;
+        )cpp");
+        ASSERT_EQ(variables.size(), 3u);
+        const auto* primary = serialize(variables[0]);
+        EXPECT_EQ(primary->template_details().parameters(0).constraint(), "Any");
+        EXPECT_EQ(primary->template_details().requirement(), "Small<T>");
+        const auto* value = serialize(variables[1]);
+        EXPECT_FALSE(value->template_details().has_requirement());
+        EXPECT_FALSE(value->template_details().parameters(0).has_constraint());
+        const auto* partial = serialize(variables[2]);
+        EXPECT_EQ(partial->template_details().parameters(0).constraint(), "Any");
+        EXPECT_EQ(partial->template_details().requirement(), "Small<T>");
+
+        const auto changed = parse(R"cpp(
+            template<class T> concept Any = true;
+            template<class T> concept Small = sizeof(T) <= 4;
+            template<Any T> requires (!Small<T>) constexpr int primary = 1;
+        )cpp");
+        ASSERT_EQ(changed.size(), 1u);
+        EXPECT_NE(identity(primary), identity(serialize(changed[0])));
+    }
+
     TEST_F(VarDeclWrapperTest, PreservesMetadataDocumentationInitializerAndArena) {
         const auto variables = parse(R"cpp(namespace Outer::Inner {
             /// Variable documentation.
