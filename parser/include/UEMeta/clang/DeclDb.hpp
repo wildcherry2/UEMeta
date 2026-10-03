@@ -16,8 +16,8 @@ namespace UEMeta {
         using QueryResult = std::variant<Hash, uint64_t, bool, llvm::StringRef, std::monostate>;
 
         // DeclWrappers call this to bind themselves to a Hash globally.
-        // Registering the same declaration with the same hash again is ignored.
-        // Throws DeclException if a declaration's hash changes or the hash is already bound to another declaration.
+        // Redeclarations share one identity through their canonical declaration; each registered node is marked visited.
+        // Throws DeclException if that identity's hash changes or the hash is already bound to an unrelated declaration.
         static void addDeclIdentity(const clang::Decl* decl, const Hash& hash);
 
         // returns Hash if the decl is mapped to a full declaration with that identity Hash,
@@ -25,11 +25,11 @@ namespace UEMeta {
         // uint64_t if the decl otherwise has a forward declaration, then this is the occurrence index of the latest forward declaration,
         // or false if it's not mapped to anything
         // monostate is returned on exception
-        // Function redeclarations resolve to their definition when available.
+        // Redeclarations share registered identities. Function forward occurrences resolve through their definition when available.
         // A registered definition's identity takes precedence over its forward-declaration history.
         static QueryResult queryDeclIdentity(const clang::Decl* decl);
 
-        // Returns the Decl* associated with the Hash, or nullptr if no such Decl exists.
+        // Returns the first registered Decl* associated with the Hash, or nullptr if no such Decl exists.
         static const clang::Decl* queryDecl(const Hash& hash);
 
         // Query the declaration referenced by a type, resolving aliases and peeling pointers,
@@ -78,7 +78,7 @@ namespace UEMeta {
     private:
         DeclDb() = default;
 
-        // maps non-forward, non-alias declarations to their serialized identity
+        // Maps canonical declarations to their serialized identity, shared by all redeclarations.
         static llvm::DenseMap<const clang::Decl*, Hash> decl_to_identity_map;
 
         static absl::flat_hash_map<Hash, const clang::Decl*> identity_to_decl_map;

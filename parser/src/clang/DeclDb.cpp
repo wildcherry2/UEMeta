@@ -56,11 +56,12 @@ static void serialize(const typename T::WrappedDeclType* decl) {
 void UEMeta::DeclDb::addDeclIdentity(const clang::Decl* decl, const Hash& hash) {
     if (!decl)
         throw DeclException(decl, "Can't addDeclIdentity with null Decl pointer!");
-    const auto [it, inserted] = decl_to_identity_map.insert({decl, hash});
+    const auto [it, inserted] = decl_to_identity_map.insert({decl->getCanonicalDecl(), hash});
     if (!inserted) {
         if (it->second != hash) {
             throw DeclException(decl, "Tried to assign a different hash to an already hashed declaration!");
         }
+        visited_decls.insert(decl);
         return;
     }
     if (auto result = identity_to_decl_map.insert({hash, decl}); !result.second) {
@@ -75,12 +76,11 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryDeclIdentity(const clang::Decl*
     try {
         if (!decl)
             return false;
-        // Function-template references can name an earlier redeclaration, while the maps use the definition.
         if (const auto* function = llvm::dyn_cast<clang::FunctionDecl>(decl)) {
             if (const auto* definition = function->getDefinition())
                 decl = definition;
         }
-        if (const auto decl_hash_it = decl_to_identity_map.find(decl); decl_hash_it != decl_to_identity_map.end()) {
+        if (const auto decl_hash_it = decl_to_identity_map.find(decl->getCanonicalDecl()); decl_hash_it != decl_to_identity_map.end()) {
             return decl_hash_it->second;
         }
 
@@ -137,7 +137,7 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryType(clang::QualType type, clan
 
         // Select the source declaration BEFORE querying: a generated instantiation is never
         // a reference target, even if it happens to have a registered hash. Clang's tag
-        // conversion already prefers the definition, matching the keys used by DeclDb.
+        // conversion already prefers the definition, matching the forward-occurrence keys.
         if (const auto* target = type->getAsTagDecl()) {
             if (const auto* record = llvm::dyn_cast<clang::CXXRecordDecl>(target)) {
                 // The pattern is the primary record or selected partial specialization, not
@@ -345,7 +345,7 @@ void UEMeta::DeclDb::serializeForwardDeclarations() {
     const auto arena = std::make_shared<google::protobuf::Arena>();
     auto*      p_msg = google::protobuf::Arena::Create<ParserTypes::ForwardDeclarationList>(arena.get());
     for (auto& decl_list_pair : decl_to_forward_decl_occurrence_map) {
-        if (auto hash = decl_to_identity_map.find(decl_list_pair.first); hash != decl_to_identity_map.end()) {
+        if (auto hash = decl_to_identity_map.find(decl_list_pair.first->getCanonicalDecl()); hash != decl_to_identity_map.end()) {
             auto* p_list = p_msg->add_forward_declarations();
             hash->second.putProtoHash(p_list->mutable_type_id());
             for (const unsigned long long occ_index : decl_list_pair.second) {

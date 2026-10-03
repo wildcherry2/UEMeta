@@ -82,8 +82,7 @@ namespace {
         const auto functions = parse("int redeclared(int value = 4); int redeclared(int renamed) { return renamed + 1; }");
         ASSERT_EQ(functions.size(), 2u);
         const auto* prototype                = serialize(functions[0]);
-        // Exercise the wrappers independently; normal traversal defers this prototype to its definition.
-        UEMeta::DeclDb::reset();
+        // Normal traversal defers this prototype; direct wrappers must also share its definition's identity.
         const auto* definition               = serialize(functions[1]);
         auto        declaration_traits       = common(ParserTypes::FUNCTION_KIND_FREE, "int");
         *declaration_traits.add_parameters() = parameter("value", "int", "4");
@@ -97,6 +96,31 @@ namespace {
         const auto reference = UEMeta::DeclDb::queryDeclIdentity(functions[0]);
         ASSERT_TRUE(std::holds_alternative<UEMeta::Hash>(reference));
         EXPECT_EQ(std::get<UEMeta::Hash>(reference), functionId("::redeclared", "(int)"));
+    }
+
+    TEST_F(FunctionDeclWrapperTest, RepeatedTemplatePrototypesShareIdentityAndPreserveOccurrences) {
+        const auto functions = parse(R"cpp(
+            template<typename A, typename B>
+            void fn(A a, B b);
+
+            template<typename A, typename B>
+            void fn(A a, B b);
+        )cpp");
+        ASSERT_EQ(functions.size(), 2u);
+        ASSERT_NE(functions[0], functions[1]);
+        ASSERT_EQ(functions[0]->getCanonicalDecl(), functions[1]->getCanonicalDecl());
+        const auto* first  = serialize(functions[0]);
+        const auto* second = serialize(functions[1]);
+        const auto id = functionId("::fn", "(A,B)<typename,typename>");
+        expectProto(first->metadata(), metadata("::fn", id, 0));
+        expectProto(second->metadata(), metadata("::fn", id, 1));
+        expectProto(first->common(), second->common());
+        for (const auto* function : functions) {
+            const auto resolved = UEMeta::DeclDb::queryDeclIdentity(function);
+            ASSERT_TRUE(std::holds_alternative<UEMeta::Hash>(resolved));
+            EXPECT_EQ(std::get<UEMeta::Hash>(resolved), id);
+        }
+        EXPECT_EQ(UEMeta::DeclDb::queryDecl(id), functions[0]);
     }
 
     TEST_F(FunctionDeclWrapperTest, IdentityIgnoresReturnTypeNamesDefaultsStorageAndBodiesButDistinguishesOverloadsAndScopes) {

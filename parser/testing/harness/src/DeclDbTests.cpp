@@ -149,6 +149,51 @@ namespace {
         EXPECT_EQ(DeclDb::queryDecl(unused_id), nullptr);
     }
 
+    TEST_F(DeclDbTest, RedeclarationsShareIdentityAndRejectHashChangesWithoutChangingState) {
+        auto* context = parseCode("extern int value; extern int value;");
+        ASSERT_NE(context, nullptr);
+        const auto variables = declarations<clang::VarDecl>(context->getTranslationUnitDecl());
+        ASSERT_EQ(variables.size(), 2u);
+        const auto id = identity(17, 29);
+        const auto changed_id = identity(31, 37);
+        // Register a noncanonical node first; reverse lookup retains that actual node.
+        DeclDb::addDeclIdentity(variables[1], id);
+        expectQuery(DeclDb::queryDeclIdentity(variables[0]), id);
+        EXPECT_THROW(DeclDb::addDeclIdentity(variables[0], changed_id), UEMeta::DeclException<>);
+        EXPECT_NO_THROW(DeclDb::addDeclIdentity(variables[0], id));
+        for (const auto* variable : variables)
+            expectQuery(DeclDb::queryDeclIdentity(variable), id);
+        EXPECT_EQ(DeclDb::queryDecl(id), variables[1]);
+        EXPECT_EQ(DeclDb::queryDecl(changed_id), nullptr);
+        // Both successfully registered occurrences are visited, even when sharing an identity.
+        for (auto* variable : variables)
+            DeclDb::serializeIfNeeded(variable);
+        EXPECT_TRUE(outputFiles().empty());
+    }
+
+    TEST_F(DeclDbTest, RepeatedFunctionPrototypesSerializeWithoutIdentityCollisions) {
+        auto* context = parseCode(R"cpp(
+            void ordinary(int);
+            void ordinary(int);
+            template<typename A, typename B> void fn(A a, B b);
+            template<typename A, typename B> void fn(A a, B b);
+        )cpp");
+        ASSERT_NE(context, nullptr);
+        auto functions = declarations<clang::FunctionDecl>(context->getTranslationUnitDecl());
+        for (auto* function_template : declarations<clang::FunctionTemplateDecl>(context->getTranslationUnitDecl()))
+            functions.push_back(function_template->getTemplatedDecl());
+        ASSERT_EQ(functions.size(), 4u);
+        for (auto* function : functions)
+            ASSERT_NO_THROW(DeclDb::serializeIfNeeded(function));
+        const auto ordinary_id = functionId("::ordinary", "(int)");
+        const auto template_id = functionId("::fn", "(A,B)<typename,typename>");
+        for (std::size_t i = 0; i < functions.size(); ++i)
+            expectQuery(DeclDb::queryDeclIdentity(functions[i]), i < 2 ? ordinary_id : template_id);
+        EXPECT_EQ(DeclDb::queryDecl(ordinary_id), functions[0]);
+        EXPECT_EQ(DeclDb::queryDecl(template_id), functions[2]);
+        EXPECT_EQ(outputFiles().size(), 2u);
+    }
+
     TEST_F(DeclDbTest, RejectsIdentityHashCollisionsWithoutChangingState) {
         auto* context = parseCode("struct First {}; struct Second {};");
         ASSERT_NE(context, nullptr);
@@ -294,14 +339,34 @@ namespace {
         ASSERT_EQ(decls.size(), 4u);
         DeclDb::serializeIfNeeded(decls[0]);
         DeclDb::serializeIfNeeded(decls[0]); // Re-visiting the same AST node is a no-op.
+        expectQuery(DeclDb::queryDeclIdentity(decls[2]), uint64_t{0});
+        if constexpr (std::is_same_v<TypeParam, clang::FunctionDecl>) {
+            expectQuery(DeclDb::queryDeclIdentity(decls[0]), uint64_t{0});
+        }
+        else {
+            expectQuery(DeclDb::queryType(context->getCanonicalTagType(decls[0])), uint64_t{0});
+        }
         DeclDb::serializeIfNeeded(decls[1]);
         expectQuery(DeclDb::queryDeclIdentity(decls[2]), uint64_t{1});
+        if constexpr (std::is_same_v<TypeParam, clang::FunctionDecl>) {
+            expectQuery(DeclDb::queryDeclIdentity(decls[0]), uint64_t{1});
+            expectQuery(DeclDb::queryDeclIdentity(decls[1]), uint64_t{1});
+        }
+        else {
+            expectQuery(DeclDb::queryType(context->getCanonicalTagType(decls[0])), uint64_t{1});
+        }
         EXPECT_TRUE(this->outputFiles().empty());
         DeclDb::serializeIfNeeded(decls[2]);
         DeclDb::serializeIfNeeded(decls[2]);
         DeclDb::serializeIfNeeded(decls[3]); // A written redeclaration after the definition still counts.
         const auto id = std::is_same_v<TypeParam, clang::FunctionDecl> ? functionId("::Target") : enumId("::Target");
         expectQuery(DeclDb::queryDeclIdentity(decls[2]), id);
+        if constexpr (std::is_same_v<TypeParam, clang::FunctionDecl>) {
+            expectQuery(DeclDb::queryDeclIdentity(decls[0]), id);
+        }
+        else {
+            expectQuery(DeclDb::queryType(context->getCanonicalTagType(decls[0])), id);
+        }
         EXPECT_EQ(DeclDb::queryDecl(id), decls[2]);
         const auto files = this->outputFiles();
         ASSERT_EQ(files.size(), 1u);
@@ -317,6 +382,39 @@ namespace {
         expected.mutable_forward_declarations(0)->mutable_type_id()->set_a(id.a);
         expected.mutable_forward_declarations(0)->mutable_type_id()->set_b(id.b);
         this->expectForwards(this->readForwardFile(), expected);
+    }
+
+    TEST_F(DeclDbTest, TemplateFunctionQueriesReturnForwardOccurrencesUntilDefinitionSerialization) {
+        auto* context = parseCode(R"cpp(
+            template<typename A, typename B> void fn(A a, B b);
+            template<typename A, typename B> void fn(A a, B b);
+            template<typename A, typename B> void fn(A a, B b) {}
+            template<typename A, typename B> void fn(A a, B b);
+        )cpp");
+        ASSERT_NE(context, nullptr);
+        std::vector<clang::FunctionDecl*> functions;
+        for (auto* function_template : declarations<clang::FunctionTemplateDecl>(context->getTranslationUnitDecl()))
+            functions.push_back(function_template->getTemplatedDecl());
+        ASSERT_EQ(functions.size(), 4u);
+        for (std::size_t i = 0; i < 2; ++i) {
+            DeclDb::serializeIfNeeded(functions[i]);
+            // Clang already knows the definition, but traversal has only reached its prototypes.
+            for (const auto* function : functions)
+                expectQuery(DeclDb::queryDeclIdentity(function), uint64_t{i});
+        }
+        EXPECT_TRUE(outputFiles().empty());
+        DeclDb::serializeIfNeeded(functions[2]);
+        DeclDb::serializeIfNeeded(functions[3]);
+        const auto id = functionId("::fn", "(A,B)<typename,typename>");
+        for (const auto* function : functions)
+            expectQuery(DeclDb::queryDeclIdentity(function), id);
+        EXPECT_EQ(DeclDb::queryDecl(id), functions[2]);
+        DeclDb::serializeForwardDeclarations();
+        auto expected = forwardList(R"pb(
+            forward_declarations { occurrence_indices: [0, 1, 3] }
+        )pb");
+        id.putProtoHash(expected.mutable_forward_declarations(0)->mutable_type_id());
+        expectForwards(readForwardFile(), expected);
     }
 
     TEST_F(DeclDbTest, IncompleteTagsAreSkippedButExternalFunctionsAndVariablesProduceMetadata) {
