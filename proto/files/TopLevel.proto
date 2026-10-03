@@ -110,6 +110,10 @@ message TemplateDetails {
   // if this is a specialization, this is the type_id of the primary template that this is a specialization of.
   // if this is an instantiation, this is the type_id of the specialization or primary template that this is an instantiation of.
   optional TypeRef primary_template_decl_id = 4;
+
+  // Requirement clause for this template; similar to concepts in TemplateParameter, this contributes to the declaration's or member function's decl_id or func_id,
+  // so when requirements differ between versions, they should be rendered as unique declarations or resolved through post processing during generation.
+  optional string requirement = 5;
 }
 
 // Represents a single template parameter.
@@ -154,6 +158,14 @@ message TemplateParameter {
 
   // nested parameters
   repeated TemplateParameter parameters = 7;
+
+  // Conceptual constraint, like `std::integral` in `template <std::integral T>`
+  // We don't serialize a message for concepts since they aren't useful at runtime and can be difficult to represent in such a way that can matter at runtime; 
+  // overloads with different concepts should be made for different constraint combinations for templated declarations, or they can be resolved through post processing during generation.
+  // So if one version has `template <std::integral T> void fn(T a)` and another has `template <std::floating_point T> void fn(T a)`, two overloads named something like `fn_integral` and `fn_floating_point`
+  // can be made, or you can add special handling for this function to make a new constraint that combines them.
+  // Note that this isn't versioned; it contributes to the member function's or declaration's decl_id or func_id
+  optional string constraint = 8;
 }
 
 // A function owned by a TLRecordDeclaration, including constructors,
