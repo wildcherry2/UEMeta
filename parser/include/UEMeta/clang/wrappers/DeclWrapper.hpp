@@ -368,18 +368,19 @@ namespace UEMeta {
                     }
                 };
 
-                enum class SpecializationArgumentKind { Generic, ConcreteType, ConcreteTemplate, ConcreteValue };
-
-                const auto classify_specialization_argument = [&get_carried_generic](const clang::TemplateArgument& argument) {
+                const auto classify_specialization_argument = [&get_carried_generic](const clang::TemplateArgument& argument)
+                    -> ParserTypes::TemplateParameterKind {
                     if (get_carried_generic(argument))
-                        return SpecializationArgumentKind::Generic;
+                        return ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC;
                     if (argument.getKind() == clang::TemplateArgument::Type) {
-                        return argument.isDependent() ? SpecializationArgumentKind::Generic : SpecializationArgumentKind::ConcreteType;
+                        return argument.isDependent() ? ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC
+                                                      : ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TYPE;
                     }
                     if (argument.getKind() == clang::TemplateArgument::Template || argument.getKind() == clang::TemplateArgument::TemplateExpansion) {
-                        return argument.isDependent() ? SpecializationArgumentKind::Generic : SpecializationArgumentKind::ConcreteTemplate;
+                        return argument.isDependent() ? ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC
+                                                      : ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TEMPLATE;
                     }
-                    return SpecializationArgumentKind::ConcreteValue;
+                    return ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_VALUE;
                 };
 
                 bool first_argument = true;
@@ -401,9 +402,10 @@ namespace UEMeta {
                     if (!first_argument)
                         append_out(std::string_view{","});
                     first_argument = false;
-                    ParserTypes::TemplateParameter*  p_param       = add_parameter();
-                    const SpecializationArgumentKind argument_kind = classify_specialization_argument(argument);
-                    if (argument_kind == SpecializationArgumentKind::Generic) {
+                    ParserTypes::TemplateParameter*          p_param       = add_parameter();
+                    const ParserTypes::TemplateParameterKind argument_kind = classify_specialization_argument(argument);
+                    p_param->set_kind(argument_kind);
+                    if (argument_kind == ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC) {
                         const clang::NamedDecl* generic = get_carried_generic(argument);
                         if (!generic && argument.getKind() != clang::TemplateArgument::Type &&
                             argument.getKind() != clang::TemplateArgument::Template &&
@@ -411,7 +413,6 @@ namespace UEMeta {
                             throw DeclException(decl, "Failed to resolve a carried-over generic argument!");
                         }
 
-                        p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_GENERIC);
                         const bool is_parameter_pack = argument.isPackExpansion();
                         if (is_parameter_pack) {
                             p_param->set_is_parameter_pack(true);
@@ -447,8 +448,7 @@ namespace UEMeta {
                         return;
                     }
 
-                    if (argument_kind == SpecializationArgumentKind::ConcreteType) {
-                        p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TYPE);
+                    if (argument_kind == ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TYPE) {
                         const bool is_parameter_pack = argument.isPackExpansion();
                         if (is_parameter_pack) {
                             p_param->set_is_parameter_pack(true);
@@ -460,8 +460,7 @@ namespace UEMeta {
                         return;
                     }
 
-                    if (argument_kind == SpecializationArgumentKind::ConcreteTemplate) {
-                        p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TEMPLATE);
+                    if (argument_kind == ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_TEMPLATE) {
                         const bool is_parameter_pack = argument.isPackExpansion();
                         if (is_parameter_pack) {
                             p_param->set_is_parameter_pack(true);
@@ -472,7 +471,6 @@ namespace UEMeta {
                         return;
                     }
 
-                    p_param->set_kind(ParserTypes::TEMPLATE_PARAMETER_KIND_SPEC_CONCRETE_VALUE);
                     const bool is_parameter_pack = argument.isPackExpansion();
                     if (is_parameter_pack) {
                         p_param->set_is_parameter_pack(true);
