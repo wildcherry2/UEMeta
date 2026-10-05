@@ -183,21 +183,7 @@ namespace UEMeta {
             const clang::TemplateArgumentList*  specialization_args = Super::decl->getTemplateSpecializationArgs();
 
             if (declared_params || specialization_args || Super::decl->getTrailingRequiresClause()) {
-                std::vector<AnyString> template_identity;
-                Super::putTemplateDetails(declared_params, p_msg->mutable_template_details(), specialization_args, primary_template_id,
-                                          &template_identity);
-
-                for (const AnyString& str : template_identity) {
-                    if (const auto* ref = get_if<llvm::StringRef>(&str)) {
-                        hasher.update(ref->data(), ref->size());
-                    }
-                    else if (const auto* view = get_if<std::string_view>(&str)) {
-                        hasher.update(view->data(), view->size());
-                    }
-                    else if (const auto* string = get_if<std::string>(&str)) {
-                        hasher.update(string->data(), string->size());
-                    }
-                }
+                Super::putTemplateDetails(declared_params, p_msg->mutable_template_details(), hasher, specialization_args, primary_template_id);
             }
 
             return Hash{hasher};

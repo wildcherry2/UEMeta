@@ -46,8 +46,6 @@ namespace UEMeta {
     template <typename T>
     concept ProtoMessage = std::derived_from<T, google::protobuf::Message>;
 
-    using AnyString = std::variant<std::string, std::string_view, llvm::StringRef>;
-
     struct Hash {
         uint64_t a;
         uint64_t b;

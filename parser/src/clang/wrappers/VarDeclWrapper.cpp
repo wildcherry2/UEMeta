@@ -105,23 +105,10 @@ UEMeta::Hash UEMeta::VarDeclWrapper::computeDeclIdWithTemplateDetailsAndType(std
     const clang::TemplateArgumentList*  specialization_args = specialization ? &specialization->getTemplateArgs() : nullptr;
 
     if (declared_params || specialization_args) [[unlikely]] {
-        std::vector<AnyString>    out;
         const DeclDb::QueryResult resolved_primary_template =
             specialization ? DeclDb::queryDeclIdentity(specialization->getSpecializedTemplate()->getTemplatedDecl()) : DeclDb::QueryResult{false};
 
-        putTemplateDetails(declared_params, p_msg->mutable_template_details(), specialization_args, resolved_primary_template, &out);
-
-        for (AnyString str : out) {
-            if (const auto* ref = get_if<llvm::StringRef>(&str)) {
-                hasher.update(ref->data(), ref->size());
-            }
-            else if (const auto* sv = get_if<std::string_view>(&str)) {
-                hasher.update(sv->data(), sv->size());
-            }
-            else if (const auto* string = get_if<std::string>(&str)) {
-                hasher.update(string->data(), string->size());
-            }
-        }
+        putTemplateDetails(declared_params, p_msg->mutable_template_details(), hasher, specialization_args, resolved_primary_template);
     }
 
     return Hash{hasher};

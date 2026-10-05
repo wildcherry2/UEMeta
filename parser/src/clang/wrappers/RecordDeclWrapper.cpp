@@ -227,19 +227,7 @@ UEMeta::Hash UEMeta::RecordDeclWrapper::computeDeclIdWithTemplateDetails(std::st
     }
 
     // Serialize template details once and hash their identity fragments in declaration order.
-    std::vector<AnyString> template_identity;
-    putTemplateDetails(parameters, p_msg->mutable_template_details(), arguments, primary_id, &template_identity);
-    for (const AnyString& fragment : template_identity) {
-        if (const auto* ref = std::get_if<llvm::StringRef>(&fragment)) {
-            hasher.update(ref->data(), ref->size());
-        }
-        else if (const auto* view = std::get_if<std::string_view>(&fragment)) {
-            hasher.update(view->data(), view->size());
-        }
-        else if (const auto* string = std::get_if<std::string>(&fragment)) {
-            hasher.update(string->data(), string->size());
-        }
-    }
+    putTemplateDetails(parameters, p_msg->mutable_template_details(), hasher, arguments, primary_id);
     return Hash{hasher};
 }
 

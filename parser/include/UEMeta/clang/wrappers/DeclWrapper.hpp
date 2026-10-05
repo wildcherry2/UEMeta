@@ -207,15 +207,10 @@ namespace UEMeta {
         }
 
         void putTemplateDetails(
-            const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails*            p_msg,
-            const clang::TemplateArgumentList*  specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false},
-            std::vector<AnyString>*             id_out_ptr          = nullptr) const {
-            // potential optimization: bool template param to prevent append_out calls
-            const auto append_out = [&](const AnyString& str) -> const AnyString& {
-                if (id_out_ptr) {
-                    id_out_ptr->push_back(str);
-                }
-                return str;
+            const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails* p_msg, boost::hash2::xxh3_128& hasher,
+            const clang::TemplateArgumentList* specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false}) const {
+            const auto append_out = [&hasher](std::string_view str) {
+                hasher.update(str.data(), str.size());
             };
 
             const auto*        function             = llvm::dyn_cast<clang::FunctionDecl>(decl);
@@ -257,7 +252,7 @@ namespace UEMeta {
             };
 
             // recursively parses template params through any nested params
-            const auto put_params = [&append_out, &put_generic_type_ref, &put_constraint, id_out_ptr, this](
+            const auto put_params = [&append_out, &put_generic_type_ref, &put_constraint, &hasher, this](
                                         this auto self, const clang::TemplateParameterList* params, auto* p_details_or_param) {
                 if (params->empty())
                     return;
@@ -293,7 +288,7 @@ namespace UEMeta {
                         if (!param_name.empty()) {
                             setVersionedString(p_param->mutable_name(), param_name);
                         }
-                        putType(non_type_param->getType(), p_param->mutable_type(), id_out_ptr);
+                        putType(non_type_param->getType(), p_param->mutable_type(), &hasher);
                         if (non_type_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
                             append_out(std::string_view{"..."});
@@ -389,7 +384,7 @@ namespace UEMeta {
 
                 bool first_argument = true;
                 const auto put_specialization_argument = [&append_out, &first_argument, &classify_specialization_argument, &get_carried_generic,
-                        &print_argument, &put_generic_type_ref, id_out_ptr,
+                        &print_argument, &put_generic_type_ref, &hasher,
                         this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
                     if (argument.getKind() == clang::TemplateArgument::Null) {
                         throw DeclException(decl, "Encountered a null template specialization argument!");
@@ -459,7 +454,7 @@ namespace UEMeta {
                             p_param->set_is_parameter_pack(true);
                         }
                         const clang::TemplateArgument pattern = is_parameter_pack ? argument.getPackExpansionPattern() : argument;
-                        putType(pattern.getAsType(), p_param->mutable_type(), id_out_ptr);
+                        putType(pattern.getAsType(), p_param->mutable_type(), &hasher);
                         if (is_parameter_pack)
                             append_out(std::string_view{"..."});
                         return;
@@ -471,7 +466,7 @@ namespace UEMeta {
                         if (is_parameter_pack) {
                             p_param->set_is_parameter_pack(true);
                         }
-                        putTemplateRef(argument, p_param->mutable_type(), id_out_ptr);
+                        putTemplateRef(argument, p_param->mutable_type(), &hasher);
                         if (is_parameter_pack)
                             append_out(std::string_view{"..."});
                         return;
@@ -605,7 +600,7 @@ namespace UEMeta {
         template <typename Ref>
             requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
         void putTemplateRef(const clang::TemplateArgument& argument, Ref* p_ref,
-                            std::vector<AnyString>*        id_out_ptr = nullptr) const {
+                            boost::hash2::xxh3_128*         hasher = nullptr) const {
             if (argument.getKind() != clang::TemplateArgument::Template && argument.getKind() != clang::TemplateArgument::TemplateExpansion) {
                 throw DeclException(decl, "Template argument is not a template name!");
             }
@@ -624,8 +619,8 @@ namespace UEMeta {
                 template_name.print(os, getPrintingPolicyForDependence(argument.isInstantiationDependent()));
             }
 
-            if (id_out_ptr)
-                id_out_ptr->emplace_back(fqn);
+            if (hasher)
+                hasher->update(fqn.data(), fqn.size());
             const DeclDb::QueryResult result = argument.isDependent()
                                                    ? DeclDb::QueryResult{true}
                                                    : DeclDb::queryDeclIdentity(template_decl ? template_decl->getTemplatedDecl() : nullptr);
@@ -633,12 +628,12 @@ namespace UEMeta {
         }
 
         void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def,
-                            std::vector<AnyString>*        id_out_ptr = nullptr) const {
+                            boost::hash2::xxh3_128*        hasher = nullptr) const {
             if (def.getKind() == clang::TemplateArgument::Type) {
-                return putType(def.getAsType(), p_def, id_out_ptr);
+                return putType(def.getAsType(), p_def, hasher);
             }
             if (def.getKind() == clang::TemplateArgument::Template || def.getKind() == clang::TemplateArgument::TemplateExpansion) {
-                return putTemplateRef(def, p_def, id_out_ptr);
+                return putTemplateRef(def, p_def, hasher);
             }
 
             std::string              out;
@@ -649,20 +644,16 @@ namespace UEMeta {
 
         template <typename Ref>
             requires (std::same_as<Ref, ParserTypes::TypeRef> || std::same_as<Ref, ParserTypes::VersionedTypeRef>)
-        void putType(const clang::QualType type, Ref* p_def, std::vector<AnyString>* id_out_ptr = nullptr) const {
+        void putType(const clang::QualType type, Ref* p_def, boost::hash2::xxh3_128* hasher = nullptr) const {
             const bool is_dependent = type->isDependentType();
             auto policy = getTypePrintingPolicy(type);
             if (!is_dependent)
                 policy.FullyQualifiedName = false; // Preserve the qualifiers supplied by TypeName.
             std::string fqn = is_dependent ? type.getAsString(policy)
                                           : clang::TypeName::getFullyQualifiedName(type, getASTContext(), policy, true);
-            if (id_out_ptr) {
-                if (is_dependent) {
-                    id_out_ptr->emplace_back(std::string_view{"typename"});
-                }
-                else {
-                    id_out_ptr->emplace_back(fqn);
-                }
+            if (hasher) {
+                const std::string_view fragment = is_dependent ? std::string_view{"typename"} : std::string_view{fqn};
+                hasher->update(fragment.data(), fragment.size());
             }
             // DeclDb resolves generated instantiations to the source template/specialization declaration.
             const DeclDb::QueryResult result = DeclDb::queryType(type);
