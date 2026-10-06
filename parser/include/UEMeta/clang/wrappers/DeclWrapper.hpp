@@ -1,6 +1,7 @@
 #pragma once
 #include <fstream>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <string_view>
 

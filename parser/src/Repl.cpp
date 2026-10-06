@@ -42,7 +42,10 @@ void UEMeta::Repl::startLoop() {
         static std::vector<std::string> clang_args = [] -> std::vector<std::string> {
             auto args = Config::getConfig().getAdditionalClangArgs();
             if (args.empty()) {
-                args = {"-std=c++20", "-fparse-all-comments", "-Wno-missing-declarations", "--target=x86_64-pc-windows-msvc"};
+                args = {"-std=c++20", "-fparse-all-comments", "-Wno-missing-declarations"};
+                #ifdef WIN32
+                args.emplace_back("--target=x86_64-pc-windows-msvc");
+                #endif
             }
             args.emplace_back("-resource-dir=" + (StablePath::currentProgramDirectory() / "resources").string());
             return args;

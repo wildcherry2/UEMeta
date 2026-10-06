@@ -31,7 +31,7 @@ constexpr auto ADDITIONAL_CLANG_ARGS_HELP = "List of additional clang args to fo
     "in clang-cl mode. -resource-dir always points to the resources folder beside the parser executable.";
 
 constexpr auto LOG_HELP = "Path to log file.\nIf empty, no logs will be saved.\nIf given, it should be relative to the "
-    "directory of parser.exe, or absolute.";
+    "directory of the parser executable, or absolute.";
 
 constexpr auto PATH_BEGIN_HELP = "If given, all file paths in the generated files start at a path_begin item rather "
     "than the file system root.\nThis is useful for stripping PII and eliminating parts of "

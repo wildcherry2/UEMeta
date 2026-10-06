@@ -64,7 +64,7 @@ UEMeta::CountingHeartbeatLogger::CountingHeartbeatLogger(const std::string& form
 void UEMeta::CountingHeartbeatLogger::setStr(const std::string str) { HeartbeatLogger::setStr(validateFmtString(str)); }
 
 void UEMeta::CountingHeartbeatLogger::increment() {
-    if (counter.load() < 0xffffffffffffffffui64)
+    if (counter.load() < 0xffffffffffffffffULL)
         return (void)counter.fetch_add(1);
     UEM_WARN("CountingHeartbeatLogger tried to overflow counter!");
 }
