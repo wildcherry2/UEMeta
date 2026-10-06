@@ -3,16 +3,6 @@ target_sources(uemeta-parser-tests PRIVATE
     harness/src/DeclDbTests.cpp
     harness/src/ReflectionDbTests.cpp
 )
-set_target_properties(uemeta-parser-tests PROPERTIES
-    CXX_STANDARD 23
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
-)
-if(MSVC)
-    set_target_properties(uemeta-parser-tests PROPERTIES
-        MSVC_RUNTIME_LIBRARY "${UEMETA_MSVC_RUNTIME_LIBRARY}"
-    )
-endif()
 target_include_directories(uemeta-parser-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/harness/include")
 target_link_libraries(uemeta-parser-tests PRIVATE uemeta-parser-core GTest::gtest)
 
