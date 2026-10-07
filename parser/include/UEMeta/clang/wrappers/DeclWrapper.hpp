@@ -210,7 +210,7 @@ namespace UEMeta {
         void putTemplateDetails(
             const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails* p_msg, boost::hash2::xxh3_128& hasher,
             const clang::TemplateArgumentList* specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false}) const {
-            const auto append_out = [&hasher](std::string_view str) {
+            const auto append_hash = [&hasher](std::string_view str) {
                 hasher.update(str.data(), str.size());
             };
 
@@ -234,7 +234,7 @@ namespace UEMeta {
                 p_type->set_is_builtin_or_template(true);
             };
 
-            const auto put_constraint = [this, &append_out](const clang::ConceptReference* constraint, ParserTypes::TemplateParameter* p_param) {
+            const auto put_constraint = [this, &append_hash](const clang::ConceptReference* constraint, ParserTypes::TemplateParameter* p_param) {
                 if (!constraint)
                     return;
                 std::string              out;
@@ -247,22 +247,22 @@ namespace UEMeta {
                     out.resize(out.size() - 2);
                 }
                 p_param->set_constraint(out);
-                append_out(std::string_view{" constraint("});
-                append_out(out);
-                append_out(std::string_view{")"});
+                append_hash(std::string_view{" constraint("});
+                append_hash(out);
+                append_hash(std::string_view{")"});
             };
 
             // recursively parses template params through any nested params
-            const auto put_params = [&append_out, &put_generic_type_ref, &put_constraint, &hasher, this](
+            const auto put_params = [&append_hash, &put_generic_type_ref, &put_constraint, &hasher, this](
                                         this auto self, const clang::TemplateParameterList* params, auto* p_details_or_param) {
                 if (params->empty())
                     return;
-                append_out(std::string_view{"<"});
+                append_hash(std::string_view{"<"});
 
                 bool first_parameter = true;
                 for (const clang::NamedDecl* param : *params) {
                     if (!first_parameter)
-                        append_out(std::string_view{","});
+                        append_hash(std::string_view{","});
                     first_parameter = false;
                     ParserTypes::TemplateParameter* p_param = p_details_or_param->add_parameters();
                     const std::string param_name = param->getDeclName().isIdentifier() ? param->getName().str() : param->getNameAsString();
@@ -272,10 +272,10 @@ namespace UEMeta {
                                               ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME
                                               : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS);
                         put_generic_type_ref(param_name, p_param->mutable_type());
-                        append_out(std::string_view{"typename"});
+                        append_hash(std::string_view{"typename"});
                         if (type_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
-                            append_out(std::string_view{"..."});
+                            append_hash(std::string_view{"..."});
                         }
                         if (type_param->hasDefaultArgument()) {
                             putDefaultType(type_param->getDefaultArgument().getArgument(), p_param->mutable_default_type());
@@ -292,7 +292,7 @@ namespace UEMeta {
                         putType(non_type_param->getType(), p_param->mutable_type(), &hasher);
                         if (non_type_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
-                            append_out(std::string_view{"..."});
+                            append_hash(std::string_view{"..."});
                         }
                         if (non_type_param->hasDefaultArgument()) {
                             std::string              out;
@@ -315,10 +315,10 @@ namespace UEMeta {
                                               ? ParserTypes::TEMPLATE_PARAMETER_KIND_TYPENAME_TEMPLATE
                                               : ParserTypes::TEMPLATE_PARAMETER_KIND_CLASS_TEMPLATE);
                         put_generic_type_ref(param_name, p_param->mutable_type());
-                        append_out(std::string_view{"typename"});
+                        append_hash(std::string_view{"typename"});
                         if (template_param->isParameterPack()) {
                             p_param->set_is_parameter_pack(true);
-                            append_out(std::string_view{"..."});
+                            append_hash(std::string_view{"..."});
                         }
                         if (template_param->hasDefaultArgument()) {
                             putDefaultType(template_param->getDefaultArgument().getArgument(), p_param->mutable_default_type());
@@ -326,7 +326,7 @@ namespace UEMeta {
                         self(template_param->getTemplateParameters(), p_param);
                     }
                 }
-                append_out(std::string_view{">"});
+                append_hash(std::string_view{">"});
             };
 
             if (declared_params) {
@@ -385,7 +385,7 @@ namespace UEMeta {
                 };
 
                 bool first_argument = true;
-                const auto put_specialization_argument = [&append_out, &first_argument, &classify_specialization_argument, &get_carried_generic,
+                const auto put_specialization_argument = [&append_hash, &first_argument, &classify_specialization_argument, &get_carried_generic,
                         &print_argument, &put_generic_type_ref, &hasher,
                         this](this auto self, const clang::TemplateArgument& argument, auto add_parameter) -> void {
                     if (argument.getKind() == clang::TemplateArgument::Null) {
@@ -401,7 +401,7 @@ namespace UEMeta {
 
                     // Packs are flattened above; only emitted arguments need separators.
                     if (!first_argument)
-                        append_out(std::string_view{","});
+                        append_hash(std::string_view{","});
                     first_argument = false;
                     ParserTypes::TemplateParameter*          p_param       = add_parameter();
                     const ParserTypes::TemplateParameterKind argument_kind = classify_specialization_argument(argument);
@@ -429,9 +429,9 @@ namespace UEMeta {
                                     pattern.getAsType(), getASTContext(), getTypePrintingPolicy(pattern.getAsType()), true);
                                 put_generic_type_ref(generic_type_name, p_param->mutable_type());
                             }
-                            append_out(std::string_view{"typename"});
+                            append_hash(std::string_view{"typename"});
                             if (is_parameter_pack)
-                                append_out(std::string_view{"..."});
+                                append_hash(std::string_view{"..."});
                             return;
                         }
 
@@ -443,9 +443,9 @@ namespace UEMeta {
                             const std::string             generic_template_name = print_argument(pattern);
                             put_generic_type_ref(generic_template_name, p_param->mutable_type());
                         }
-                        append_out(std::string_view{"typename"});
+                        append_hash(std::string_view{"typename"});
                         if (is_parameter_pack)
-                            append_out(std::string_view{"..."});
+                            append_hash(std::string_view{"..."});
                         return;
                     }
 
@@ -457,7 +457,7 @@ namespace UEMeta {
                         const clang::TemplateArgument pattern = is_parameter_pack ? argument.getPackExpansionPattern() : argument;
                         putType(pattern.getAsType(), p_param->mutable_type(), &hasher);
                         if (is_parameter_pack)
-                            append_out(std::string_view{"..."});
+                            append_hash(std::string_view{"..."});
                         return;
                     }
 
@@ -468,7 +468,7 @@ namespace UEMeta {
                         }
                         putTemplateRef(argument, p_param->mutable_type(), &hasher);
                         if (is_parameter_pack)
-                            append_out(std::string_view{"..."});
+                            append_hash(std::string_view{"..."});
                         return;
                     }
 
@@ -479,19 +479,19 @@ namespace UEMeta {
                     std::string concrete_value = print_argument(argument);
                     setVersionedString(p_param->mutable_value(), concrete_value);
                     if (is_parameter_pack) {
-                        append_out(print_argument(argument.getPackExpansionPattern()));
-                        append_out(std::string_view{"..."});
+                        append_hash(print_argument(argument.getPackExpansionPattern()));
+                        append_hash(std::string_view{"..."});
                     }
                     else {
-                        append_out(concrete_value);
+                        append_hash(concrete_value);
                     }
                 };
 
-                append_out(std::string_view{"<"});
+                append_hash(std::string_view{"<"});
                 for (const clang::TemplateArgument& argument : specialization_args->asArray()) {
                     put_specialization_argument(argument, [p_msg] { return p_msg->add_specialized_parameters(); });
                 }
-                append_out(std::string_view{">"});
+                append_hash(std::string_view{">"});
             }
 
             const clang::Expr* head_requirement = declared_params ? declared_params->getRequiresClause() : nullptr;
@@ -513,8 +513,8 @@ namespace UEMeta {
                     print_requirement(head_requirement ? head_requirement : trailing_requirement);
                 }
                 p_msg->set_requirement(requirement);
-                append_out(std::string_view{" requires "});
-                append_out(requirement);
+                append_hash(std::string_view{" requires "});
+                append_hash(requirement);
             }
         }
 
