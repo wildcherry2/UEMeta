@@ -80,6 +80,10 @@ UEMeta::DeclDb::QueryResult UEMeta::DeclDb::queryDeclIdentity(const clang::Decl*
             if (const auto* definition = function->getDefinition())
                 decl = definition;
         }
+        else if (const auto* variable = llvm::dyn_cast<clang::VarDecl>(decl)) {
+            if (const auto* definition = variable->getDefinition())
+                decl = definition;
+        }
         if (const auto decl_hash_it = decl_to_identity_map.find(decl->getCanonicalDecl()); decl_hash_it != decl_to_identity_map.end()) {
             return decl_hash_it->second;
         }
@@ -199,6 +203,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::EnumDecl* decl) {
             if (auto* definition = decl->getDefinition()) {
                 addForwardDeclaration(definition);
             }
+            // undefined and unused forward declaration if above condition fails
             return;
         }
 
@@ -231,6 +236,18 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::VarDecl* decl) {
             return;
         if (isDeclInFunctionOrMethod(decl))
             return;
+
+        // An extern declaration can defer to a definition, but extern with an initializer is itself a definition.
+        if (decl->isThisDeclarationADefinition() == clang::VarDecl::DeclarationOnly) {
+            if (auto* definition = decl->getDefinition()) {
+                addForwardDeclaration(definition);
+                return;
+            }
+            // Preserve one declaration when the variable is defined outside this translation unit.
+            if (decl_to_identity_map.contains(decl->getCanonicalDecl())) {
+                return;
+            }
+        }
 
         return serialize<VarDeclWrapper>(decl);
     }
@@ -268,6 +285,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::RecordDecl* decl) {
             if (auto* definition = decl->getDefinition()) {
                 addForwardDeclaration(definition);
             }
+            // undefined and unused forward declaration if above condition fails
             return;
         }
 
@@ -287,7 +305,7 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
             return;
         if (visited_decls.contains(decl))
             return;
-        visited_decls.insert(decl);
+        visited_decls.insert(decl); //todo make above a oneliner with return value
         if (isDeclInSystemOrStdHeader(decl))
             return;
         if (isDeclInSystemOrStdHeader(decl->getTemplateInstantiationPattern()))
@@ -302,7 +320,12 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
         // Defer prototypes to a known definition, preserving declarations whose bodies are outside this AST.
         if (!decl->isThisDeclarationADefinition()) {
             if (auto* definition = decl->getDefinition()) {
-                addForwardDeclaration(definition);
+                addForwardDeclaration(definition); // we'll serialize the def in a later visit
+                return;
+            }
+            // no definition in this TU, but forward decls of free functions give enough info to serialize, so
+            // serialize if we haven't done so already by returning here if it has a serialized identity
+            if (decl_to_identity_map.contains(decl->getCanonicalDecl())) {
                 return;
             }
         }
@@ -320,8 +343,10 @@ void UEMeta::DeclDb::serializeIfNeeded(clang::FunctionDecl* decl) {
 void UEMeta::DeclDb::addForwardDeclaration(clang::Decl* for_decl) {
     const auto* tag      = llvm::dyn_cast_or_null<clang::TagDecl>(for_decl);
     const auto* function = llvm::dyn_cast_or_null<clang::FunctionDecl>(for_decl);
-    if (!(tag && tag->isThisDeclarationADefinition()) && !(function && function->isThisDeclarationADefinition())) {
-        throw DeclException(for_decl, "Failed to addForwardDeclaration because the declaration is not a record, enum or function definition!");
+    const auto* variable = llvm::dyn_cast_or_null<clang::VarDecl>(for_decl);
+    if (!(tag && tag->isThisDeclarationADefinition()) && !(function && function->isThisDeclarationADefinition()) &&
+        !(variable && variable->isThisDeclarationADefinition() == clang::VarDecl::Definition)) {
+        throw DeclException(for_decl, "Failed to addForwardDeclaration because the declaration is not a record, enum, function or variable definition!");
     }
     if (const auto other_decls = decl_to_forward_decl_occurrence_map.find(for_decl); other_decls != decl_to_forward_decl_occurrence_map.end()) {
         other_decls->second.emplace_back(Detail::DeclWrapperStatics::allocateDeclOccurrence());

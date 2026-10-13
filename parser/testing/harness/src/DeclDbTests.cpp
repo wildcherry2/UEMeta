@@ -214,7 +214,7 @@ namespace {
     }
 
     TEST_F(DeclDbTest, RejectsForwardOccurrencesForNullNonDefinitionsAndOtherDeclarationKinds) {
-        auto* context = parseCode("struct Record; enum class Enum; void function(); int variable; namespace N {}");
+        auto* context = parseCode("struct Record; enum class Enum; void function(); extern int variable; namespace N {}");
         ASSERT_NE(context, nullptr);
         EXPECT_THROW(DeclDb::addForwardDeclaration(nullptr), UEMeta::DeclException<>);
         unsigned checked = 0;
@@ -284,19 +284,23 @@ namespace {
     protected:
         using Message = std::conditional_t<
             std::is_same_v<T, clang::RecordDecl>, ParserTypes::TLRecordDeclaration,
-            std::conditional_t<std::is_same_v<T, clang::EnumDecl>, ParserTypes::TLEnumDeclaration, ParserTypes::TLFreeFunctionDeclaration>>;
+            std::conditional_t<std::is_same_v<T, clang::EnumDecl>, ParserTypes::TLEnumDeclaration,
+                               std::conditional_t<std::is_same_v<T, clang::VarDecl>, ParserTypes::TLGlobalVariableDeclaration,
+                                                  ParserTypes::TLFreeFunctionDeclaration>>>;
 
         static std::string_view source() {
             if constexpr (std::is_same_v<T, clang::RecordDecl>)
                 return "struct Target; struct Target; struct Target {}; struct Target;";
             else if constexpr (std::is_same_v<T, clang::EnumDecl>)
                 return "enum class Target; enum class Target; enum class Target {}; enum class Target;";
+            else if constexpr (std::is_same_v<T, clang::VarDecl>)
+                return "extern int Target; extern int Target; int Target = 42; extern int Target;";
             else
                 return "void Target(); void Target(); void Target() {} void Target();";
         }
     };
 
-    using ForwardKinds = ::testing::Types<clang::RecordDecl, clang::EnumDecl, clang::FunctionDecl>;
+    using ForwardKinds = ::testing::Types<clang::RecordDecl, clang::EnumDecl, clang::FunctionDecl, clang::VarDecl>;
     TYPED_TEST_SUITE(DeclDbRedeclarationTest, ForwardKinds);
 
     TYPED_TEST(DeclDbRedeclarationTest, SerializationPreservesOriginalCollisionException) {
@@ -340,7 +344,7 @@ namespace {
         DeclDb::serializeIfNeeded(decls[0]);
         DeclDb::serializeIfNeeded(decls[0]); // Re-visiting the same AST node is a no-op.
         expectQuery(DeclDb::queryDeclIdentity(decls[2]), uint64_t{0});
-        if constexpr (std::is_same_v<TypeParam, clang::FunctionDecl>) {
+        if constexpr (!std::is_base_of_v<clang::TagDecl, TypeParam>) {
             expectQuery(DeclDb::queryDeclIdentity(decls[0]), uint64_t{0});
         }
         else {
@@ -348,7 +352,7 @@ namespace {
         }
         DeclDb::serializeIfNeeded(decls[1]);
         expectQuery(DeclDb::queryDeclIdentity(decls[2]), uint64_t{1});
-        if constexpr (std::is_same_v<TypeParam, clang::FunctionDecl>) {
+        if constexpr (!std::is_base_of_v<clang::TagDecl, TypeParam>) {
             expectQuery(DeclDb::queryDeclIdentity(decls[0]), uint64_t{1});
             expectQuery(DeclDb::queryDeclIdentity(decls[1]), uint64_t{1});
         }
@@ -359,9 +363,11 @@ namespace {
         DeclDb::serializeIfNeeded(decls[2]);
         DeclDb::serializeIfNeeded(decls[2]);
         DeclDb::serializeIfNeeded(decls[3]); // A written redeclaration after the definition still counts.
-        const auto id = std::is_same_v<TypeParam, clang::FunctionDecl> ? functionId("::Target") : enumId("::Target");
+        const auto id = std::is_same_v<TypeParam, clang::FunctionDecl> ? functionId("::Target")
+                       : std::is_same_v<TypeParam, clang::VarDecl>   ? variableId("::Target")
+                                                                    : enumId("::Target");
         expectQuery(DeclDb::queryDeclIdentity(decls[2]), id);
-        if constexpr (std::is_same_v<TypeParam, clang::FunctionDecl>) {
+        if constexpr (!std::is_base_of_v<clang::TagDecl, TypeParam>) {
             expectQuery(DeclDb::queryDeclIdentity(decls[0]), id);
         }
         else {
@@ -374,6 +380,10 @@ namespace {
         std::ifstream                 input{files[0], std::ios::binary};
         ASSERT_TRUE(definition.ParseFromIstream(&input));
         expectProto(definition.metadata(), metadata("::Target", id, 2));
+        if constexpr (std::is_same_v<TypeParam, clang::VarDecl>) {
+            expectVersioned(definition.default_value(), "42");
+            expectVersioned(definition.storage_class(), ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED);
+        }
         EXPECT_EQ(files[0], this->outputPath(definition.metadata(), std::string{UEMeta::TOP_LEVEL_EXT<typename TestFixture::Message>} + "bin"));
         DeclDb::serializeForwardDeclarations();
         auto expected = this->forwardList(R"pb(
@@ -413,6 +423,70 @@ namespace {
         auto expected = forwardList(R"pb(
             forward_declarations { occurrence_indices: [0, 1, 3] }
         )pb");
+        id.putProtoHash(expected.mutable_forward_declarations(0)->mutable_type_id());
+        expectForwards(readForwardFile(), expected);
+    }
+
+    TEST_F(DeclDbTest, RepeatedExternalVariablesWithoutDefinitionsSerializeOncePerIdentity) {
+        auto* context = parseCode(R"cpp(
+            extern int ordinary;
+            extern int ordinary;
+            extern thread_local int local;
+            extern thread_local int local;
+            template<typename T> extern T value;
+            template<typename T> extern T value;
+        )cpp");
+        ASSERT_NE(context, nullptr);
+        auto variables = declarations<clang::VarDecl>(context->getTranslationUnitDecl());
+        for (auto* variable_template : declarations<clang::VarTemplateDecl>(context->getTranslationUnitDecl()))
+            variables.push_back(variable_template->getTemplatedDecl());
+        ASSERT_EQ(variables.size(), 6u);
+        for (auto* variable : variables) {
+            ASSERT_EQ(variable->getDefinition(), nullptr);
+            DeclDb::serializeIfNeeded(variable);
+            DeclDb::serializeIfNeeded(variable);
+        }
+        const std::vector<Hash> ids{variableId("::ordinary"), variableId("::local"), variableId("::valueT<typename>")};
+        for (std::size_t i = 0; i < variables.size(); ++i) {
+            const auto id = ids[i / 2];
+            expectQuery(DeclDb::queryDeclIdentity(variables[i]), id);
+            EXPECT_EQ(DeclDb::queryDecl(id), variables[i - i % 2]);
+        }
+        EXPECT_EQ(outputFiles().size(), 3u);
+        // File names use identity, so also check that duplicate declarations did not overwrite the first occurrence.
+        for (std::size_t i = 0; i < ids.size(); ++i) {
+            ParserTypes::TLGlobalVariableDeclaration variable;
+            std::ifstream                           input{outputPath(metadata("", ids[i], i), "varbin"), std::ios::binary};
+            ASSERT_TRUE(variable.ParseFromIstream(&input));
+            expectVersioned(variable.metadata().occurrence_index(), i);
+            EXPECT_FALSE(variable.has_default_value());
+        }
+        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 3u);
+        DeclDb::serializeForwardDeclarations();
+        expectForwards(readForwardFile(), forwardList());
+    }
+
+    TEST_F(DeclDbTest, ExternalVariableWithInitializerIsSerializedAsTheDefinition) {
+        auto* context = parseCode("extern int value; extern int value = 7; extern int value; int zero_initialized;");
+        ASSERT_NE(context, nullptr);
+        const auto variables = declarations<clang::VarDecl>(context->getTranslationUnitDecl());
+        ASSERT_EQ(variables.size(), 4u);
+        ASSERT_EQ(variables[1]->isThisDeclarationADefinition(), clang::VarDecl::Definition);
+        ASSERT_EQ(variables[3]->isThisDeclarationADefinition(), clang::VarDecl::Definition);
+        for (auto* variable : variables)
+            DeclDb::serializeIfNeeded(variable);
+        const auto id = variableId("::value");
+        EXPECT_EQ(DeclDb::queryDecl(id), variables[1]);
+        EXPECT_EQ(outputFiles().size(), 2u);
+        ParserTypes::TLGlobalVariableDeclaration definition;
+        std::ifstream                           input{outputPath(metadata("::value", id, 1), "varbin"), std::ios::binary};
+        ASSERT_TRUE(definition.ParseFromIstream(&input));
+        expectProto(definition.metadata(), metadata("::value", id, 1));
+        expectVersioned(definition.default_value(), "7");
+        expectVersioned(definition.storage_class(), ParserTypes::VAR_STORAGE_CLASS_EXTERN);
+        expectQuery(DeclDb::queryDeclIdentity(variables[3]), variableId("::zero_initialized"));
+        DeclDb::serializeForwardDeclarations();
+        auto expected = forwardList(R"pb(forward_declarations { occurrence_indices: [0, 2] })pb");
         id.putProtoHash(expected.mutable_forward_declarations(0)->mutable_type_id());
         expectForwards(readForwardFile(), expected);
     }

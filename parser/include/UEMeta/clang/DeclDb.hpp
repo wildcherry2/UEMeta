@@ -25,7 +25,7 @@ namespace UEMeta {
         // uint64_t if the decl otherwise has a forward declaration, then this is the occurrence index of the latest forward declaration,
         // or false if it's not mapped to anything
         // monostate is returned on exception
-        // Redeclarations share registered identities. Function forward occurrences resolve through their definition when available.
+        // Redeclarations share registered identities. Function and variable forward occurrences resolve through their definition when available.
         // A registered definition's identity takes precedence over its forward-declaration history.
         static QueryResult queryDeclIdentity(const clang::Decl* decl);
 
@@ -57,7 +57,7 @@ namespace UEMeta {
         static void serializeIfNeeded(clang::RecordDecl* decl);
         static void serializeIfNeeded(clang::FunctionDecl* decl);
 
-        // Adds a forward occurrence keyed by the given record, enum or function definition.
+        // Adds a forward occurrence keyed by the given record, enum, function or variable definition.
         // Throws if for_decl is null, another declaration kind, or not a definition.
         // Does not add for_decl to the visited decls list, nor does it require that for_decl has been encountered/serialized already.
         static void addForwardDeclaration(clang::Decl* for_decl);

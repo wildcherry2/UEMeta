@@ -10,7 +10,11 @@ ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediate
     const std::string fqn     = computeFQN();
 
     // takes care of DeclarationMetadata, TemplateDetails, and type_ref
-    putMetadata(out_msg->mutable_metadata(), true, fqn, computeDeclIdWithTemplateDetailsAndType(fqn, out_msg));
+    const Hash decl_id = computeDeclIdWithTemplateDetailsAndType(fqn, out_msg);
+    putMetadata(out_msg->mutable_metadata(), true, fqn, decl_id);
+    if (!decl->isCXXClassMember()) {
+        DeclDb::addDeclIdentity(decl, decl_id);
+    }
 
     setVersioned(out_msg->mutable_storage_class(), decl->getTLSKind() != clang::VarDecl::TLS_None ? ParserTypes::VAR_STORAGE_CLASS_THREAD_LOCAL
                                                    : decl->getStorageClass() == clang::SC_Static  ? ParserTypes::VAR_STORAGE_CLASS_STATIC

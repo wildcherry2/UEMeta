@@ -235,6 +235,7 @@ namespace {
         ASSERT_EQ(other_scope.size(), 1u);
         ASSERT_EQ(other_name.size(), 1u);
         const auto* original = serialize(first[0]);
+        UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
         const auto* modified = serialize(changed[0]);
         expectId(original->metadata().decl_id(), variableId("::N::stable"));
         expectId(modified->metadata().decl_id(), variableId("::N::stable"));
@@ -472,7 +473,7 @@ namespace {
         const auto* primary    = serialize(variables[0]);
         const auto  primary_id = variableId("::selectedconst int<typename,int>");
         expectId(primary->metadata().decl_id(), primary_id);
-        UEMeta::DeclDb::addDeclIdentity(variables[0], primary_id);
+        EXPECT_EQ(UEMeta::DeclDb::queryDecl(primary_id), variables[0]);
         const auto* partial       = serialize(variables[1]);
         const auto* explicit_spec = serialize(variables[2]);
         EXPECT_NE(identity(primary), identity(partial));
@@ -571,6 +572,7 @@ namespace {
         ASSERT_EQ(other_type.size(), 1u);
         ASSERT_EQ(other_parameter.size(), 1u);
         const auto original = identity(serialize(first[0]));
+        UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
         EXPECT_EQ(original, identity(serialize(renamed[0])));
         EXPECT_NE(original, identity(serialize(other_type[0])));
         EXPECT_NE(original, identity(serialize(other_parameter[0])));
@@ -602,7 +604,8 @@ namespace {
             expectProto(specialization->template_details().specialized_parameters(index), expected);
         }
         EXPECT_EQ(specialization->template_details().parameters_size(), 0);
-        EXPECT_FALSE(specialization->template_details().has_primary_template_decl_id());
+        ASSERT_TRUE(specialization->template_details().has_primary_template_decl_id());
+        expectId(specialization->template_details().primary_template_decl_id().decl_id(), variableId("::packedint<int...>"));
         EXPECT_EQ(specialization->template_details().specialization_kind(), ParserTypes::TEMPLATE_SPECIALIZATION_EXPLICIT);
         expectId(specialization->metadata().decl_id(), variableId("::packedint<1,2,3>"));
         expectVersioned(specialization->default_value(), "6");
@@ -632,6 +635,7 @@ namespace {
         ASSERT_EQ(first.size(), 1u);
         ASSERT_EQ(second.size(), 1u);
         const auto* earlier = serialize(first[0]);
+        UEMeta::DeclDb::reset(); // Compare independent source variants with the same identity.
         const auto* later   = serialize(second[0]);
         auto        expected =
             builtinVariable("::relocated", "int", 0, ParserTypes::VAR_STORAGE_CLASS_UNSPECIFIED, ParserTypes::CONSTANT_EVALUATION_NONE, "1");
