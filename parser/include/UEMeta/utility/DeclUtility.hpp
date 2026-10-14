@@ -1,5 +1,6 @@
 #pragma once
 #include <concepts>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -45,6 +46,9 @@ namespace UEMeta {
 
     template <typename T>
     concept ProtoMessage = std::derived_from<T, google::protobuf::Message>;
+
+    uint64_t allocateDeclOccurrence();
+    void     resetDeclOccurrences();
 
     struct Hash {
         uint64_t a;

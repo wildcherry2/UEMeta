@@ -3,6 +3,7 @@
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "clang/AST/DeclTemplate.h"
 
 ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediateRepresentation() const {
@@ -39,11 +40,11 @@ ParserTypes::TLGlobalVariableDeclaration* UEMeta::VarDeclWrapper::toIntermediate
 void UEMeta::VarDeclWrapper::toFile() const { return toFile(toIntermediateRepresentation(), arena); }
 
 void UEMeta::VarDeclWrapper::toFile(const ParserTypes::TLGlobalVariableDeclaration* ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
-    saveToFile(ir, arena);
+    Serializer::getSerializer().saveToFile(ir, arena);
 }
 
 void UEMeta::VarDeclWrapper::toString(const ParserTypes::TLGlobalVariableDeclaration* ir, std::string& out) {
-    saveToString(ir, out);
+    Serializer::getSerializer().saveToString(ir, out);
 }
 
 std::string UEMeta::VarDeclWrapper::computeFQN() const {

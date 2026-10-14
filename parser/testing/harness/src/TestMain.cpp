@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "llvm/Support/FileSystem.h"
 
 int main(int argc, char** argv) {
@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     struct OutputDirectory {
         std::filesystem::path path;
         ~OutputDirectory() {
-            UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations();
+            UEMeta::Serializer::getSerializer().awaitPendingSerializations();
             std::error_code ignored;
             std::filesystem::remove_all(path, ignored);
         }
@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
         std::filesystem::path directory;
         explicit FreshTestOutput(std::filesystem::path directory) : directory(std::move(directory)) {}
         void OnTestStart(const ::testing::TestInfo&) override {
-            UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations();
+            UEMeta::Serializer::getSerializer().awaitPendingSerializations();
             std::filesystem::remove_all(directory);
             std::filesystem::create_directory(directory);
         }

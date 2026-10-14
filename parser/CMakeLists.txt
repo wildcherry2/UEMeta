@@ -21,13 +21,13 @@ add_library(uemeta-parser-core STATIC
     src/clang/MetaPreprocessor.cpp
     src/clang/DeclDb.cpp
     src/clang/ReflectionDb.cpp
-    src/clang/wrappers/DeclWrapper.cpp
     src/clang/wrappers/EnumDeclWrapper.cpp
     src/clang/wrappers/VarDeclWrapper.cpp
     src/clang/wrappers/MethodDeclWrapper.cpp
     src/clang/wrappers/RecordDeclWrapper.cpp
     src/utility/StablePath.cpp
     src/utility/HeartbeatLogger.cpp
+    src/utility/Serializer.cpp
     src/utility/DeclUtility.cpp)
 
 include(cmake/Protobuf.cmake)

@@ -2,6 +2,7 @@
 
 #include "UEMeta/utility/DeclException.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/QualTypeNames.h"
@@ -80,22 +81,22 @@ void UEMeta::EnumDeclWrapper::toFile() const { return toFile(toIntermediateRepre
 void UEMeta::EnumDeclWrapper::toString(const IntermediateRepresentation& ir, std::string& out) {
     if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
         for (const auto* p_var : *vec) {
-            saveToString(p_var, out);
+            Serializer::getSerializer().saveToString(p_var, out);
         }
     }
     else {
-        saveToString(std::get<ParserTypes::TLEnumDeclaration*>(ir), out);
+        Serializer::getSerializer().saveToString(std::get<ParserTypes::TLEnumDeclaration*>(ir), out);
     }
 }
 
 void UEMeta::EnumDeclWrapper::toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
         for (const auto* p_var : *vec) {
-            saveToFile(p_var, arena);
+            Serializer::getSerializer().saveToFile(p_var, arena);
         }
     }
     else {
-        saveToFile(std::get<ParserTypes::TLEnumDeclaration*>(ir), arena);
+        Serializer::getSerializer().saveToFile(std::get<ParserTypes::TLEnumDeclaration*>(ir), arena);
     }
 }
 

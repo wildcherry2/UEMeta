@@ -6,6 +6,7 @@
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/utility/DeclException.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "UEMeta/clang/wrappers/VarDeclWrapper.hpp"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Type.h"
@@ -349,10 +350,10 @@ void UEMeta::DeclDb::addForwardDeclaration(clang::Decl* for_decl) {
         throw DeclException(for_decl, "Failed to addForwardDeclaration because the declaration is not a record, enum, function or variable definition!");
     }
     if (const auto other_decls = decl_to_forward_decl_occurrence_map.find(for_decl); other_decls != decl_to_forward_decl_occurrence_map.end()) {
-        other_decls->second.emplace_back(Detail::DeclWrapperStatics::allocateDeclOccurrence());
+        other_decls->second.emplace_back(allocateDeclOccurrence());
     }
     else {
-        decl_to_forward_decl_occurrence_map.insert({for_decl, {Detail::DeclWrapperStatics::allocateDeclOccurrence()}});
+        decl_to_forward_decl_occurrence_map.insert({for_decl, {allocateDeclOccurrence()}});
     }
 }
 
@@ -364,7 +365,7 @@ void UEMeta::DeclDb::addDeclarationAsVisited(clang::Decl* decl) {
     visited_decls.insert(decl);
 }
 
-void UEMeta::DeclDb::awaitPendingSerializations() { return Detail::DeclWrapperStatics::awaitPendingSerializations(); }
+void UEMeta::DeclDb::awaitPendingSerializations() { return Serializer::getSerializer().awaitPendingSerializations(); }
 
 void UEMeta::DeclDb::serializeForwardDeclarations() {
     const auto arena = std::make_shared<google::protobuf::Arena>();
@@ -388,12 +389,12 @@ void UEMeta::DeclDb::serializeForwardDeclarations() {
 
     if (Config::getConfig().getMode() == Config::Mode::Repl) {
         std::string out;
-        Detail::DeclWrapperStatics::saveToString(p_msg, out);
+        Serializer::getSerializer().saveToString(p_msg, out);
         std::cout << out << std::endl;
     }
 
     if (!Config::getConfig().getOutputDirectory().isEmptyPath()) {
-        Detail::DeclWrapperStatics::saveToFile(p_msg, arena);
+        Serializer::getSerializer().saveToFile(p_msg, arena);
     }
 }
 

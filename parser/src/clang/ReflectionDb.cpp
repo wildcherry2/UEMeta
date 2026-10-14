@@ -10,7 +10,7 @@
 
 #include "TopLevel.pb.h"
 #include "UEMeta/Cli.hpp"
-#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "UEMeta/utility/DeclException.hpp"
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/FileManager.h"
@@ -164,7 +164,7 @@ void UEMeta::ReflectionDb::serializeReflectionCache() {
             func_id.putProtoHash(info->mutable_func_id());
         }
     }
-    Detail::DeclWrapperStatics::saveToFile(cache, arena);
+    Serializer::getSerializer().saveToFile(cache, arena);
 }
 
 void UEMeta::ReflectionDb::computePackageIfNeeded(clang::FileID file_id, clang::SourceManager& source_manager) {

@@ -16,6 +16,7 @@
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Stmt.h"
@@ -171,10 +172,10 @@ namespace {
         static ParserTypes::ReflectionCache readSerializedCache() {
             const auto& cfg = Config::getConfig();
             const auto path = cfg.getOutputDirectory().getUnderlyingPath() / "cache.reflection";
-            UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations();
+            UEMeta::Serializer::getSerializer().awaitPendingSerializations();
             std::filesystem::remove(path);
             ReflectionDb::serializeReflectionCache();
-            UEMeta::Detail::DeclWrapperStatics::awaitPendingSerializations();
+            UEMeta::Serializer::getSerializer().awaitPendingSerializations();
 
             ParserTypes::ReflectionCache cache;
             if (!cfg.unrealExtensionsEnabled()) {

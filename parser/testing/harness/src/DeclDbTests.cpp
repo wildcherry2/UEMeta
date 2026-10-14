@@ -5,6 +5,7 @@
 
 #include "CallableTest.hpp"
 #include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 #include "google/protobuf/util/json_util.h"
@@ -16,8 +17,7 @@ namespace {
     using UEMeta::Hash;
     using Format = Config::SerializationFormat;
 
-    // Only the forward-file tests change format. Wrapper file writers cache their
-    // format, so those tests keep the process's normal binary configuration.
+    // Restore the process's normal binary configuration after each forward-file test.
     class ScopedSerializationFormat {
     public:
         explicit ScopedSerializationFormat(Config::SerializationFormat format) : previous(Config::getConfig().getFormat()) {
@@ -226,7 +226,7 @@ namespace {
         }
         EXPECT_EQ(checked, 5u);
         // Rejections must not consume occurrence indices.
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 0u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 0u);
     }
 
     TEST_F(DeclDbTest, LatestForwardOccurrenceYieldsToDefinitionIdentity) {
@@ -461,7 +461,7 @@ namespace {
             expectVersioned(variable.metadata().occurrence_index(), i);
             EXPECT_FALSE(variable.has_default_value());
         }
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 3u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 3u);
         DeclDb::serializeForwardDeclarations();
         expectForwards(readForwardFile(), forwardList());
     }
@@ -608,7 +608,7 @@ namespace {
         skip(functions[0]);
         EXPECT_EQ(checked, 8u); // Two members, parameter, two records, two enums and local variable.
         EXPECT_TRUE(outputFiles().empty());
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 0u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 0u);
     }
 
     TEST_F(DeclDbTest, ExternalFunctionDeclaredInABlockRetainsItsNamespaceIdentity) {
@@ -667,7 +667,7 @@ namespace {
         for (const auto* decl : std::vector<clang::Decl*>{record, enumeration, function, variable})
             expectQuery(DeclDb::queryDeclIdentity(decl), false);
         EXPECT_TRUE(outputFiles().empty());
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 0u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 0u);
     }
 
     TEST_F(DeclDbTest, TypeQueriesReturnTheCanonicalUnwrappedTypeWithoutCreatingState) {
@@ -709,7 +709,7 @@ namespace {
         DeclDb::addDeclIdentity(templates[0]->getTemplatedDecl(), identity(21, 22));
         expectQuery(DeclDb::queryType(dependent_type), identity(21, 22));
         EXPECT_TRUE(outputFiles().empty());
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 1u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 1u);
     }
 
     TEST_F(DeclDbTest, InstantiatedTypesUseTheSelectedSourcePatternEvenWhenGeneratedIdentitiesExist) {
@@ -753,7 +753,7 @@ namespace {
             EXPECT_EQ(unwrapped, variables[i]->getType().getCanonicalType());
         }
         EXPECT_TRUE(outputFiles().empty());
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 0u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 0u);
     }
 
     TEST_F(DeclDbTest, UninstantiatedSpecializationDoesNotGuessAPatternOrInstantiateIt) {
@@ -772,7 +772,7 @@ namespace {
         expectQuery(DeclDb::queryType(variables[0]->getType()), false);
         EXPECT_EQ(generated->getDefinition(), nullptr);
         EXPECT_TRUE(outputFiles().empty());
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 0u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 0u);
     }
 
     TEST_F(DeclDbTest, InstantiatedMemberEnumUsesItsSourceEnumsForwardOccurrenceAndIdentity) {
@@ -881,7 +881,7 @@ namespace {
         DeclDb::serializeForwardDeclarations();
         expectForwards(readForwardFile(), expected);
         EXPECT_EQ(std::filesystem::file_size(forwardPath()), size);
-        EXPECT_EQ(UEMeta::Detail::DeclWrapperStatics::allocateDeclOccurrence(), 1u);
+        EXPECT_EQ(UEMeta::allocateDeclOccurrence(), 1u);
         DeclDb::reset();
         DeclDb::serializeForwardDeclarations();
         expectForwards(readForwardFile(), forwardList());

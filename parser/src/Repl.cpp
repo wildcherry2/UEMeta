@@ -9,7 +9,7 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/clang/MetaASTConsumer.hpp"
-#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 
 void UEMeta::Repl::startLoop() {
     while (std::cin) {
@@ -71,6 +71,6 @@ void UEMeta::Repl::startLoop() {
 
         DeclDb::awaitPendingSerializations();
         DeclDb::reset();
-        Detail::DeclWrapperStatics::resetDeclOccurrences();
+        resetDeclOccurrences();
     }
 }

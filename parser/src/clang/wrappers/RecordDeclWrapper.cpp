@@ -3,6 +3,7 @@
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 #include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "clang/AST/DeclTemplate.h"
 #include "llvm/ADT/STLExtras.h"
@@ -167,22 +168,22 @@ void UEMeta::RecordDeclWrapper::toFile() const { return toFile(toIntermediateRep
 
 void UEMeta::RecordDeclWrapper::toFile(IntermediateRepresentation&& ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
     if (auto** p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
-        saveToFile(*p_record, arena);
+        Serializer::getSerializer().saveToFile(*p_record, arena);
     }
     else if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
         for (const auto* p_var : *vec) {
-            saveToFile(p_var, arena);
+            Serializer::getSerializer().saveToFile(p_var, arena);
         }
     }
 }
 
 void UEMeta::RecordDeclWrapper::toString(const IntermediateRepresentation& ir, std::string& out) {
     if (const auto* p_record = std::get_if<ParserTypes::TLRecordDeclaration*>(&ir)) {
-        saveToString(*p_record, out);
+        Serializer::getSerializer().saveToString(*p_record, out);
     }
     else if (const auto* vec = std::get_if<std::vector<ParserTypes::TLGlobalVariableDeclaration*>>(&ir)) {
         for (const auto* p_var : *vec) {
-            saveToString(p_var, out);
+            Serializer::getSerializer().saveToString(p_var, out);
         }
     }
 }

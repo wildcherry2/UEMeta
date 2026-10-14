@@ -8,8 +8,9 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/clang/ReflectionDb.hpp"
-#include "UEMeta/clang/wrappers/DeclWrapper.hpp"
+#include "UEMeta/utility/DeclUtility.hpp"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Tooling/Tooling.h"
 
@@ -23,7 +24,7 @@ namespace UEMeta::Testing {
             DeclDb::reset();
             ReflectionDb::reset();
             // Expected occurrences are zero-based and independent of test order.
-            Detail::DeclWrapperStatics::resetDeclOccurrences();
+            resetDeclOccurrences();
         }
 
         void TearDown() override {

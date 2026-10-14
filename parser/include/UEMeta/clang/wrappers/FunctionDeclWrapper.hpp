@@ -3,6 +3,7 @@
 #include "DeclWrapper.hpp"
 #include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/utility/Serializer.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"
 #include "clang/AST/DeclCXX.h"
@@ -33,11 +34,11 @@ namespace UEMeta {
         void toFile() const { return toFile(toIntermediateRepresentation(), Super::arena); }
 
         static void toFile(const ParserTypes::TLFreeFunctionDeclaration* ir, const std::shared_ptr<google::protobuf::Arena>& arena) {
-            Detail::DeclWrapperStatics::saveToFile(ir, arena);
+            UEMeta::Serializer::getSerializer().saveToFile(ir, arena);
         }
 
         static void toString(const IntermediateRepresentation& ir, std::string& out) {
-            Detail::DeclWrapperStatics::saveToString(ir, out);
+            UEMeta::Serializer::getSerializer().saveToString(ir, out);
         }
 
     protected:
