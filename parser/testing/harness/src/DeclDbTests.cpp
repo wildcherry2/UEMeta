@@ -4,7 +4,7 @@
 #include <type_traits>
 
 #include "CallableTest.hpp"
-#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/Exception.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"

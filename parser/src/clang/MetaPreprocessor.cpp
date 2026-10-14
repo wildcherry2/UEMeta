@@ -2,7 +2,7 @@
 
 #include "clang/Lex/Lexer.h"
 #include "clang/Lex/Token.h"
-#include "UEMeta/utility/TokenException.hpp"
+#include "UEMeta/utility/Exception.hpp"
 #include "UEMeta/clang/ReflectionDb.hpp"
 
 UEMeta::MetaPreprocessor::MetaPreprocessor(clang::SourceManager& sm, clang::LangOptions& opts) : sm(sm), lang_opts(opts) {}

@@ -1,6 +1,6 @@
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 
-#include "UEMeta/utility/DeclException.hpp"
+#include "UEMeta/utility/Exception.hpp"
 #include "UEMeta/utility/DeclUtility.hpp"
 #include "UEMeta/utility/Serializer.hpp"
 #include "boost/hash2/hash_append.hpp"
