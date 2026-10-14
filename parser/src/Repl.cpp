@@ -9,7 +9,7 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/clang/MetaASTConsumer.hpp"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 
 void UEMeta::Repl::startLoop() {
     while (std::cin) {

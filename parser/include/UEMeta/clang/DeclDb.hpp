@@ -2,7 +2,7 @@
 #include <variant>
 #include <optional>
 
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "absl/container/flat_hash_map.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclBase.h"

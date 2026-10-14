@@ -4,8 +4,8 @@
 #include <type_traits>
 
 #include "CallableTest.hpp"
-#include "UEMeta/utility/Exception.hpp"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/Exception.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 #include "google/protobuf/util/json_util.h"

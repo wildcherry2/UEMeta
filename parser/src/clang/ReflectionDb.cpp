@@ -11,7 +11,7 @@
 #include "TopLevel.pb.h"
 #include "UEMeta/Cli.hpp"
 #include "UEMeta/utility/Serializer.hpp"
-#include "UEMeta/utility/Exception.hpp"
+#include "UEMeta/clang/Exception.hpp"
 #include "clang/AST/ASTContext.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"

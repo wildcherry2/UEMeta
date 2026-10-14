@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 #include "TopLevel.pb.h"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "google/protobuf/text_format.h"
 #include "google/protobuf/util/message_differencer.h"

@@ -15,7 +15,7 @@
 #include "UEMeta/clang/ReflectionDb.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
-#include "UEMeta/utility/Exception.hpp"
+#include "UEMeta/clang/Exception.hpp"
 #include "UEMeta/utility/Serializer.hpp"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/DeclTemplate.h"

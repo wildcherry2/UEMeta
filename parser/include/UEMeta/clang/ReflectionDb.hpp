@@ -8,7 +8,7 @@
 
 #include "Enums.pb.h"
 #include "TopLevel.pb.h"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "clang/AST/Decl.h"

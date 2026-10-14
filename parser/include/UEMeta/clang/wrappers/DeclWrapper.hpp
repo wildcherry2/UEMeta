@@ -5,8 +5,8 @@
 
 #include "UEMeta/clang/DeclDb.hpp"
 #include "TopLevel.pb.h"
-#include "UEMeta/utility/Exception.hpp"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/Exception.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "clang/AST/ASTConcept.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"

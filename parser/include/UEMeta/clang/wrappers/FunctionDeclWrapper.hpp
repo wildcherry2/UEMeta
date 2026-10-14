@@ -2,7 +2,7 @@
 
 #include "DeclWrapper.hpp"
 #include "UEMeta/clang/DeclDb.hpp"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "UEMeta/utility/Serializer.hpp"
 #include "boost/hash2/hash_append.hpp"
 #include "boost/hash2/xxh3.hpp"

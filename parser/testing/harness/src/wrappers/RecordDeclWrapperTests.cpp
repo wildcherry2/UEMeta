@@ -6,7 +6,7 @@
 
 #include "ProtoAssertions.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
-#include "UEMeta/utility/Exception.hpp"
+#include "UEMeta/clang/Exception.hpp"
 #include "WrapperTest.hpp"
 #include "clang/AST/DeclTemplate.h"
 

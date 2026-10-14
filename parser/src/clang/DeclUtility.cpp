@@ -1,4 +1,4 @@
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 
 namespace {
     uint64_t next_decl_occurrence = 0;

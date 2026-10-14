@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "BS_thread_pool.hpp"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 
 namespace UEMeta {
     class Serializer final {

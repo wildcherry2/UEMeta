@@ -10,7 +10,7 @@
 #include <gtest/gtest.h>
 #include "UEMeta/clang/DeclDb.hpp"
 #include "UEMeta/clang/ReflectionDb.hpp"
-#include "UEMeta/utility/DeclUtility.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Tooling/Tooling.h"
 
