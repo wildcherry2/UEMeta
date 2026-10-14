@@ -504,13 +504,12 @@ namespace UEMeta {
             putTypeRef(fqn, result, p_ref);
         }
 
-        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def,
-                            boost::hash2::xxh3_128*        hasher = nullptr) const {
+        void putDefaultType(const clang::TemplateArgument& def, ParserTypes::VersionedTypeRef* p_def) const {
             if (def.getKind() == clang::TemplateArgument::Type) {
-                return putType(def.getAsType(), p_def, hasher);
+                return putType(def.getAsType(), p_def);
             }
             if (def.getKind() == clang::TemplateArgument::Template || def.getKind() == clang::TemplateArgument::TemplateExpansion) {
-                return putTemplateRef(def, p_def, hasher);
+                return putTemplateRef(def, p_def);
             }
 
             std::string              out;
