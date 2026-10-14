@@ -1,5 +1,6 @@
 #include "UEMeta/clang/wrappers/VarDeclWrapper.hpp"
 #include "UEMeta/clang/DeclDb.hpp"
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 #include "UEMeta/clang/Exception.hpp"
@@ -50,7 +51,7 @@ void UEMeta::VarDeclWrapper::toString(const ParserTypes::TLGlobalVariableDeclara
 std::string UEMeta::VarDeclWrapper::computeFQN() const {
     std::string              out{};
     llvm::raw_string_ostream os{out};
-    putContextFQN(os);
+    putContextFQN(os, decl);
     decl->printName(os);
     return out;
 }

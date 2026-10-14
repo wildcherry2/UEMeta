@@ -14,6 +14,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/Basic/Specifiers.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 namespace UEMeta {
     template <typename T>
@@ -49,6 +50,8 @@ namespace UEMeta {
 
     uint64_t allocateDeclOccurrence();
     void     resetDeclOccurrences();
+
+    void putContextFQN(llvm::raw_string_ostream& out_stream, const clang::Decl* for_decl);
 
     struct Hash {
         uint64_t a;

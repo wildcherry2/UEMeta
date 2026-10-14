@@ -51,7 +51,7 @@ UEMeta::EnumDeclWrapper::IntermediateRepresentation UEMeta::EnumDeclWrapper::toI
     std::string context_fqn;
     {
         llvm::raw_string_ostream os{context_fqn};
-        putContextFQN(os);
+        putContextFQN(os, decl);
     }
 
     const std::string type_name =

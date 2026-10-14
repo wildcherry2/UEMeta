@@ -1,5 +1,6 @@
 #include "UEMeta/clang/wrappers/RecordDeclWrapper.hpp"
 
+#include "UEMeta/clang/DeclUtility.hpp"
 #include "UEMeta/clang/wrappers/EnumDeclWrapper.hpp"
 #include "UEMeta/clang/wrappers/FunctionDeclWrapper.hpp"
 #include "UEMeta/clang/Exception.hpp"

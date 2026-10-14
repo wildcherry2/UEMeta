@@ -120,7 +120,7 @@ namespace UEMeta {
         [[nodiscard]] std::string computeFQN() const {
             std::string              out;
             llvm::raw_string_ostream os{out};
-            Super::putContextFQN(os);
+            putContextFQN(os, Super::decl);
             os << computeName();
             return out;
         }

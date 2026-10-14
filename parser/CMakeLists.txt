@@ -28,7 +28,8 @@ add_library(uemeta-parser-core STATIC
     src/clang/wrappers/RecordDeclWrapper.cpp
     src/utility/StablePath.cpp
     src/utility/HeartbeatLogger.cpp
-    src/utility/Serializer.cpp)
+    src/utility/Serializer.cpp
+)
 
 include(cmake/Protobuf.cmake)
 

@@ -67,24 +67,6 @@ namespace UEMeta {
             return getPrintingPolicyForDependence(type->isInstantiationDependentType());
         }
 
-        void putContextFQN(llvm::raw_string_ostream& out_stream, const clang::Decl* for_decl = nullptr) const {
-            const clang::Decl* context_owner = for_decl ? for_decl : decl;
-            if (!context_owner || !context_owner->getDeclContext()) {
-                throw DeclException(decl, "DeclContext not found!");
-            }
-            // Clang resolves the supplied declaration's context itself. Passing
-            // that context would skip a scope (or the translation unit entirely).
-            const clang::NestedNameSpecifier scope_nns =
-                clang::TypeName::getFullyQualifiedDeclaredContext(decl->getASTContext(), context_owner, true);
-            if (!scope_nns) {
-                throw DeclException(decl, "Failed to get scope of anonymous enumerators!");
-            }
-            // Print TypeName's rewritten qualifiers instead of recomputing declaration scopes.
-            auto policy = getASTContext().getPrintingPolicy();
-            policy.FullyQualifiedName = false;
-            scope_nns.print(out_stream, policy);
-        }
-
         void putTemplateDetails(
             const clang::TemplateParameterList* declared_params, ParserTypes::TemplateDetails* p_msg, boost::hash2::xxh3_128& hasher,
             const clang::TemplateArgumentList* specialization_args = nullptr, const DeclDb::QueryResult& primary_template_id = {false}) const {
